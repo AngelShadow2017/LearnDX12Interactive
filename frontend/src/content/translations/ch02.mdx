@@ -83,7 +83,10 @@ $$
 
 设 $A$ 是 $m\times n$ 矩阵，$B$ 是 $n\times p$ 矩阵，则乘积 $AB$ 有定义，结果是一个 $m\times p$ 矩阵 $C$。乘积的第 $i,j$ 个元素，是 $A$ 的第 $i$ 行向量与 $B$ 的第 $j$ 列向量的点积：
 
-$$C_{ij}=A_{i,*}\cdot B_{*,j}.\tag{2.1}$$
+$$
+C_{ij}=A_{i,*}\cdot B_{*,j}.
+\tag{2.1}
+$$
 
 因此，要使 $AB$ 有定义，$A$ 的列数必须等于 $B$ 的行数，也就是 $A$ 的行向量与 $B$ 的列向量维数必须相同。否则，式 (2.1) 中的点积没有定义。
 
@@ -143,7 +146,9 @@ $$
 
 矩阵乘法有一些良好的代数性质。例如，它对加法满足分配律：$A(B+C)=AB+AC$，$(A+B)C=AC+BC$。特别地，我们会经常使用矩阵乘法的结合律，它允许我们选择先计算哪一组矩阵乘积：
 
-$$(AB)C=A(BC).$$
+$$
+(AB)C=A(BC).
+$$
 </section>
 
 <section className="lesson-section" id="s23">
@@ -189,11 +194,15 @@ $$
 
 单位矩阵在矩阵乘法中扮演乘法单位元的角色。若 $A$ 是 $m\times n$ 矩阵、$B$ 是 $n\times p$ 矩阵，而 $I$ 是 $n\times n$ 单位矩阵，则：
 
-$$AI=A,\qquad IB=B.$$
+$$
+AI=A,\qquad IB=B.
+$$
 
 换句话说，矩阵乘以单位矩阵不会改变矩阵。可以把矩阵的单位矩阵看作数的 1。特别地，若 $M$ 是方阵，则：
 
-$$MI=IM=M.$$
+$$
+MI=IM=M.
+$$
 
 **例 2.6**　设 $\mathbf{M}=\begin{bmatrix}1&2\\0&4\end{bmatrix}$、$\mathbf{I}=\begin{bmatrix}1&0\\0&1\end{bmatrix}$，验证 $MI=IM=M$。应用式 (2.1)：
 
@@ -237,7 +246,9 @@ $$
 
 设 $A$ 为 $n\times n$ 矩阵。对 $n>1$，按第一行展开可定义为：
 
-$$\det A=\sum_{j=1}^{n}A_{1j}(-1)^{1+j}\det\bar A_{1j}.\tag{2.4}$$
+$$
+\det A=\sum_{j=1}^{n}A_{1j}(-1)^{1+j}\det\bar A_{1j}.\tag{2.4}
+$$
 
 根据余子式的定义，$2\times2$ 矩阵的行列式为：
 
@@ -293,7 +304,9 @@ $$
 
 设 $A$ 是 $n\times n$ 矩阵。乘积
 
-$$C_{ij}=(-1)^{i+j}\det\bar A_{ij}$$
+$$
+C_{ij}=(-1)^{i+j}\det\bar A_{ij}
+$$
 
 称为 $A_{ij}$ 的**代数余子式**。对 $A$ 中每个元素计算 $C_{ij}$，并把结果放到对应的第 $i$ 行、第 $j$ 列，就得到 $A$ 的代数余子式矩阵 $C_A$：
 
@@ -335,13 +348,18 @@ $$
 
 矩阵逆的一个公式可以用伴随矩阵和行列式表示。本书不证明此公式；大学线性代数教材会给出证明：
 
-$$A^{-1}=\frac{A^*}{\det A}.\tag{2.6}$$
+$$
+A^{-1}=\frac{A^*}{\det A}.
+\tag{2.6}
+$$
 
 **例 2.10**　求一般 $2\times2$ 矩阵 $\mathbf{A}=\begin{bmatrix}A_{11}&A_{12}\\A_{21}&A_{22}\end{bmatrix}$ 的逆公式，并用该公式求矩阵 $\mathbf{M}=\begin{bmatrix}3&0\\-1&2\end{bmatrix}$ 的逆。
 
 对 $A=\begin{bmatrix}a&b\\c&d\end{bmatrix}$，有 $\det A=ad-bc$，而其伴随矩阵为 $A^*=\begin{bmatrix}d&-b\\-c&a\end{bmatrix}$。因此，只要 $ad-bc\ne0$，
 
-$$A^{-1}=\frac{1}{ad-bc}\begin{bmatrix}d&-b\\-c&a\end{bmatrix}.$$
+$$
+A^{-1}=\frac{1}{ad-bc}\begin{bmatrix}d&-b\\-c&a\end{bmatrix}.
+$$
 
 本例中有
 
@@ -371,7 +389,9 @@ $$
 
 最后给出矩阵乘积的逆的一条有用性质：
 
-$$(AB)^{-1}=B^{-1}A^{-1}.$$
+$$
+(AB)^{-1}=B^{-1}A^{-1}.
+$$
 
 该性质要求 $A$、$B$ 都可逆，且是维数相同的方阵。要证明 $B^{-1}A^{-1}$ 是 $AB$ 的逆，只需验证两个乘积都等于单位矩阵：
 
@@ -605,7 +625,9 @@ int main()
 - $m\times n$ 矩阵 $M$ 是有 $m$ 行、$n$ 列的实数矩形数组。两个维数相同的矩阵相等，当且仅当对应元素相等。相同维数的矩阵按对应元素相加；标量乘矩阵时，标量乘以每个元素。
 - 若 $A$ 是 $m\times n$ 矩阵，$B$ 是 $n\times p$ 矩阵，则 $AB$ 有定义，结果是 $m\times p$ 矩阵 $C$，且 $C_{ij}$ 是 $A$ 的第 $i$ 行与 $B$ 的第 $j$ 列的点积：
 
-  $$C_{ij}=A_{i,*}\cdot B_{*,j}.$$
+  $$
+  C_{ij}=A_{i,*}\cdot B_{*,j}.
+  $$
 
 - 矩阵乘法通常不可交换，即 $AB\ne BA$；但满足结合律：$(AB)C=A(BC)$。
 - 转置通过交换矩阵的行和列得到。因此，$m\times n$ 矩阵的转置为 $n\times m$ 矩阵，记为 $M^T$。
@@ -613,7 +635,9 @@ int main()
 - 行列式 $\det A$ 将方阵映射为实数。方阵 $A$ 可逆，当且仅当 $\det A\ne0$。行列式用于矩阵逆的计算公式。
 - 矩阵与其逆相乘得到单位矩阵：$MM^{-1}=M^{-1}M=I$。逆矩阵若存在则唯一。只有方阵可能有逆，而且方阵未必可逆。矩阵逆可以用伴随矩阵计算：
 
-  $$A^{-1}=\frac{1}{\det A}\operatorname{adj}(A),$$
+  $$
+  A^{-1}=\frac{1}{\det A}\operatorname{adj}(A),
+  $$
 
   其中 $\operatorname{adj}(A)$ 是 $A$ 的代数余子式矩阵的转置。
 
@@ -633,7 +657,9 @@ int main()
 
 1. 求下列矩阵方程中的 $X$：
 
-   $$3\left(\begin{bmatrix}-2&0\\1&3\end{bmatrix}-2X\right)=2\begin{bmatrix}-2&0\\1&3\end{bmatrix}$$
+   $$
+   3\left(\begin{bmatrix}-2&0\\1&3\end{bmatrix}-2X\right)=2\begin{bmatrix}-2&0\\1&3\end{bmatrix}
+   $$
 
 2. 计算以下矩阵乘积：
 
@@ -653,15 +679,21 @@ int main()
 
 5. 证明：
 
-   $$\mathbf{AB}=\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}\begin{bmatrix}B_{11}&B_{12}&B_{13}\\B_{21}&B_{22}&B_{23}\\B_{31}&B_{32}&B_{33}\end{bmatrix}=\begin{bmatrix}\leftarrow\mathbf{A}_{1,*}\mathbf{B}\rightarrow\\\leftarrow\mathbf{A}_{2,*}\mathbf{B}\rightarrow\\\leftarrow\mathbf{A}_{3,*}\mathbf{B}\rightarrow\end{bmatrix}$$
+   $$
+   \mathbf{AB}=\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}\begin{bmatrix}B_{11}&B_{12}&B_{13}\\B_{21}&B_{22}&B_{23}\\B_{31}&B_{32}&B_{33}\end{bmatrix}=\begin{bmatrix}\leftarrow\mathbf{A}_{1,*}\mathbf{B}\rightarrow\\\leftarrow\mathbf{A}_{2,*}\mathbf{B}\rightarrow\\\leftarrow\mathbf{A}_{3,*}\mathbf{B}\rightarrow\end{bmatrix}
+   $$
 
 6. 证明：
 
-   $$\mathbf{Au}=\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}\begin{bmatrix}x\\y\\z\end{bmatrix}=x\mathbf{A}_{*,1}+y\mathbf{A}_{*,2}+z\mathbf{A}_{*,3}$$
+   $$
+   \mathbf{Au}=\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}\begin{bmatrix}x\\y\\z\end{bmatrix}=x\mathbf{A}_{*,1}+y\mathbf{A}_{*,2}+z\mathbf{A}_{*,3}
+   $$
 
 7. 证明，叉积可以表示为以下矩阵乘积：
 
-   $$\mathbf{u}\times\mathbf{v}=[v_x\quad v_y\quad v_z]\begin{bmatrix}0&u_z&-u_y\\-u_z&0&u_x\\u_y&-u_x&0\end{bmatrix}$$
+   $$
+   \mathbf{u}\times\mathbf{v}=[v_x\quad v_y\quad v_z]\begin{bmatrix}0&u_z&-u_y\\-u_z&0&u_x\\u_y&-u_x&0\end{bmatrix}
+   $$
 
 8. 设 $\mathbf{A}=\begin{bmatrix}1&2\\3&4\end{bmatrix}$，$\mathbf{B}=\begin{bmatrix}-2&1\\3/2&1/2\end{bmatrix}$。$\mathbf{B}$ 是 $\mathbf{A}$ 的逆矩阵吗？
 
@@ -669,25 +701,35 @@ int main()
 
 10. 求以下矩阵的行列式：
 
-    $$\begin{bmatrix}21&-4\\10&7\end{bmatrix}\qquad\begin{bmatrix}2&0&0\\0&3&0\\0&0&7\end{bmatrix}$$
+    $$
+    \begin{bmatrix}21&-4\\10&7\end{bmatrix}\qquad\begin{bmatrix}2&0&0\\0&3&0\\0&0&7\end{bmatrix}
+    $$
 
 11. 求以下矩阵的逆：
 
-    $$\begin{bmatrix}21&-4\\10&7\end{bmatrix}\qquad\begin{bmatrix}2&0&0\\0&3&0\\0&0&7\end{bmatrix}$$
+    $$
+    \begin{bmatrix}21&-4\\10&7\end{bmatrix}\qquad\begin{bmatrix}2&0&0\\0&3&0\\0&0&7\end{bmatrix}
+    $$
 
 12. 下列矩阵可逆吗？
 
-    $$\begin{bmatrix}1&2&3\\0&4&5\\0&0&0\end{bmatrix}$$
+    $$
+    \begin{bmatrix}1&2&3\\0&4&5\\0&0&0\end{bmatrix}
+    $$
 
 13. 假设 $A$ 可逆，证明 $(A^{-1})^T=(A^T)^{-1}$。
 
 14. 设 $A$、$B$ 是 $n\times n$ 矩阵。线性代数教材证明了 $\det(AB)=\det A\cdot\det B$。利用这一事实以及 $\det I=1$，证明当 $A$ 可逆时，
 
-    $$\det\mathbf{A}^{-1}=\frac{1}{\det\mathbf{A}}$$
+    $$
+    \det\mathbf{A}^{-1}=\frac{1}{\det\mathbf{A}}
+    $$
 
 15. 证明二维行列式
 
-    $$\det\begin{bmatrix}u_x&u_y\\v_x&v_y\end{bmatrix}$$
+    $$
+    \det\begin{bmatrix}u_x&u_y\\v_x&v_y\end{bmatrix}
+    $$
 
     给出由 $u=(u_x,u_y)$ 与 $v=(v_x,v_y)$ 张成的平行四边形的有向面积。当 $u$ 逆时针旋转角度 $\theta\in(0,\pi)$ 后与 $v$ 重合时，结果为正；否则为负。
 
@@ -699,9 +741,11 @@ int main()
 
 17. 设：
 
-    $$\mathbf{A}=\begin{bmatrix}A_{11}&A_{12}\\A_{21}&A_{22}\end{bmatrix},\quad
+    $$
+    \mathbf{A}=\begin{bmatrix}A_{11}&A_{12}\\A_{21}&A_{22}\end{bmatrix},\quad
     \mathbf{B}=\begin{bmatrix}B_{11}&B_{12}\\B_{21}&B_{22}\end{bmatrix},\quad
-    \mathbf{C}=\begin{bmatrix}C_{11}&C_{12}\\C_{21}&C_{22}\end{bmatrix}$$
+    \mathbf{C}=\begin{bmatrix}C_{11}&C_{12}\\C_{21}&C_{22}\end{bmatrix}
+    $$
 
     证明 $A(BC)=(AB)C$。这说明矩阵乘法对 $2\times2$ 矩阵满足结合律。事实上，只要乘法有定义，一般维数的矩阵乘法也满足结合律。
 

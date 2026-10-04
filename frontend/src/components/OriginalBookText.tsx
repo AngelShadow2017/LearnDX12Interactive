@@ -15,7 +15,6 @@ const sourceLoaders = import.meta.glob('../content/source/*.txt', {
 // Equations transcribed while the corresponding chapter was being translated.
 // Unreviewed formula artwork remains available as a zoomable source image.
 const formulaLatex: Record<string, string> = {
-  'eq82-01.jpg': 'A^{-1}=\\frac{A^*}{\\det A}\\tag{2.6}',
   'eq42-01.jpg': '-\\frac{1}{2}\\mathbf{v}',
   'eq42-02.jpg': '-\\frac{1}{2}\\mathbf{v}=(-1,-\\frac{1}{2})',
   'eq42-03.jpg': '-\\frac{1}{2}\\mathbf{v}',
@@ -274,6 +273,10 @@ function isCodeLine(value: string): boolean {
     // Function signatures may be wrapped across source paragraphs before the
     // closing parenthesis. Keep the opening line in the same code block.
     || /^[A-Z_]\w*\s*\([^;]*$/.test(text)
+    // DirectXMath class members can have a return type and calling-convention
+    // macro before the function name, so they do not start with the method
+    // name (for example: `XMMATRIX& XM_CALLCONV operator+= (...)`).
+    || /^(?:friend\s+)?(?:XMMATRIX|XMFLOAT4X4|XMVECTOR|void|float|BOOL|UINT)\s*&?\s+(?:XM_CALLCONV\s+)?(?:operator\s*[^\s(]*|[A-Za-z_]\w*)\s*\(/.test(text)
     // The source text extractor separates code lines with blank lines. These
     // syntax markers keep common Direct3D declarations and calls together as
     // code instead of rendering them as ordinary prose paragraphs.

@@ -145,15 +145,32 @@ XMCOLOR() {}
   it('keeps the full XMMATRIX float constructor in code and recognizes its alignment declaration', () => {
     const blocks = parseSource(chapterTwoSource, 'ch02');
     const codeBlocks = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []);
-    const constructor = codeBlocks.find((code) => code.includes('XMMATRIX(float m00'));
+    const matrixStruct = codeBlocks.find((code) => code.includes('#if (defined(_M_IX86)'));
 
-    expect(codeBlocks.some((code) => code.includes('__declspec(align(16)) struct XMMATRIX'))).toBe(true);
-    expect(constructor).toContain(
+    expect(matrixStruct).toContain('__declspec(align(16)) struct XMMATRIX');
+    expect(matrixStruct).toContain('XMMATRIX operator+ () const { return *this; }');
+    expect(matrixStruct).toContain('XMMATRIX& XM_CALLCONV operator+= (FXMMATRIX M);');
+    expect(matrixStruct).toContain('friend XMMATRIX XM_CALLCONV operator* (float S, FXMMATRIX M);');
+    expect(matrixStruct).toContain(
       'XMMATRIX(float m00, float m01, float m02, float m03,\n' +
       'float m10, float m11, float m12, float m13,\n' +
       'float m20, float m21, float m22, float m23,\n' +
       'float m30, float m31, float m32, float m33);',
     );
-    expect(constructor).not.toContain('As you can see');
+    expect(matrixStruct).toContain('};');
+    expect(matrixStruct).not.toContain('As you can see');
+  });
+
+  it('keeps the XMFLOAT4X4 float constructor parameters together as code', () => {
+    const blocks = parseSource(chapterTwoSource, 'ch02');
+    const code = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : [])
+      .find((block) => block.includes('XMFLOAT4X4(float m00'));
+
+    expect(code).toContain(
+      'XMFLOAT4X4(float m00, float m01, float m02, float m03,\n' +
+      'float m10, float m11, float m12, float m13,\n' +
+      'float m20, float m21, float m22, float m23,\n' +
+      'float m30, float m31, float m32, float m33);',
+    );
   });
 });

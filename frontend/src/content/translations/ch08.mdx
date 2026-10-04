@@ -66,7 +66,9 @@ $\mathbf{v} = \mathbf{p}_2 - \mathbf{p}_0$
 
 于是面法线为：
 
-$$\mathbf{n} = \frac{\mathbf{u}\times\mathbf{v}}{\lVert \mathbf{u}\times\mathbf{v}\rVert}$$
+$$
+\mathbf{n} = \frac{\mathbf{u}\times\mathbf{v}}{\lVert \mathbf{u}\times\mathbf{v}\rVert}
+$$
 
 下面这个函数根据三角形的三个顶点，计算三角形正面（§5.10.2）的面法线。
 
@@ -87,7 +89,9 @@ XMVECTOR ComputeNormal(FXMVECTOR p0,
 
 对于可微曲面<a id="page320"/>，我们可以用微积分求出曲面上各点的法线。可惜三角形网格不可微。处理三角形网格时通常采用的技术称为*顶点法线平均*（vertex normal averaging）。网格中任意顶点 $\mathbf{v}$ 的顶点法线 $\mathbf{n}$，等于网格中所有共享顶点 $\mathbf{v}$ 的多边形的面法线的平均值。例如在图 8.6 中，网格里有四个多边形共享顶点 $\mathbf{v}$，因此 $\mathbf{v}$ 的顶点法线为：
 
-$$\mathbf{n}_{avg} = \frac{\mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3}{\lVert \mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3\rVert}$$
+$$
+\mathbf{n}_{avg} = \frac{\mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3}{\lVert \mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3\rVert}
+$$
 
 在上面的例子中，我们不必像通常求平均那样除以 4，因为最后要对结果做归一化。另请注意，还可以构造更精细的平均方案；例如可以采用加权平均，权重由多边形的面积决定（面积较大的多边形比面积较小的多边形权重更大）。
 
@@ -158,6 +162,8 @@ for(UINT i = 0; i < mNumVertices; ++i)
 | $\mathbf{uA}\cdot\mathbf{n}(\mathbf{A}^{-1})^T = 0$ | 把矩阵乘法改写为点积 |
 | $\mathbf{uA}\cdot\mathbf{nB} = 0$ | 变换后的切向量与变换后的法向量正交 |
 
+<Figure src="images/tbl355.jpg" alt="法向量逆转置变换的英文推导表" caption="法向量变换推导的原书表格；上表为中文转录，可放大查看原图。" />
+
 **译者注**：上表按原书英文表格照录（原表为图片 `images/tbl355.jpg`）。其中第 5 行的"转置性质 $(\mathbf{A}^T)^T = \mathbf{A}$"与推导步骤的对应关系在原文中并不严密，此处保留原样备查。
 
 因此 $\mathbf{B} = (\mathbf{A}^{-1})^T$（$\mathbf{A}$ 的逆转置）就能完成这个任务：变换法向量，<a id="page322"/>使其与相关联的变换后切向量 $\mathbf{uA}$ 垂直。
@@ -179,9 +185,13 @@ static XMMATRIX InverseTranspose(CXMMATRIX M)
 
 我们清除了矩阵中的平移，因为我们用逆转置来变换向量，而平移只作用于点。不过，从 §3.2.1 我们知道，对向量设置 $w = 0$（使用齐次坐标）就能阻止向量被平移所改变。因此，按理说我们并不需要在矩阵中把平移清零。问题在于，如果我们想把逆转置和另一个不含非均匀缩放的矩阵相乘，比如视图矩阵 $(\mathbf{A}^{-1})^T\mathbf{V}$，那么 $(\mathbf{A}^{-1})^T$ 第四列里被转置后的平移就会"泄漏"到乘积矩阵中，造成错误。因此我们清零平移作为一种预防措施，避免这个错误。正确的做法应当是用 $((\mathbf{AV})^{-1})^T$ 来变换法线。下面是一个缩放加平移矩阵的例子，以及当第四列不是 $[0, 0, 0, 1]^T$ 时逆转置的样子：
 
-$$\mathbf{A} = \begin{bmatrix} 1 & 0 & 0 & 0 \\ 0 & 0.5 & 0 & 0 \\ 0 & 0 & 0.5 & 0 \\ 1 & 1 & 1 & 1 \end{bmatrix}$$
+$$
+\mathbf{A} = \begin{bmatrix} 1 & 0 & 0 & 0 \\ 0 & 0.5 & 0 & 0 \\ 0 & 0 & 0.5 & 0 \\ 1 & 1 & 1 & 1 \end{bmatrix}
+$$
 
-$$(\mathbf{A}^{-1})^T = \begin{bmatrix} 1 & 0 & 0 & -1 \\ 0 & 2 & 0 & -2 \\ 0 & 0 & 2 & -2 \\ 0 & 0 & 0 & 1 \end{bmatrix}$$
+$$
+(\mathbf{A}^{-1})^T = \begin{bmatrix} 1 & 0 & 0 & -1 \\ 0 & 2 & 0 & -2 \\ 0 & 0 & 2 & -2 \\ 0 & 0 & 0 & 1 \end{bmatrix}
+$$
 
 **注意**：即使做了逆转置变换，法向量也可能失去单位长度；因此变换之后可能需要重新归一化。<a id="page323"/>
 
@@ -207,17 +217,23 @@ $$(\mathbf{A}^{-1})^T = \begin{bmatrix} 1 & 0 & 0 & -1 \\ 0 & 2 & 0 & -2 \\ 0 & 
 
 正对着打到表面上的光（即光向量 $\mathbf{L}$ 等于法向量 $\mathbf{n}$）比以某个角度掠过表面的光更强。考虑一束截面积为 $A_1$、辐射通量为 $P$ 的细小光束。如果我们让这束光正对着照向表面（图 8.10*a*），那么光束打在表面上面积为 $A_1$ 的区域，$A_1$ 处的辐照度为 $E_1 = P/A_1$。现在假设我们旋转光束，使它以某个角度照到表面上（图 8.10*b*），那么光束覆盖的面积更大，为 $A_2$，打到这块面积上的辐照度为 $E_2 = P/A_2$。由三角学可知，$A_1$ 与 $A_2$ 的关系为：
 
-$$\cos\theta = \frac{A_1}{A_2} \Rightarrow \frac{1}{A_2} = \frac{\cos\theta}{A_1}$$
+$$
+\cos\theta = \frac{A_1}{A_2} \Rightarrow \frac{1}{A_2} = \frac{\cos\theta}{A_1}
+$$
 
 因此，
 
-$$E_2 = \frac{P}{A_2} = \frac{P}{A_1}\cos\theta = E_1\cos\theta = E_1(\mathbf{n}\cdot\mathbf{L})$$
+$$
+E_2 = \frac{P}{A_2} = \frac{P}{A_1}\cos\theta = E_1\cos\theta = E_1(\mathbf{n}\cdot\mathbf{L})
+$$
 
 <Figure src="images/Fig8-10.jpg" alt="(a) 截面积为 A1 的光束正对着照向表面；(b) 同一光束以某个角度照向表面，覆盖更大的面积 A2" figureNumber="图 8.10" caption="(a) 截面积为 A1 的光束正对着照向表面。(b) 截面积为 A1 的光束以某个角度照向表面，从而在表面上覆盖更大的面积 A2，于是光能被摊到更大面积上，使光看起来“更暗”。" />
 
 换言之，打到面积 $A_2$ 上的辐照度，等于垂直于光方向的面积 $A_1$ 处的辐照度乘以 $\mathbf{n}\cdot\mathbf{L} = \cos\theta$。这就是*朗伯余弦定律*。为处理光打到表面背面的情形（这会使点积为负），我们用 `max` 函数把结果截断：
 
-$$f(\theta) = \max(\cos\theta, 0) = \max(\mathbf{L}\cdot\mathbf{n}, 0)$$
+$$
+f(\theta) = \max(\cos\theta, 0) = \max(\mathbf{L}\cdot\mathbf{n}, 0)
+$$
 
 图 8.11 画出了 $f(\theta)$ 的图像，可以看到强度在 0.0 到 1.0 之间（即 0% 到 100%）随 $\theta$ 变化。
 
@@ -234,13 +250,17 @@ $$f(\theta) = \max(\cos\theta, 0) = \max(\mathbf{L}\cdot\mathbf{n}, 0)$$
 
 我们把漫反射光照的计算拆成两部分。第一部分，我们指定一个光的颜色和一个*漫反射反照率*（diffuse albedo）颜色。漫反射反照率指定了入射光中因漫反射而被表面反射的比例（根据能量守恒，未被反射的部分被材质吸收）。这一步用逐分量颜色乘法处理（因为光可以有颜色）。例如，假设表面上某点反射入射红光的 50%、绿光的 100%、蓝光的 75%，入射光颜色是 80% 强度的白光。也就是说，入射光的量为 $\mathbf{B}_L = (0.8, 0.8, 0.8)$，漫反射反照率为 $\mathbf{m}_d = (0.5, 1.0, 0.75)$；那么该点反射出去的光的量为：
 
-$$\mathbf{c}_d = \mathbf{B}_L \otimes \mathbf{m}_d = (0.8, 0.8, 0.8) \otimes (0.5, 1.0, 0.75) = (0.4, 0.8, 0.6)$$
+$$
+\mathbf{c}_d = \mathbf{B}_L \otimes \mathbf{m}_d = (0.8, 0.8, 0.8) \otimes (0.5, 1.0, 0.75) = (0.4, 0.8, 0.6)
+$$
 
 注意，漫反射反照率各分量必须在 0.0 到 1.0 范围内，这样它们才表示被反射的光的比例。
 
 不过，上面的公式还不完全正确。我们仍需要把朗伯余弦定律计入（它根据表面法线与光向量之间的夹角决定表面接收到原本光的多少）。设 $\mathbf{B}_L$ 表示入射光的量，$\mathbf{m}_d$ 为漫反射反照率颜色，$\mathbf{L}$ 为光向量，$\mathbf{n}$ 为表面法线。那么某点反射出的漫反射光的量为：
 
-$$\mathbf{c}_d = \max(\mathbf{L}\cdot\mathbf{n}, 0) \cdot \mathbf{B}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.1)$$
+$$
+\mathbf{c}_d = \max(\mathbf{L}\cdot\mathbf{n}, 0) \cdot \mathbf{B}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.1)
+$$
 
 </section>
 
@@ -251,7 +271,9 @@ $$\mathbf{c}_d = \max(\mathbf{L}\cdot\mathbf{n}, 0) \cdot \mathbf{B}_L \otimes \
 
 为了以某种方式"糊弄"这种间接<a id="page327"/>光，我们在光照方程中引入一个环境项：
 
-$$\mathbf{c}_a = \mathbf{A}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.2)$$
+$$
+\mathbf{c}_a = \mathbf{A}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.2)
+$$
 
 颜色 $\mathbf{A}_L$ 指定表面接收到的间接（环境）光总量，它可能与光源发出的光不同，因为光在从其他表面弹射时被吸收过。漫反射反照率 $\mathbf{m}_d$ 指定入射光中因漫反射被表面反射的比例。我们用同一个值来表示表面反射的入射环境光比例；也就是说，对于环境光照，我们建模的是间接（环境）光的漫反射反射率。环境光所做的不过就是把物体均匀地提亮一点——完全没有真正的物理计算。其想法是：间接光在场景中散射、弹射了太多次，以至于它从各个方向均匀地打到物体上。
 
@@ -276,7 +298,9 @@ $$\mathbf{c}_a = \mathbf{A}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.2)$$
 
 反射多少光取决于介质（有些材质比别的更反光），也取决于法向量 $\mathbf{n}$ 与光向量 $\mathbf{L}$ 之间的夹角 $\theta_i$。由于完整 Fresnel 方程过于复杂，实时渲染中通常不使用它们；取而代之的是*Schlick 近似*：
 
-$$\mathbf{R}_F(\theta_i) = \mathbf{R}_F(0°) + \left(1 - \mathbf{R}_F(0°)\right)\left(1 - \cos\theta_i\right)^5$$
+$$
+\mathbf{R}_F(\theta_i) = \mathbf{R}_F(0°) + \left(1 - \mathbf{R}_F(0°)\right)\left(1 - \cos\theta_i\right)^5
+$$
 
 $\mathbf{R}_F(0°)$ 是介质的一种属性；下面是一些常见<a id="page329"/>材质的取值 [Möller08]：
 
@@ -315,7 +339,9 @@ $\mathbf{R}_F(0°)$ 是介质的一种属性；下面是一些常见<a id="page3
 
 我们定义归一化分布函数 $\rho(\theta_h) \in [0, 1]$，用来表示法线 $\mathbf{h}$ 与宏观法线 $\mathbf{n}$ 成夹角 $\theta_h$ 的微面元所占的比例。直观上，我们期望 $\rho(\theta_h)$ 在 $\theta_h = 0°$ 时取最大值。也就是说，我们期望微面法线偏向宏观法线；随着 $\theta_h$ 增大（即 $\mathbf{h}$ 偏离宏观法线 $\mathbf{n}$），我们期望法线为 $\mathbf{h}$ 的微面元比例减小。一个流行的、可控的、符合上述期望的 $\rho(\theta_h)$ 建模函数是：
 
-$$\rho(\theta_h) = \cos^m(\theta_h) = \cos^m(\mathbf{n}\cdot\mathbf{h})$$
+$$
+\rho(\theta_h) = \cos^m(\theta_h) = \cos^m(\mathbf{n}\cdot\mathbf{h})
+$$
 
 注意，只要两个向量都是单位长度，就有 $\cos(\theta_h) = (\mathbf{n}\cdot\mathbf{h})$。图 8.19 画出了取不同 $m$ 时 $\rho(\theta_h) = \cos^m(\theta_h)$ 的曲线。这里 $m$ 控制粗糙度，它规定法线 $\mathbf{h}$ 与宏观法线 $\mathbf{n}$ 成夹角 $\theta_h$ 的微面元所占的比例。$m$ 减小时表面变粗糙，微面法线越来越偏离宏观法线。$m$ 增大时表面变光滑，微面法线越来越趋近宏观法线。
 
@@ -325,7 +351,9 @@ $$\rho(\theta_h) = \cos^m(\theta_h) = \cos^m(\mathbf{n}\cdot\mathbf{h})$$
 
 我们可以把 $\rho(\theta_h)$ 与一个归一化因子结合起来，得到一个新的函数，用来根据粗糙度建模镜面反射的光量：
 
-$$S(\theta_h) = \frac{m+8}{8}\cos^m(\theta_h) = \frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m$$
+$$
+S(\theta_h) = \frac{m+8}{8}\cos^m(\theta_h) = \frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m
+$$
 
 图 8.20 画出了取不同 $m$ 时这个函数的曲线。<a id="page332"/>和之前一样，$m$ 控制粗糙度，但我们加入了 $\frac{m+8}{8}$ 这个归一化因子，以使光能守恒；它本质上是在控制图 8.20 中曲线的高度，从而在镜面波瓣随 $m$ 变宽或变窄时，让总光能守恒。$m$ 较小时表面较粗糙，镜面波瓣随光能散布而变宽；因此我们期望镜面高光更暗，因为能量被摊开了。反之，$m$ 较大时表面较光滑，镜面波瓣更窄；因此我们期望镜面高光更亮，因为能量被集中了。从几何上看，$m$ 控制镜面波瓣的展宽程度。要为光滑表面（如抛光金属）建模，就使用较大的 $m$；要为较粗糙的表面建模，就使用较小的 $m$。
 
@@ -333,7 +361,9 @@ $$S(\theta_h) = \frac{m+8}{8}\cos^m(\theta_h) = \frac{m+8}{8}(\mathbf{n}\cdot\ma
 
 最后，本节<a id="page333"/>收尾时，我们把 Fresnel 反射与表面粗糙度结合起来。我们要计算的是有多少光被反射进视线方向 $\mathbf{v}$（见图 8.18）。回顾一下：法线为 $\mathbf{h}$ 的微面元会把光反射进 $\mathbf{v}$。设 $\alpha_h$ 为光向量与半程向量 $\mathbf{h}$ 之间的夹角，那么 $\mathbf{R}_F(\alpha_h)$ 告诉我们在 Fresnel 效应下围绕 $\mathbf{h}$ 反射进 $\mathbf{v}$ 的光量。把 Fresnel 效应带来的反射光量 $\mathbf{R}_F(\alpha_h)$ 与粗糙度带来的反射光量 $S(\theta_h)$ 相乘，就得到镜面反射的光量：设 $(\max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L)$ 表示打到我们所计算的那个表面点上的入射光量，那么由于粗糙度和 Fresnel 效应而镜面反射进眼睛的 $(\max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L)$ 的比例由下式给出：
 
-$$\mathbf{c}_s = \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m \qquad (\text{式 } 8.3)$$
+$$
+\mathbf{c}_s = \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m \qquad (\text{式 } 8.3)
+$$
 
 注意，如果 $\mathbf{L}\cdot\mathbf{n} \le 0$，光打到了我们所计算的表面背面；因此正面表面接收不到光。
 
@@ -350,7 +380,9 @@ $$\mathbf{c}_s = \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \ma
 
 这就导出了本书着色器实现的光照方程：
 
-$$LitColor = \mathbf{c}_a + \mathbf{c}_d + \mathbf{c}_s = \mathbf{A}_L \otimes \mathbf{m}_d + \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \left(\mathbf{m}_d + \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m\right) \qquad (\text{式 } 8.4)$$
+$$
+LitColor = \mathbf{c}_a + \mathbf{c}_d + \mathbf{c}_s = \mathbf{A}_L \otimes \mathbf{m}_d + \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \left(\mathbf{m}_d + \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m\right) \qquad (\text{式 } 8.4)
+$$
 
 该方程中的所有向量都假定为单位长度。
 
@@ -569,7 +601,9 @@ void LitWavesApp::DrawRenderItems(
 
 点光源的一个很好的物理例子是灯泡；它向所有方向球面辐射（图 8.25）。具体来说，对任意一点 $\mathbf{P}$，都存在一条从点光源位置 $\mathbf{Q}$ 出发、朝向该点的光线。和往常一样，我们定义光<a id="page340"/>向量沿相反方向，即从点 $\mathbf{P}$ 指向点光源 $\mathbf{Q}$ 的方向：
 
-$$\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}$$
+$$
+\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}
+$$
 
 本质上，点光源和平行光唯一的区别在于光向量如何计算——对点光源而言它逐点变化，对平行光而言它保持恒定。
 
@@ -579,17 +613,23 @@ $$\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}$
 
 从物理上看，光强随距离按平方反比定律减弱。也就是说，距离光源 $d$ 处某点的光强为：
 
-$$I(d) = \frac{I_0}{d^2}$$
+$$
+I(d) = \frac{I_0}{d^2}
+$$
 
 其中 $I_0$ 是距离光源 $d = 1$ 处的光强。如果你设置了基于物理的光照取值，并使用 HDR（高动态范围）光照和色调映射，这个公式效果很好。不过，一个更容易上手、也是我们演示中将要使用的公式是线性衰减函数：
 
-$$\operatorname{att}(d) = \operatorname{saturate}\left(\frac{falloffEnd - d}{falloffEnd - falloffStart}\right)$$
+$$
+\operatorname{att}(d) = \operatorname{saturate}\left(\frac{falloffEnd - d}{falloffEnd - falloffStart}\right)
+$$
 
 **译者注**：原书该式图片中写作 `att( ) saturate(...)`，漏写了参数 $d$ 和等号，此处按上下文补足为 $\operatorname{att}(d) = \operatorname{saturate}(\cdots)$，原图 `images/eq374-03.jpg` 仍可对照。
 
 该函数的图像见图 8.26。`saturate` 函数把参数截断到 [0, 1] 范围：
 
-$$\operatorname{saturate}(x) = \begin{cases} x, & 0 \le x \le 1 \\ 0, & x < 0 \\ 1, & x > 1 \end{cases}$$
+$$
+\operatorname{saturate}(x) = \begin{cases} x, & 0 \le x \le 1 \\ 0, & x < 0 \\ 1, & x > 1 \end{cases}
+$$
 
 <Figure src="images/Fig8-26.jpg" alt="衰减因子在距离达到 falloffStart 之前保持满强度 1.0，随后随距离线性衰减到 0.0，直到达到 falloffEnd" figureNumber="图 8.26" caption="缩放光值的衰减因子在距离 d 达到 falloffStart 之前保持满强度（1.0），随后随距离增大线性衰减到 0.0，直到距离达到 falloffEnd。" />
 
@@ -608,13 +648,17 @@ $$\operatorname{saturate}(x) = \begin{cases} x, & 0 \le x \le 1 \\ 0, & x < 0 \\
 
 要实现聚光灯，我们像处理点光源那样开始：光向量由下式给出：
 
-$$\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}$$
+$$
+\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}
+$$
 
 其中 $\mathbf{P}$ 是正在<a id="page342"/>受光的点的位置，$\mathbf{Q}$ 是聚光灯的位置。从图 8.27 可以观察到，$\mathbf{P}$ 位于聚光灯锥体内部（因而接收到光）当且仅当 $-\mathbf{L}$ 与 $\mathbf{d}$ 之间的夹角 $\varphi$ 小于锥体夹角 $\varphi_{max}$。而且，聚光灯锥体内的光不应具有相同强度；锥体中心处应最强，随着 $\varphi$ 从 0 增加到 $\varphi_{max}$，光强应衰减到零。
 
 那么，我们如何控制光强随 $\varphi$ 的衰减，又该如何控制聚光灯锥体的大小呢？我们可以使用与图 8.19 图像相同的函数，但把 $\theta_h$ 换成 $\varphi$，把 $m$ 换成 $s$：
 
-$$k_{spot}(\varphi) = \max(\cos\varphi, 0)^s = \max(-\mathbf{L}\cdot\mathbf{d}, 0)^s$$
+$$
+k_{spot}(\varphi) = \max(\cos\varphi, 0)^s = \max(-\mathbf{L}\cdot\mathbf{d}, 0)^s
+$$
 
 这样就得到了我们想要的结果：强度随着 $\varphi$ 增大平滑衰减；此外，通过改变指数 $s$，我们可以间接控制 $\varphi_{max}$（强度降为 0 的角度）；也就是说，我们可以通过调整 $s$ 来缩小或扩大聚光灯锥体。例如，如果设 $s = 8$，锥体大约有 45° 的半角。
 
@@ -1101,25 +1145,39 @@ mInputLayout =
 
 由于我们的地形表面由函数 $y = f(x, z)$ 给出，我们可以直接用微积分计算法向量，而不必使用 §8.2.1 中描述的法线平均技术。为此，对表面上的每个点，我们分别沿 $+x$ 和 $+z$ 方向求偏导数，得到两个切向量：
 
-$$\mathbf{T}_x = \left(1, \frac{\partial f}{\partial x}, 0\right)$$
-$$\mathbf{T}_z = \left(0, \frac{\partial f}{\partial z}, 1\right)$$
+$$
+\mathbf{T}_x = \left(1, \frac{\partial f}{\partial x}, 0\right)
+$$
+$$
+\mathbf{T}_z = \left(0, \frac{\partial f}{\partial z}, 1\right)
+$$
 
 这两个向量位于该表面点的切平面内。取它们的叉积就得到法向量：
 
-$$\mathbf{n} = \mathbf{T}_z \times \mathbf{T}_x = \begin{vmatrix} \mathbf{i} & \mathbf{j} & \mathbf{k} \\ 0 & \dfrac{\partial f}{\partial z} & 1 \\ 1 & \dfrac{\partial f}{\partial x} & 0 \end{vmatrix} = \left( \begin{vmatrix} \dfrac{\partial f}{\partial z} & 1 \\ \dfrac{\partial f}{\partial x} & 0 \end{vmatrix}, -\begin{vmatrix} 0 & 1 \\ 1 & 0 \end{vmatrix}, \begin{vmatrix} 0 & \dfrac{\partial f}{\partial z} \\ 1 & \dfrac{\partial f}{\partial x} \end{vmatrix} \right) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right)$$
+$$
+\mathbf{n} = \mathbf{T}_z \times \mathbf{T}_x = \begin{vmatrix} \mathbf{i} & \mathbf{j} & \mathbf{k} \\ 0 & \dfrac{\partial f}{\partial z} & 1 \\ 1 & \dfrac{\partial f}{\partial x} & 0 \end{vmatrix} = \left( \begin{vmatrix} \dfrac{\partial f}{\partial z} & 1 \\ \dfrac{\partial f}{\partial x} & 0 \end{vmatrix}, -\begin{vmatrix} 0 & 1 \\ 1 & 0 \end{vmatrix}, \begin{vmatrix} 0 & \dfrac{\partial f}{\partial z} \\ 1 & \dfrac{\partial f}{\partial x} \end{vmatrix} \right) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right)
+$$
 
 我们用来生成山丘网格的函数是：
 
-$$f(x, z) = 0.3z\cdot\sin(0.1x) + 0.3x\cdot\cos(0.1z)$$
+$$
+f(x, z) = 0.3z\cdot\sin(0.1x) + 0.3x\cdot\cos(0.1z)
+$$
 
 偏导数为：
 
-$$\frac{\partial f}{\partial x} = 0.03z\cdot\cos(0.1x) + 0.3\cos(0.1z)$$
-$$\frac{\partial f}{\partial z} = 0.3\sin(0.1x) - 0.03x\cdot\sin(0.1z)$$
+$$
+\frac{\partial f}{\partial x} = 0.03z\cdot\cos(0.1x) + 0.3\cos(0.1z)
+$$
+$$
+\frac{\partial f}{\partial z} = 0.3\sin(0.1x) - 0.03x\cdot\sin(0.1z)
+$$
 
 因此，表面点 $(x, f(x, z), z)$ 处的表面法线<a id="page354"/>为：
 
-$$\mathbf{n}(x, z) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right) = \begin{bmatrix} -0.03z\cdot\cos(0.1x) - 0.3\cos(0.1z) \\ 1 \\ -0.3\sin(0.1x) + 0.03x\cdot\sin(0.1z) \end{bmatrix}^T$$
+$$
+\mathbf{n}(x, z) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right) = \begin{bmatrix} -0.03z\cdot\cos(0.1x) - 0.3\cos(0.1z) \\ 1 \\ -0.3\sin(0.1x) + 0.03x\cdot\sin(0.1z) \end{bmatrix}^T
+$$
 
 我们注意到这个表面法线不是单位长度，因此在做光照计算之前需要归一化。
 
@@ -1222,8 +1280,12 @@ void LitWavesApp::UpdateMainPassCB(const GameTimer& gt)
 5. 修改习题 3 的解，去掉三点光照，并在每根柱子之上的每个球体中心处添加一个朝下照射的聚光灯。
 6. 卡通风格光照的一个特点是颜色明暗之间是突变而非平滑过渡，如图 8.30 所示。实现方法是：照常计算 $k_d$ 和 $k_s$，但在像素着色器中使用它们之前，先用如下离散函数对它们做变换：
 
-   $$k_d' = f(k_d) = \begin{cases} 0.4 & \text{if } -\infty < k_d \le 0.0 \\ 0.6 & \text{if } 0.0 < k_d \le 0.5 \\ 1.0 & \text{if } 0.5 < k_d \le 1.0 \end{cases}$$
-   $$k_s' = g(k_s) = \begin{cases} 0.0 & \text{if } 0.0 \le k_s \le 0.1 \\ 0.5 & \text{if } 0.1 < k_s \le 0.8 \\ 0.8 & \text{if } 0.8 < k_s \le 1.0 \end{cases}$$
+   $$
+   k_d' = f(k_d) = \begin{cases} 0.4 & \text{if } -\infty < k_d \le 0.0 \\ 0.6 & \text{if } 0.0 < k_d \le 0.5 \\ 1.0 & \text{if } 0.5 < k_d \le 1.0 \end{cases}
+   $$
+   $$
+   k_s' = g(k_s) = \begin{cases} 0.0 & \text{if } 0.0 \le k_s \le 0.1 \\ 0.5 & \text{if } 0.1 < k_s \le 0.8 \\ 0.8 & \text{if } 0.8 < k_s \le 1.0 \end{cases}
+   $$
 
    修改本章的光照演示，使用这种卡通着色（toon shading）。（注意：上面的函数 $f$ 和 $g$ 只是用来起步的示例函数，可以调整到你得到想要的效果为止。）
 

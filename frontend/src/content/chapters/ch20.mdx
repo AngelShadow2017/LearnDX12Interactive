@@ -77,6 +77,15 @@ $$
 
 <p className="math-note">这里的比较建立在已经变换到光源空间、并匹配同一阴影贴图位置的深度上。离散纹素和深度精度会让表面误判成挡住自己，于是出现阴影痤疮。</p>
 
+<p>PCF（percentage-closer filtering）不是先把深度图模糊，而是对核内每个深度样本分别做“是否受光”的比较，再平均 0/1 结果：</p>
+
+$$
+V(\mathbf{p})=\frac{1}{N}\sum_{i=1}^{N}
+\mathbf{1}\!\left[d(\mathbf{p})-b\le s(\mathbf{u}+\Delta\mathbf{u}_i)\right].
+$$
+
+<p className="math-note">$s$ 是该纹素记录的最近遮挡深度，$d(\mathbf{p})$ 是接收点在光源空间的深度，$b$ 是避免自遮挡的微小深度偏移，$\mathbf{1}[\cdot]$ 在条件成立时取 1，否则取 0。若 4 个样本里 3 个通过，$V=0.75$，表示该像素有 75% 的采样结果可见；这会柔化阴影边缘，但本身不等于根据光源大小模拟真实软阴影。</p>
+
 <div className="figure-pair">
   <Figure src="images/Fig20-7.jpg" alt="地面上的阴影条纹（阴影痤疮伪影）" figureNumber="图 20.7" caption="地面上的阴影条纹（stair-stepping 明暗交替）——阴影痤疮伪影。" />
   <Figure src="images/Fig20-8.jpg" alt="阴影图采样场景深度：有限分辨率导致每个 texel 覆盖一块区域" figureNumber="图 20.8" caption="阴影图采样场景深度：有限分辨率导致每个 texel 覆盖一块区域。" />
@@ -100,6 +109,26 @@ $$
   <Figure src="images/Fig20-16.jpg" alt="大 PCF 核的问题：与 s1 比较深度不对" figureNumber="图 20.16" caption="与 s0 比较深度 d(p) 是正确的（s0 覆盖 p 所在区域）；与 s1 比较则不对。" />
   <Figure src="images/Fig20-17.jpg" alt="在 u 方向偏移 Δu 采样会带来深度误差" figureNumber="图 20.17" caption="（2D 简化）在 u 方向偏移 Δu 采样会带来深度误差——大 PCF 核的问题。" />
 </div>
+
+<Callout tone="note">
+  <b>大滤波核还要让接收深度跟着采样位置走</b>
+  <p>采样坐标偏移到邻近纹素后，若仍拿中心像素的深度作比较，斜面上就会把“不同位置的表面”混在一起比。把接收面局部看成平面，可用一阶变化量修正深度：</p>
+  $$
+  d_i\approx d+\frac{\partial d}{\partial u}\Delta u_i+
+  \frac{\partial d}{\partial v}\Delta v_i.
+  $$
+  <p>随后用 $d_i$ 与第 i 个阴影深度比较。若着色器先通过 <code>ddx/ddy</code> 得到屏幕空间导数，可以用纹理坐标的 Jacobian 反解光源纹理空间中的深度导数：</p>
+  $$
+  \begin{bmatrix}\dfrac{\partial d}{\partial u}&\dfrac{\partial d}{\partial v}\end{bmatrix}
+  =
+  \begin{bmatrix}\dfrac{\partial d}{\partial x}&\dfrac{\partial d}{\partial y}\end{bmatrix}
+  \begin{bmatrix}
+  \dfrac{\partial u}{\partial x}&\dfrac{\partial u}{\partial y}\\
+  \dfrac{\partial v}{\partial x}&\dfrac{\partial v}{\partial y}
+  \end{bmatrix}^{-1}.
+  $$
+  <p>这样深度沿着接收面的斜率随采样位置修正；增大 bias 不能替代这一步，因为过大的 bias 会造成阴影从物体底部脱离。</p>
+</Callout>
 </section>
 
 <section className="lesson-section" id="s206">

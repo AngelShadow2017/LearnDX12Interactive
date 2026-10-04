@@ -86,10 +86,28 @@ import { GridMeshActivity } from '@/activities/GridMeshActivity';
   <Figure src="images/Fig7-1.jpg" alt="8 切片 × 4 层的圆柱与更精细的圆柱" figureNumber="图 7.1" caption="左：8 切片 × 4 层的圆柱；右：更多切片与层的更精细圆柱。" />
   <Figure src="images/Fig7-2.jpg" alt="第 i、i+1 环与第 j 切片之间的顶点 A、B、C、D" figureNumber="图 7.2" caption="第 i、i+1 环与第 j 切片之间的顶点 A、B、C、D。" />
 </div>
+
+<p>圆柱侧面可看成在高度与角度两个参数上采样。让 <code>t</code> 从底面走到顶面、让 <code>θ</code> 绕轴旋转：</p>
+
+$$
+y(t)=-\frac{h}{2}+th,\qquad
+r(t)=r_b+t(r_t-r_b),\qquad
+\mathbf{p}(t,\theta)=\bigl(r(t)\cos\theta,\;y(t),\;r(t)\sin\theta\bigr).
+$$
+
+<p>每个 stack 取一个高度样本，每个 slice 取一个角度样本；相邻两圈、相邻两个角度围成一个四边形，再拆成两个三角形。若圆柱上下半径不同，$r(t)$ 便线性变化，侧面自然成为圆锥台；切片数控制绕轴方向的平滑度，层数控制高度方向的密度。</p>
 <div className="figure-pair">
   <Figure src="images/Fig7-3.jpg" alt="切片与层的概念同样适用于球体" figureNumber="图 7.3" caption="切片与层的概念同样适用于球体，控制细分程度。" />
   <Figure src="images/Fig7-4.jpg" alt="用反复细分并投影回球面近似测地球" figureNumber="图 7.4" caption="用反复细分 + 投影回球面近似测地球（geosphere）。" />
 </div>
+
+<p>测地球从正二十面体开始：把每个三角形分成四个小三角形，然后把新顶点投影回目标半径 <code>r</code> 的球面：</p>
+
+$$
+\mathbf{v}'=r\,\frac{\mathbf{v}}{\lVert\mathbf{v}\rVert}.
+$$
+
+<p>这一步只改变顶点到球心的距离，不改变方向；重复细分与投影会让三角形越来越小，球面轮廓也越来越圆。代价是每次细分都会显著增加面数。</p>
 
 <Figure src="images/Fig7-5.jpg" alt="把一个三角形细分为四个等面积三角形" figureNumber="图 7.5" caption="把一个三角形细分为四个等面积三角形。" />
 
@@ -134,6 +152,23 @@ import { GridMeshActivity } from '@/activities/GridMeshActivity';
   <Figure src="images/Fig7-9.jpg" alt="格网的构建过程" figureNumber="图 7.9" caption="格网的构建过程。" />
   <Figure src="images/Fig7-10.jpg" alt="第 ij 个格子的顶点索引布局" figureNumber="图 7.10" caption="第 ij 个格子的顶点索引布局。" />
 </div>
+
+<h3>从行列号算出地形网格</h3>
+
+<p>对一个有 <code>m</code> 行、<code>n</code> 列顶点的格网，行号 <code>i</code> 向下增加，列号 <code>j</code> 向右增加。若格网宽为 <code>w</code>、深为 <code>d</code>，顶点间距与顶点位置是：</p>
+
+$$
+\Delta x=\frac{w}{n-1},\qquad \Delta z=\frac{d}{m-1},\qquad
+\mathbf{v}_{i,j}=\left(-\frac{w}{2}+j\Delta x,\;0,\;\frac{d}{2}-i\Delta z\right).
+$$
+
+<p>平面格网一共有 <code>mn</code> 个顶点，索引可用行优先编号 <code>k=i·n+j</code>。每个小格有四个角：<code>A=i·n+j</code>、<code>B=A+1</code>、<code>C=(i+1)·n+j</code>、<code>D=C+1</code>，按书中的绕序拆成两个三角形：</p>
+
+$$
+\triangle ABC=(A,B,C),\qquad \triangle CBD=(C,B,D).
+$$
+
+<p>例如 <code>m=3</code>、<code>n=4</code> 时有 12 个顶点、6 个小格和 36 个索引。行号 <code>i=1</code>、列号 <code>j=2</code> 的小格编号是 <code>A=6、B=7、C=10、D=11</code>，因此两个三角形索引是 <code>(6,7,10)</code> 与 <code>(10,7,11)</code>。在这个平面上再把每个顶点的 y 替换成高度函数 <code>f(x,z)</code>，就得到地形表面。</p>
 
 <Callout tone="tip">
   <b>动态顶点缓冲也要按帧资源分开</b>

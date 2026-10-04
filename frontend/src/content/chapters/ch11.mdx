@@ -97,9 +97,34 @@ $$
 </div>
 
 <div className="figure-pair">
-  <Figure src="images/Fig11-8.jpg" alt="n·L 小于 0 时投影矩阵退化" figureNumber="图 11.8" caption="n·L 小于 0 的情形：光源照不到投影面，投影矩阵退化——需要处理。" />
+  <Figure src="images/Fig11-8.jpg" alt="n·L 小于 0 时投影结果的齐次 w 为负" figureNumber="图 11.8" caption="n·L 小于 0 时，投影矩阵得到负的齐次 w；透视除法前的裁剪会把阴影丢掉，需要处理这个符号问题。" />
   <Figure src="images/Fig11-9.jpg" alt="点光源投射的平面阴影" figureNumber="图 11.9" caption="点光源投射的平面阴影。" />
 </div>
+
+<p>投影的计算就是“沿一条光线找到它与地面的交点”。设投影平面为 <code>n·x+d=0</code>。平行光的光线方向记为 <code>l</code>，从物体顶点 <code>p</code> 出发的光线是 <code>r(t)=p+t·l</code>。将它代入平面方程并解出 t：</p>
+
+$$
+t_s=-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot\mathbf{l}},\qquad
+\mathbf{s}=\mathbf{p}+t_s\mathbf{l}
+=\mathbf{p}-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot\mathbf{l}}\mathbf{l}.
+$$
+
+<p>例如地面为 <code>y=0</code>，光线沿 <code>l=(0,−1,0)</code> 传播，顶点 <code>p=(1,4,2)</code> 会投影到 <code>s=(1,0,2)</code>。若 <code>n·l=0</code>，光线与平面平行，交点不存在或不唯一，不能用这个投影公式。</p>
+
+<p>点光源位置记为 <code>q</code>；从光源经过物体顶点继续延长，方向为 <code>p−q</code>：</p>
+
+$$
+\mathbf{s}=\mathbf{p}
+-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot(\mathbf{p}-\mathbf{q})}
+(\mathbf{p}-\mathbf{q}).
+$$
+
+<p>点光源情形也要求分母 <code>n·(p−q)</code> 非零；若它为 0，光源到顶点的连线与投影平面平行，不会在有限距离处相交。</p>
+
+<Callout tone="note">
+  <b>本节的光线方向与第 8 章符号相反</b>
+  <p>这里的 <code>l</code> 表示光线传播方向；第 8 章的 <code>L</code> 表示从受光点指向光源。点光源公式中的 <code>q</code> 是灯的位置，避免把方向向量和灯的位置混为一谈。</p>
+</Callout>
 
 <Callout tone="note">
   <b>双重混合问题</b>

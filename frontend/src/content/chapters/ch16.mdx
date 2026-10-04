@@ -59,7 +59,7 @@ mCommandList->DrawIndexedInstanced(mIndexCount, mInstanceCount, 0, 0, 0);`}
 $$
 \mathbf{c}=\frac{\mathbf{v}_{min}+\mathbf{v}_{max}}{2},\qquad
 \mathbf{e}=\frac{\mathbf{v}_{max}-\mathbf{v}_{min}}{2},\qquad
-r=\max_{\mathbf{p}\in mesh}\lVert\mathbf{p}-\mathbf{c}\rVert.
+r=\max_{\mathbf{p}\in\mathcal{V}}\lVert\mathbf{p}-\mathbf{c}\rVert.
 $$
 
 <p>第一组结果让 AABB 可用“中心 ± 半边长”做测试；最后一项确保球至少包住网格的每个顶点。若物体做非均匀缩放，球半径乘最大缩放分量仍是保守的包围半径。</p>

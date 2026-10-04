@@ -63,6 +63,83 @@ static const D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
 <IndexBufferActivity />
 </section>
 
+<section className="lesson-section" id="s64">
+<h2>6.4 顶点着色器：把一个顶点送到下一阶段</h2>
+
+<p>输入布局把顶点字节映射成 HLSL 输入；顶点着色器（VS）再把每个局部顶点变换到齐次裁剪空间，并把颜色传给后续阶段：</p>
+
+<CodeSample
+  title="位置和颜色的顶点着色器"
+  language="hlsl"
+  code={`cbuffer cbPerObject : register(b0)
+{
+    float4x4 gWorldViewProj;
+};
+
+struct VertexIn
+{
+    float3 PosL : POSITION;
+    float4 Color : COLOR;
+};
+
+struct VertexOut
+{
+    float4 PosH : SV_POSITION;
+    float4 Color : COLOR;
+};
+
+VertexOut VS(VertexIn vin)
+{
+    VertexOut vout;
+    vout.PosH = mul(float4(vin.PosL, 1.0f), gWorldViewProj);
+    vout.Color = vin.Color;
+    return vout;
+}`}
+  input={<>由输入布局匹配到 POSITION 和 COLOR 的一个局部顶点。</>}
+  keyLines={[
+    { code: 'float4(vin.PosL, 1.0f)', note: '位置是点，齐次坐标 w=1；若是方向向量才用 w=0。' },
+    { code: 'mul(..., gWorldViewProj)', note: '行向量依次经世界、视图、投影变换，输出齐次裁剪坐标。' },
+    { code: 'SV_POSITION', note: '硬件需要它来裁剪、做透视除法和光栅化；VS 本身尚未执行透视除法。' },
+    { code: 'vout.Color = vin.Color', note: '颜色不在这里求每个像素的值，光栅化时会在三角形上插值。' },
+  ]}
+  output={<>每个输入顶点得到一个裁剪空间位置和一份待插值的颜色。</>}
+  pitfalls={[
+    '把局部三维位置直接作为 SV_POSITION：后续裁剪/光栅化需要的是齐次裁剪坐标。',
+    '把顶点颜色当作平面内每个片元的最终颜色：三角形内部会按光栅化规则插值。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s65">
+<h2>6.5 像素着色器：决定片元输出什么</h2>
+
+<p>光栅化把三角形覆盖的区域转换成片元，并把 VS 输出的颜色插值后送给像素着色器（PS）。下面先不加光照，只把插值颜色写入当前渲染目标：</p>
+
+<CodeSample
+  title="直接输出插值颜色"
+  language="hlsl"
+  code={`float4 PS(VertexOut pin) : SV_Target
+{
+    return pin.Color;
+}`}
+  input={<>VS 输出的 COLOR 语义经过光栅化插值后传入的片元颜色。</>}
+  keyLines={[
+    { code: 'SV_Target', note: '告诉输出合并阶段，这个返回值是渲染目标颜色。' },
+    { code: 'return pin.Color', note: '本例没有计算材质或光照，只观察从顶点颜色到片元颜色的传递。' },
+  ]}
+  output={<>每个通过后续测试的片元把插值后的颜色交给输出合并阶段。</>}
+  pitfalls={[
+    '把 PS 输入当成原始顶点数据：这里的 COLOR 已经是三角形内插值结果。',
+    '把 SV_Target 当成顶点属性语义：它标记的是像素着色器输出目标。',
+  ]}
+/>
+
+<Callout tone="note">
+  <b>一条数据流</b>
+  <p>顶点缓冲 → 输入布局匹配 POSITION/COLOR → VS 输出 SV_POSITION/COLOR → 光栅化插值 → PS 输出 SV_Target。第 8 章会在这个 PS 里加入法线、光照和材质计算。</p>
+</Callout>
+</section>
+
 <section className="lesson-section" id="s66">
 <h2>6.6 常量缓冲</h2>
 
@@ -71,6 +148,17 @@ static const D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
 <Callout tone="warning">
   <b>256 字节对齐</b>
   <p>D3D12 要求常量缓冲大小向上对齐到 256 字节。示例里用 <code>d3dUtil::CalcConstantBufferByteSize</code> 做这件事。</p>
+</Callout>
+
+<h3>常量缓冲寄存器与根签名</h3>
+
+<p>着色器里的 <code>register(b0)</code> 只是声明“这个常量缓冲从 b0 槽读取”；它不会替 CPU 创建或绑定资源。<b>根签名</b>描述应用允许提供哪些资源，以及这些资源映射到哪些着色器寄存器；绘制命令还必须把实际的 CBV、SRV、UAV 或采样器绑定到对应参数。</p>
+
+<p>可以把它看成三步：HLSL 声明需要 <code>b0</code>；根签名声明一个参数能够提供 <code>b0</code> 的 CBV；命令列表在绘制前给这个参数设置 GPU 描述符句柄。若根签名没提供着色器要求的资源，创建 PSO 时就会发现二者不兼容。</p>
+
+<Callout tone="note">
+  <b>根签名不是资源本身</b>
+  <p>根签名像函数参数表，描述资源的“位置与类型”；CBV/SRV/UAV 描述符才指向具体资源。创建根签名不会自动绑定任何纹理或常量缓冲。</p>
 </Callout>
 
 <h3>着色器语义</h3>
@@ -139,6 +227,45 @@ ThrowIfFailed(hr);`}
   <b>代价是灵活性</b>
   <p>PSO 创建开销大，而且状态组合会爆炸。实践做法是：启动时把所有会用到的 PSO 一次性建好，运行时只切换；不要每帧创建。</p>
 </Callout>
+</section>
+
+<section className="lesson-section" id="s610">
+<h2>6.10 MeshGeometry：把网格数据和绘制范围放在一起</h2>
+
+<p>后续示例反复使用 <code>MeshGeometry</code>，它把顶点/索引缓冲、GPU 资源视图、CPU 侧数据副本和子网格范围收在同一个对象里。CPU 副本不是多余备份：拾取与碰撞检测会在 CPU 上读取网格，而绘制则使用 GPU 资源。</p>
+
+<CodeSample
+  title="一个缓冲里切出多个子网格"
+  language="cpp"
+  code={`struct SubmeshGeometry
+{
+    UINT IndexCount = 0;
+    UINT StartIndexLocation = 0;
+    INT BaseVertexLocation = 0;
+    DirectX::BoundingBox Bounds;
+};
+
+const SubmeshGeometry& submesh = geo->DrawArgs["box"];
+auto vbv = geo->VertexBufferView();
+auto ibv = geo->IndexBufferView();
+mCommandList->IASetVertexBuffers(0, 1, &vbv);
+mCommandList->IASetIndexBuffer(&ibv);
+mCommandList->DrawIndexedInstanced(
+    submesh.IndexCount, 1, submesh.StartIndexLocation,
+    submesh.BaseVertexLocation, 0);`}
+  input={<>共享的大顶点/索引缓冲，以及记录 box 子网格范围的 <code>DrawArgs</code>。</>}
+  keyLines={[
+    { code: 'StartIndexLocation', note: '从索引缓冲的哪一项开始读这个子网格。' },
+    { code: 'BaseVertexLocation', note: '把子网格局部索引加到大顶点缓冲中的顶点基址上。' },
+    { code: 'Bounds', note: '子网格的包围盒可用于后续的视锥剔除。' },
+  ]}
+  output={<>同一个 GPU 缓冲可以存放多份网格；每个子网格只需自己的索引范围和顶点基址。</>}
+  pitfalls={[
+    '把 StartIndexLocation 当成顶点偏移：它索引的是索引缓冲。',
+    'BaseVertexLocation 与起始索引同时设成同一类偏移：两者分别定位索引范围和顶点范围。',
+    '释放 CPU 副本后仍期待 CPU 做网格拾取：GPU 默认堆不能直接当作 CPU 网格数组使用。',
+  ]}
+/>
 </section>
 
 <section className="lesson-section" id="s611">

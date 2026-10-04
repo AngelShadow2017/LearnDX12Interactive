@@ -105,7 +105,17 @@ DXGI_FORMAT_R16G16B16A16_TYPELESS
 
 <Figure src="images/Fig4-3.jpg" alt="三维场景的视体与其二维侧视图，标出投影到像素 P 的三个像素 P1、P2、P3" figureNumber="图 4.3" caption="视图窗口对应于我们对三维场景生成的二维图像（后缓冲）。我们看到三个不同的像素可能被投影到像素 P 上。直觉告诉我们 P₁ 应该被写入 P，因为它离观看者更近，遮挡了另外两个像素。深度缓冲算法提供了一个在计算机上确定这一点的机械过程。注意我们图中显示的深度值是相对于所观察的三维场景的，但存入深度缓冲时它们实际被归一化到 [0.0, 1.0] 范围。" />
 
-<Figure src="images/tbl129.jpg" alt="按圆柱、球、圆锥顺序绘制时像素 P 与深度值 d 的更新表" caption="按圆柱、球、圆锥顺序绘制物体时，像素 P 及其深度值的更新过程。" />
+<table className="translation-table">
+  <thead><tr><th>操作</th><th>像素 $P$</th><th>深度 $d$</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>清除缓冲区</td><td>黑色</td><td>1.0</td><td>初始化像素及其对应的深度项。</td></tr>
+    <tr><td>绘制圆柱</td><td>$P_3$</td><td>$d_3$</td><td>由于 $d_3\le d=1.0$，深度测试通过；更新缓冲区，令 $P=P_3$、$d=d_3$。</td></tr>
+    <tr><td>绘制球体</td><td>$P_1$</td><td>$d_1$</td><td>由于 $d_1\le d=d_3$，深度测试通过；更新缓冲区，令 $P=P_1$、$d=d_1$。</td></tr>
+    <tr><td>绘制圆锥</td><td>$P_1$</td><td>$d_1$</td><td>由于 $d_2>d=d_1$，深度测试失败；不更新缓冲区。</td></tr>
+  </tbody>
+</table>
+
+<Figure src="images/tbl129.jpg" alt="原书深度缓冲示例表格，可放大查看" caption="原书表格图像；上表已将各行内容翻译为中文。" />
 
 可以看到，只有当我们发现某个像素的深度值更小时，才更新该像素以及深度缓冲中对应的深度值。这样一来，一切完成之后，被渲染的就是离观看者最近的像素。（如果你仍未被说服，可以试着把绘制顺序调换过来，再把这个例子推演一遍。）
 
@@ -2258,7 +2268,6 @@ ThrowIfFailed(md3dDevice->CreateCommittedResource(
 12. 示例框架用于提供一个统一的接口，本书所有演示程序都遵循它。*d3dUtil.h*、*d3dUtil.cpp*、*d3dApp.h* 和 *d3dApp.cpp* 文件中提供的代码，封装了每个应用程序都必须实现的标准初始化<a id="page157"/>代码。通过封装这些代码，我们把它隐藏起来，从而让示例更聚焦于当前主题。
 13. 对于调试模式构建，我们启用调试层（`debugController->EnableDebugLayer()`）。启用调试层时，Direct3D 会把调试消息发送到 VC++ 输出窗口。
 </section>
-
 
 
 

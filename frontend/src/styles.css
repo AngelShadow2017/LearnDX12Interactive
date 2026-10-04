@@ -197,6 +197,9 @@ a:hover { color: var(--green-dark); }
 .lesson-content code:not(pre code) { padding: 2px 5px; border-radius: 4px; background: #edf0e9; color: #47694f; font-family: var(--mono); font-size: .88em; }
 .lesson-content pre { max-width: 100%; overflow: auto; padding: 16px 18px; border: 1px solid #313b34; border-radius: 9px; background: #202a25; color: #e4eae1; font: 12px/1.8 var(--mono); }
 .lesson-content table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 11px; }
+.lesson-content table.translation-table { font-size: 14px; }
+.lesson-content table.translation-table th, .lesson-content table.translation-table td { padding: 8px 10px; border: 1px solid #dfe4dc; text-align: left; vertical-align: top; }
+.lesson-content table.translation-table th { background: #edf1ea; color: #31473a; }
 .lesson-content th, .lesson-content td { padding: 9px 10px; border: 1px solid #dfe4dc; text-align: left; vertical-align: top; }
 .lesson-content th { background: #edf1ea; color: #304a3b; font-size: 10px; }
 .lesson-section { scroll-margin-top: 88px; }

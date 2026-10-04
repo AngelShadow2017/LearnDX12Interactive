@@ -12,6 +12,7 @@
     "test:watch": "vitest --config frontend/vitest.config.ts",
     "check:figures": "node tools/check-figures.mjs",
     "check:translations": "node tools/check-translations.mjs",
+    "check:translation-terms": "node tools/check-translation-terms.mjs",
     "check:translations:complete": "node tools/check-translations.mjs --strict"
   },
   "dependencies": {

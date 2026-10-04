@@ -28,7 +28,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-
+        source: ./
+        destination: ./_site
     - name: Build
       run: |
         npm install
@@ -49,7 +50,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # Upload entire repository
-          path: './frontend/dist'
+          path: './_site/'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

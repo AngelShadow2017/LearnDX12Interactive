@@ -1,0 +1,130 @@
+<div className="translation-progress"><b>译文状态</b><span>已按 EPUB 逐段录入；小节按导读入口锚点划分。</span></div>
+
+<section className="lesson-section lesson-section--intro" id="start-goals">
+<h2>导读</h2>
+
+Direct3D 12 是一个渲染库，用于在各种 Windows 10 平台（Windows 桌面、移动设备和 Xbox One）上，借助现代图形硬件编写高性能的三维图形应用程序。Direct3D 是一个低层库：它的应用程序编程接口（API）紧贴它所控制的底层图形硬件。Direct3D 最主要的使用者是游戏行业，许多更高层的渲染引擎都构建在 Direct3D 之上。不过，其他行业同样需要高性能的交互式三维图形，例如医学与科学可视化以及建筑漫游。此外，随着每一台新 PC 都配备现代显卡，非三维应用也开始利用 GPU（图形处理单元）把密集计算卸载到显卡上；这称为**通用 GPU 计算**，Direct3D 为编写通用 GPU 程序提供了计算着色器 API。虽然 Direct3D 12 通常使用原生 C++ 编程，但 SharpDX 团队（http://sharpdx.org/）正在编写 .NET 包装，使你能够从托管应用中访问这一强大的三维图形 API。
+
+本书介绍如何使用 Direct3D 12 编写交互式计算机图形程序，重点放在游戏开发上。它讲授 Direct3D 与着色器编程的基础知识，读完之后，你将有能力继续学习更高级的技术。全书分为三大部分。第 I 部分讲解本书自始至终会用到的数学工具。第 II 部分说明如何在 Direct3D 中实现基本任务，例如初始化；定义三维几何体；搭建摄像机；创建顶点、像素、几何和计算着色器；光照；纹理；混合；模板；以及曲面细分。第 III 部分主要讲如何把 Direct3D 应用于实现各种有趣的技术和特效，例如处理带动画的角色网格、拾取、环境映射、法线映射、实时阴影和环境光遮蔽。
+
+对初学者而言，本书最好从头读到尾。各章的编排使难度逐章递进，因此不会出现复杂度突然跳变、让读者迷失的情况。一般来说，对于某一章，我们都会用到此前已经讲解过的技术和概念。因此，掌握一章的内容之后再继续下一章是很重要的。有经验的读者可以挑选自己感兴趣的章节来读。
+
+最后，你可能想知道读完本书之后能开发什么样的游戏。回答这个问题的最好方式，是快速浏览全书，看看书中开发了哪些类型的应用。由此你应该能够设想出：基于本书所教的技术，再加上你自己的创意，可以开发出哪些类型的游戏。
+
+<h3>预期读者</h3>
+
+本书在设计时考虑了以下三类读者：
+
+1. 希望借助最新一代 Direct3D 入门三维编程的中级 C++ 程序员。
+2. 熟悉 DirectX 之外其他 API（例如 OpenGL）、希望入门 Direct3D 12 的三维程序员。
+3. 希望学习最新版 Direct3D 的有经验的 Direct3D 程序员。
+</section>
+
+<section className="lesson-section" id="start-background">
+<h2>先修要求</h2>
+
+需要强调的是，本书是关于 Direct3D 12、着色器编程和三维游戏编程的入门书，而<em>不是</em>一般计算机编程的入门书。读者应满足以下先修要求：
+
+1. 高中数学：例如代数、三角学以及（数学）函数。
+2. 能熟练使用 Visual Studio：例如知道如何创建项目、添加文件以及指定要链接的外部库。
+3. 中级的 C++ 与数据结构技能：例如对指针、数组、运算符重载、链表、继承和多态感到自在。
+4. 熟悉使用 Win32 API 进行 Windows 编程会有帮助，但并非必需；我们在附录 A 中提供了 Win32 入门介绍。
+</section>
+
+<section className="lesson-section" id="start-tools">
+<h2>所需的开发工具与硬件</h2>
+
+编写 Direct3D 12 应用程序需要以下条件：
+
+1. Windows 10。
+2. Visual Studio 2015 或更高版本。
+3. 支持 Direct3D 12 的显卡。本书中的演示程序在 Geforce GTX 760 上测试通过。
+
+<h3>使用 DirectX SDK 文档与 SDK 示例</h3>
+
+Direct3D 是一个庞大的 API，我们无法在这一本书中覆盖它的全部细节。因此，为了获得更深入的信息，你必须学会使用 DirectX SDK 文档。最新文档可在 MSDN 上获取：
+
+*https://msdn.microsoft.com/en-us/library/windows/desktop/dn899121%28v=vs.85%29.aspx*
+
+图 1 给出了在线文档的截图。
+
+<Figure src="images/Fig1.jpg" alt="MSDN 上 Direct3D 编程指南页面的截图" figureNumber="图 1" caption="DirectX 文档中的 Direct3D 编程指南。" />
+
+DirectX 文档几乎覆盖了 Direct3D API 的每个部分，因此作为参考非常有用；但由于文档本身不太深入、或者默认读者已掌握某些前置知识，它并不是最好的学习工具。不过，随着每一个新版 DirectX 的发布，文档都在变得越来越好。
+
+正如前面所说，文档主要用作参考。假设你遇到某个与 DirectX 相关的类型或函数，比如你想进一步了解函数 `ID3D12Device::CreateCommittedResource`。你只需在文档中搜索，就能得到该对象类型（本例中是函数）的说明；见图 2。
+
+<Figure src="images/Fig2.jpg" alt="MSDN 文档中某个函数说明页面的截图" figureNumber="图 2" caption="查阅某个函数的文档。" />
+
+注：本书会不时引导你查阅文档以获取更多细节。
+
+我们还想指出，网上提供了大量 Direct3D 12 示例程序：
+
+*https://github.com/Microsoft/DirectX-Graphics-Samples*
+
+未来还会出现更多示例；同时也请留意 NVIDIA、AMD 和 Intel 网站上的 Direct3D 12 示例。
+
+<h3>关于清晰度</h3>
+
+尽管我们力求编写高效的代码并遵循 Direct3D 12 编程的最佳实践，但每个示例程序的主要目标是演示 Direct3D 概念或图形编程技巧。编写最优代码并非目标，而且那样做很可能会掩盖想要说明的思想。如果你在自己的项目中使用了这些示例代码，请记住这一点：你可能需要重写它们以获得更好的效率。此外，为了专注于 Direct3D API，我们在 Direct3D 之上只构建了最小化的基础设施。这意味着我们把某些通常应由数据驱动的值硬编码并在源代码中定义。在一个大型三维应用中，你很可能会在 Direct3D 之上实现一个渲染引擎；不过，本书的主题是 Direct3D API，而不是渲染引擎设计。
+
+<h3>示例程序与在线补充材料</h3>
+
+本书的网站（www.d3dcoder.net 和 www.merclearning.com）在充分发挥本书价值方面起着不可或缺的作用。在网站上，你可以找到本书中每个示例的完整源代码和工程文件。很多情况下，DirectX 程序过于庞大，无法完整嵌入书中；因此我们只嵌入与所讲思想相关的代码片段。强烈建议读者研究相应的演示代码，以查看程序的完整形态。（我们力求让演示程序小巧而聚焦，便于学习。）作为一条一般原则，读者在读完一章并花些时间研究演示代码之后，应该能够独立实现该章的演示程序。事实上，一个很好的练习就是：把书和示例代码作为参考，尝试自己实现这些示例。
+</section>
+
+<section className="lesson-section" id="start-route">
+<h2>在 Visual Studio 2010 中搭建演示工程</h2>
+
+本书的演示程序只需双击相应的工程文件（.vcxproj）或解决方案文件（.sln）即可打开。本节说明如何使用 Visual Studio 2015（VS15），基于本书的演示应用框架从零创建并构建一个工程。作为示例，我们将说明如何重新创建并构建第 6 章的 "Box" 演示。
+
+<h3>下载本书的源代码</h3>
+
+首先，把本书的源代码下载到硬盘上的某个文件夹。为便于讨论，假设该文件夹为 *C:\d3d12book*。在源代码文件夹中，你会看到每一章对应的文件夹列表，每个文件夹包含该章的代码工程。还会看到一个名为 *Common* 的文件夹，它包含所有演示程序共用的源代码。接着，在源代码文件夹中新建一个用于存放你自己演示程序的文件夹，例如 *C:\d3d12book\MyDemos*。你将在这个文件夹中基于本书的示例框架创建新工程。
+
+注：这种目录结构并非完全必要，但它就是本书演示程序所采用的结构。如果你习惯于自行设置额外的包含路径，也可以把演示工程放在任何位置，只要让 Visual Studio 知道如何找到 *Common* 目录中的源代码即可。
+
+<h3>创建 Win32 工程</h3>
+
+首先启动 VS15，然后从主菜单选择 **File->New->Project**，如图 3 所示。
+
+<Figure src="images/Fig3.jpg" alt="Visual Studio 中 File-&gt;New-&gt;Project 菜单项" figureNumber="图 3" caption="创建一个新工程。" />
+
+随后会弹出 New Project 对话框（图 4）。在左侧的 Visual C++ Project Types 树控件中选择 **Visual C++ > Win32**；在右侧选择 **Win32 Project**。接着为工程命名，并指定你希望存放工程文件夹的位置。如果 **Create directory for solution** 默认被勾选，请取消勾选。然后点击 **OK**。
+
+<Figure src="images/Fig4.jpg" alt="New Project 对话框中的 Visual C++ &gt; Win32 &gt; Win32 Project 选项" figureNumber="图 4" caption="New Project 设置。" />
+
+此时会弹出另一个对话框，左侧有两个选项：Overview 和 Application Settings。选择 **Application Settings**，得到图 5 所示的对话框。在这里务必确认选择了 **Windows application**，并且勾选了 **Empty project**。然后按 **Finish** 按钮。到此你已经成功创建了一个空的 Win32 工程，但在构建 DirectX 工程演示程序之前，还有一些事情要做。
+
+<Figure src="images/Fig5.jpg" alt="Application Settings 对话框中的 Windows application 与 Empty project 选项" figureNumber="图 5" caption="应用程序设置。" />
+
+<h3>链接 DirectX 库</h3>
+
+我们在源代码中通过 *Common/d3dApp.h* 里的 `#pragma` 来链接所需的库文件：
+
+```cpp
+// 链接所需的 d3d12 库。
+#pragma comment(lib,"d3dcompiler.lib")
+#pragma comment(lib, "D3D12.lib")
+#pragma comment(lib, "dxgi.lib")
+```
+
+这样制作演示程序时，就不必再打开工程属性页、在 Linker 设置中指定附加依赖项。
+
+<h3>添加源代码并构建工程</h3>
+
+最后，我们的工程搭建就完成了。现在可以添加源代码文件并构建工程。首先，把 "Box" 演示的源代码（*d3d12book\Chapter 6  Drawing in Direct3D\Box*）中的 *BoxApp.cpp* 以及 *Shaders* 文件夹复制到你的工程目录。
+
+<Figure src="images/Fig6.jpg" alt="解决方案资源管理器中已加入 BoxApp.cpp、Shaders 与 Common 源文件" figureNumber="图 6" caption="加入「Box」演示所需源文件之后的解决方案资源管理器。" />
+
+复制完成后，按以下步骤把代码加入工程：
+
+1. 在 Solution Explorer 中右键单击工程名，从下拉菜单选择 **Add > Existing Item…**，把 *BoxApp.cpp* 加入工程。
+2. 再次在 Solution Explorer 中右键单击工程名，从下拉菜单选择 **Add > Existing Item…**，导航到你放置本书 *Common* 目录代码的位置，把该目录下的所有 *.h/.cpp* 文件加入工程。此时你的解决方案资源管理器应当如图 6 所示。
+3. 在 Solution Explorer 中右键单击工程名，从上下文菜单选择 **Properties**。在 **Configuration Properties > General** 选项卡下，确认 **Target Platform Version** 设置为版本 **10.x**，以面向 Windows 10。然后点击 **Apply**。
+4. 现在源文件已经成为工程的一部分，你可以从主菜单选择 **Debug->Start Debugging**，以编译、链接并运行该演示程序。图 7 所示的程序应当会出现。
+
+<Figure src="images/Fig7.jpg" alt="Direct3D 窗口中显示的彩色立方体 Box 演示" figureNumber="图 7" caption="&quot;Box&quot; 演示的截图。" />
+
+注：*Common* 目录中的大量代码是在本书进程中逐步构建起来的。因此我们建议你不要立刻去通读这些代码，而应等到你读到书中讲解相应代码的那一章时再看。
+</section>

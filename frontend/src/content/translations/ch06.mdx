@@ -1,0 +1,81 @@
+<div className="translation-progress"><b>本章译文进度</b><span>录入中 · 已录入：6.1 顶点与输入布局 · 待录入：6.2 顶点缓冲、6.3 索引与索引缓冲、6.6 常量缓冲、6.7 编译着色器、6.8 光栅器状态、6.9 管线状态对象、6.11 Box 演示、小结</span></div>
+
+上一章我们主要关注渲染管线的概念与数学层面。本章则关注配置渲染管线、定义顶点与像素着色器，以及向渲染管线提交几何数据以进行绘制所需的 Direct3D API 接口与方法。读完本章，你将能够绘制一个采用纯色着色或线框模式的立方体。
+
+本章目标：
+
+- 了解用于定义、存储和绘制几何数据的 Direct3D 接口与方法。
+- 学习如何编写基本的顶点着色器和像素着色器。
+- 了解如何用管线状态对象配置渲染管线。
+- 理解如何创建常量缓冲数据并绑定到管线，同时熟悉根签名。
+
+<section className="lesson-section lesson-section--intro" id="s61">
+<h2>6.1 顶点与输入布局</h2>
+
+回顾 §5.5.1，Direct3D 中的顶点除空间位置外还可以包含额外数据。要创建自定义顶点格式，我们首先创建一个结构来保存我们选择的顶点<a id="page204"/>数据。例如，下面展示了两种不同的顶点格式：一种由位置和颜色组成，另一种由位置、法线向量和两组二维纹理坐标组成。
+
+```cpp
+struct Vertex1
+{
+    XMFLOAT3 Pos;
+    XMFLOAT4 Color;
+};
+
+struct Vertex2
+{
+    XMFLOAT3 Pos;
+    XMFLOAT3 Normal;
+    XMFLOAT2 Tex0;
+    XMFLOAT2 Tex1;
+};
+```
+
+定义顶点结构之后，我们需要向 Direct3D 提供对该顶点结构的描述，使它知道如何处理各个分量。这个描述以*输入布局描述*（input layout description）的形式提供给 Direct3D，由 `D3D12_INPUT_LAYOUT_DESC` 结构表示：
+
+```cpp
+typedef struct D3D12_INPUT_LAYOUT_DESC
+{
+    const D3D12_INPUT_ELEMENT_DESC *pInputElementDescs;
+    UINT NumElements;
+} D3D12_INPUT_LAYOUT_DESC;
+```
+
+输入布局描述就是一个 `D3D12_INPUT_ELEMENT_DESC` 元素数组，以及该数组中的元素个数。
+
+`D3D12_INPUT_ELEMENT_DESC` 数组中的每个元素描述并对应顶点结构中的一个分量。因此，如果顶点结构有两个分量，相应的 `D3D12_INPUT_ELEMENT_DESC` 数组就有两个元素。`D3D12_INPUT_ELEMENT_DESC` 结构定义如下：
+
+```cpp
+typedef struct D3D12_INPUT_ELEMENT_DESC
+{
+    LPCSTR SemanticName;
+    UINT SemanticIndex;
+    DXGI_FORMAT Format;
+    UINT InputSlot;
+    UINT AlignedByteOffset;
+    D3D12_INPUT_CLASSIFICATION InputSlotClass;
+    UINT InstanceDataStepRate;
+} D3D12_INPUT_ELEMENT_DESC;
+```
+
+1. `SemanticName`：与该元素关联的字符串，可以是任意合法的变量名。语义用于把顶点结构中的元素映射到顶点着色器输入签名中的元素；见图 6.1。
+
+   <Figure src="images/Fig6-1.jpg" alt="顶点结构元素与输入元素描述数组一一对应并映射到着色器参数" figureNumber="图 6.1" caption="顶点结构中的每个元素都由 D3D12_INPUT_ELEMENT_DESC 数组中相应的元素描述。语义名和索引提供了把顶点元素映射到顶点着色器对应参数的方式。" />
+
+2. `SemanticIndex`：附加到某个语义上的索引。这样做的动机在图 6.1 中得到体现：例如，一个顶点结构可能有多组纹理坐标；我们不必引入新的语义名，只可以在末尾附加一个索引来区分两组纹理坐标。着色器代码中未指定索引的语义默认为索引 0；例如，图 6.1 中的 `POSITION` 等价于 `POSITION0`。
+3. `Format`：`DXGI_FORMAT` 枚举类型的一个成员，向 Direct3D 指定该顶点元素的格式（即数据类型）；下面是一些常用格式示例：
+
+   ```cpp
+   DXGI_FORMAT_R32_FLOAT     // 1D 32-bit float scalar    
+   DXGI_FORMAT_R32G32_FLOAT  // 2D 32-bit float vector
+   DXGI_FORMAT_R32G32B32_FLOAT    // 3D 32-bit float vector    
+   DXGI_FORMAT_R32G32B32A32_FLOAT // 4D 32-bit float vector
+
+   DXGI_FORMAT_R8_UINT       // 1D 8-bit unsigned integer scalar
+   DXGI_FORMAT_R16G16_SINT   // 2D 16-bit signed integer vector
+   DXGI_FORMAT_R32G32B32_UINT // 3D 32-bit unsigned integer vector
+   DXGI_FORMAT_R8G8B8A8_SINT    // 4D 8-bit signed integer vector
+   DXGI_FORMAT_R8G8B8A8_UINT    // 4D 8-bit unsigned integer vector
+   ```
+
+4. `InputSlot`：指定该<a id="page206"/>元素来自哪个输入槽索引。Direct3D 支持十六个输入槽（索引 0 到 15），你可以通过它们送入顶点数据。目前我们只使用输入槽 0（即所有顶点元素都来自同一个输入槽）；习题 2 会让你试验多个输入槽。
+5. `AlignedByteOffset`：从指定输入槽的 C++ 顶点结构起点到该顶点分量起点的偏移（以字节为单位）。例如，在下面的顶点结构中，元素 `Pos` 的偏移为 0 字节，因为它的起点与顶点结构的起点重合；元素 `Normal` 的偏移为 12 字节，因为我们必须跳过 `Pos` 的字节才能到达 `Normal` 的起点；元素 `Tex0` 的偏移为 24 字节，因为我们需要跳过 `Pos` 和 `Normal` 的字节才能到达 `Tex0` 的起点；元素 `Tex1` 的偏移为 32 字节，因为我们需要跳过 `Pos`、`Normal` 和 `Tex0` 的字节才能到达 `Tex1` 的起点。

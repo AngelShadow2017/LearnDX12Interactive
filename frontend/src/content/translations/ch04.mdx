@@ -1,0 +1,2264 @@
+<div className="translation-progress"><b>本章译文进度</b><span>4.1–4.7 已按 EPUB 逐段录入完毕（原书本章无习题）；公式图片已识图转为 LaTeX。</span></div>
+
+Direct3D 的初始化过程要求我们熟悉一些基本的 Direct3D 类型和基本图形概念；本章前两节正是为了满足这些要求。随后我们详细说明初始化 Direct3D 所需的步骤。接下来稍微绕开一下，介绍精确计时以及实时图形应用所需的时间测量。最后，我们探索示例框架代码，本书所有演示程序都遵循它提供的统一接口。
+
+本章目标：
+
+- 对 Direct3D 在三维硬件编程中所扮演的角色有一个基本理解。
+- 理解 COM 在 Direct3D 中所起的作用。
+- 学习基本的图形概念，例如二维图像如何存储、页面翻转、深度缓冲、多重采样，以及 CPU 与 GPU 如何交互。
+- 学习如何使用性能计数器函数获取高分辨率的计时读数。
+- 了解如何初始化 Direct3D。
+- 熟悉本书所有演示程序所采用的应用框架的总体结构。
+
+<section className="lesson-section lesson-section--intro" id="s41">
+<h2>4.1 预备知识</h2>
+
+Direct3D 的初始化过程要求我们熟悉一些基本的图形概念和 Direct3D 类型。本节介绍这些概念和类型，以便我们在讲初始化过程时不必反复插入说明。
+
+<h3>4.1.1 Direct3D 12 概览</h3>
+
+Direct3D 是一个低层图形 API（应用程序编程接口），用于从我们的应用中控制和编程 GPU（图形处理单元），从而让我们能够借助硬件加速渲染虚拟的三维世界。例如，要向 GPU 提交一条清空渲染目标（比如屏幕）的命令，我们会调用 Direct3D 方法 `ID3D12CommandList::ClearRenderTargetView`。Direct3D 层和硬件驱动程序会把 Direct3D 命令转换成系统 GPU 能理解的原生机器指令；因此，只要 GPU 支持我们使用的 Direct3D 版本，我们就不必担心 GPU 的具体细节。要实现这一点，NVIDIA、Intel 和 AMD 等 GPU 厂商必须与 Direct3D 团队合作，提供符合规范的 Direct3D 驱动程序。
+
+Direct3D 12 增加了一些新的渲染特性，但相对上一版本的主要改进是：它经过重新设计，显著降低了 CPU 开销并改善了多线程支持。为达成这些性能目标，Direct3D 12 变成了一个比 Direct3D 11 低得多的 API；它的抽象层次更少，需要开发者做额外的"记账"工作，并且更贴近现代 GPU 架构。性能提升当然就是使用这个更难的 API 所得到的回报。
+
+<h3>4.1.2 COM</h3>
+
+组件对象模型（COM）是让 DirectX 与编程语言无关并具备向后兼容性的技术。我们通常把 COM 对象称为接口，就我们的目的而言，可以把它当作并使用为 C++ 类。用 C++ 编写 DirectX 时，COM 的大部分细节都被隐藏了起来。我们唯一必须知道的是：COM 接口指针是通过特殊函数或通过另一个 COM 接口的方法获得的——我们不会用 C++ 的 `new` 关键字创建 COM 接口。此外，COM 对象是引用计数的；当一个接口不再使用时，我们调用它的 `Release` 方法（所有 COM 接口都继承自 `IUnknown` COM 接口的功能，而 `IUnknown` 提供了 `Release` 方法），而不是 `delete` 它——当引用计数降到 0 时，COM 对象会自行释放内存。
+
+为了帮助管理 COM 对象的生命周期，Windows 运行时库（WRL）提供了 `Microsoft::WRL::ComPtr` 类（`#include <wrl.h>`），可以把它看作面向 COM 对象的智能指针。当一个 `ComPtr` 实例离开作用域时，它会自动对底层的 COM 对象调用 `Release`，从而省去我们手动调用 `Release` 的麻烦。本书用到 `ComPtr` 的三个主要方法是：
+
+1. `Get`：返回指向底层 COM 接口的指针。这常用于把参数传给接受原始 COM 接口指针的函数。例如：
+
+   ```cpp
+   ComPtr<ID3D12RootSignature> mRootSignature;
+   ...
+   // SetGraphicsRootSignature 需要 ID3D12RootSignature* 参数。
+   mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+   ```
+
+2. `GetAddressOf`：返回指向底层 COM 接口的指针的地址。这常用于通过函数参数返回 COM 接口指针。例如：
+
+   ```cpp
+   ComPtr<ID3D12CommandAllocator> mDirectCmdListAlloc;
+   ...
+   ThrowIfFailed(md3dDevice->CreateCommandAllocator(
+       D3D12_COMMAND_LIST_TYPE_DIRECT, 
+       mDirectCmdListAlloc.GetAddressOf()));
+   ```
+
+3. `Reset`：把 `ComPtr` 实例置为 `nullptr`，并递减底层 COM 接口的引用计数。等价地，你也可以把 `nullptr` 赋值给一个 `ComPtr` 实例。
+
+当然，COM 还有大量其他内容，但要有效使用 DirectX 并不需要更多细节。
+
+注：COM 接口以大写字母 I 开头。例如，表示命令列表的 COM 接口叫 `ID3D12GraphicsCommandList`。
+
+<h3>4.1.3 纹理格式</h3>
+
+二维纹理是一个数据元素的矩阵。二维纹理的一个用途是存储二维图像数据，其中纹理的每个元素存储一个像素的颜色。但这并非唯一用途；例如，在一种称为法线映射的高级技术中，纹理中的每个元素存储的是一个三维向量而不是颜色。因此，虽然把纹理看作存储图像数据很常见，但它实际上比这更通用。一维纹理类似一维数据元素数组，二维纹理类似二维数据元素数组，三维纹理类似三维数据元素数组。正如后面章节将要讨论的，纹理实际上不只是数据数组；它们还可以有 mipmap 层级，GPU 还可以对它们执行特殊操作，例如应用过滤器和多重采样。此外，纹理不能存储任意种类的数据元素；它只能存储由 `DXGI_FORMAT` 枚举类型描述的某些数据元素格式。一些示例格式是：
+
+1. `DXGI_FORMAT_R32G32B32_FLOAT`：每个元素有三个 32 位浮点分量。
+2. `DXGI_FORMAT_R16G16B16A16_UNORM`：每个元素有四个 16 位分量，映射到 [0, 1] 范围。
+3. `DXGI_FORMAT_R32G32_UINT`：每个元素有两个 32 位无符号整数分量。
+4. `DXGI_FORMAT_R8G8B8A8_UNORM`：每个元素有四个 8 位无符号分量，映射到 [0, 1] 范围。
+5. `DXGI_FORMAT_R8G8B8A8_SNORM`：每个元素有四个 8 位有符号分量，映射到 [−1, 1] 范围。
+6. `DXGI_FORMAT_R8G8B8A8_SINT`：每个元素有四个 8 位有符号整数分量，映射到 [−128, 127] 范围。
+7. `DXGI_FORMAT_R8G8B8A8_UINT`：每个元素有四个 8 位无符号整数分量，映射到 [0, 255] 范围。
+
+注意 R、G、B、A 这几个字母分别代表红、绿、蓝和 alpha。颜色由红、绿、蓝这三种基色组合而成（例如，红色分量与绿色分量相等会得到黄色）。alpha 通道或 alpha 分量一般用于控制透明度。不过，正如前面所说，尽管格式名称暗示它们存储颜色，纹理并不一定存储颜色信息；例如，格式
+
+```cpp
+DXGI_FORMAT_R32G32B32_FLOAT 
+```
+
+有三个浮点分量，因此可以存储任意坐标为浮点数的三维向量。还有*无类型*（typeless）格式，我们只预留内存，稍后在纹理绑定到管线时再指定如何重新解释这些数据（有点类似 C++ 的 reinterpret cast）；例如下面这个无类型格式预留了四个 16 位分量的元素，但不指定数据类型（例如整数、浮点数、无符号整数）：
+
+```cpp
+DXGI_FORMAT_R16G16B16A16_TYPELESS
+```
+
+第 6 章将看到，`DXGI_FORMAT` 枚举类型也用于描述顶点数据格式和索引数据格式。
+
+<h3>4.1.4 交换链与页面翻转</h3>
+
+为了避免动画闪烁，最好把一整帧动画绘制到一块称为后缓冲（back buffer）的离屏纹理中。一旦给定帧的整个场景都绘制到后缓冲上，它就作为完整的一帧呈现到屏幕；这样观看者就不会看到帧被逐段绘制的过程——观看者只看到完整的帧。为实现这一点，硬件维护两块纹理缓冲区，一块称为**前缓冲**（front buffer），另一块称为**后缓冲**。前缓冲存储当前显示在监视器上的图像数据，同时下一帧动画被绘制到后缓冲。当该帧绘制完成后，后缓冲与前缓冲的角色互换：后缓冲成为前缓冲，前缓冲成为下一帧动画的后缓冲。交换后缓冲与前缓冲角色的操作称为**呈现**（presenting）。呈现是一种高效操作，因为只需交换指向当前前缓冲和当前后缓冲的指针即可。图 4.1 展示了这一过程。
+
+<Figure src="images/Fig4-1.jpg" alt="前缓冲与后缓冲交替显示的两帧动画流程" figureNumber="图 4.1" caption="对于第 n 帧，缓冲区 A 当前正在显示，我们把下一帧渲染到作为当前后缓冲的缓冲区 B。帧完成后指针交换，缓冲区 B 成为前缓冲，缓冲区 A 成为新的后缓冲。接着把第 n+1 帧渲染到缓冲区 A。帧完成后再次交换指针，缓冲区 A 成为前缓冲，缓冲区 B 再次成为后缓冲。" />
+
+前缓冲与后缓冲构成一条**交换链**。在 Direct3D 中，交换链由 `IDXGISwapChain` 接口表示。该接口保存前缓冲和后缓冲纹理，并提供调整缓冲区大小的方法（`IDXGISwapChain::ResizeBuffers`）和呈现的方法（`IDXGISwapChain::Present`）。
+
+使用两个缓冲区（前缓冲和后缓冲）称为**双缓冲**。也可以使用多于两个缓冲区；使用三个缓冲区称为**三重缓冲**。不过通常两个缓冲区就足够了。
+
+注：尽管后缓冲是一块纹理（因此其元素应该称为纹素），我们仍常把元素称为像素，因为在后缓冲的情况下它存储的是颜色信息。有时即使纹理元素不存储颜色信息，人们也会称其为像素（例如"法线贴图的像素"）。
+
+<h3>4.1.5 深度缓冲</h3>
+
+**深度缓冲**是一种不包含图像数据、而是包含某个特定像素的深度信息的纹理的例子。可能的深度值范围从 0.0 到 1.0，其中 0.0 表示视锥体中的物体可以离观看者最近的距离，1.0 表示视锥体中的物体可以离观看者最远的距离。深度缓冲中的每个元素与后缓冲中的每个像素一一对应（即后缓冲中的第 $ij$ 个元素对应深度缓冲中的第 $ij$ 个元素）。因此，如果后缓冲的分辨率为 $1280\times1024$，就会有 $1280\times1024$ 个深度项。
+
+图 4.2 展示了一个简单场景，其中一些物体部分遮挡了它们后面的物体。为了让 Direct3D 判断一个物体的哪些像素位于另一个物体前面，它使用一种称为**深度缓冲**或 **z-buffering** 的技术。让我们强调一点：使用深度缓冲时，绘制物体的顺序并不影响结果。
+
+<Figure src="images/Fig4-2.jpg" alt="一组彼此部分遮挡的球体与圆锥体" figureNumber="图 4.2" caption="一组彼此部分遮挡的物体。" />
+
+注：为处理深度问题，有人可能会建议按从最远到最近的顺序绘制场景中的物体。这样近处的物体会覆盖远处物体，应该能得到正确结果。画家作画时就是这么做的。然而，这种方法本身也有问题——需要对大量数据按由远及近排序，还要处理相交的几何体。此外，图形硬件免费为我们提供了深度缓冲。
+
+为说明深度缓冲的工作方式，我们来看一个例子。考虑图 4.3，它展示了观看者所看到的视体以及该视体的二维侧视图。从图中我们观察到，有三个不同的像素竞争着要渲染到视图窗口上的像素 $P$ 上。（当然我们知道最近的像素应该被渲染到 $P$，因为它遮挡了后面的像素，但计算机并不知道。）首先，在任何渲染发生之前，后缓冲被清为默认颜色，深度缓冲被清为默认值——通常是 1.0（像素可以有的最远深度值）。现在假设按圆柱、球、圆锥的顺序渲染物体。下表汇总了随着物体绘制，像素 $P$ 及其对应深度值 $d$ 是如何更新的；对其他像素也发生类似的过程。
+
+<Figure src="images/Fig4-3.jpg" alt="三维场景的视体与其二维侧视图，标出投影到像素 P 的三个像素 P1、P2、P3" figureNumber="图 4.3" caption="视图窗口对应于我们对三维场景生成的二维图像（后缓冲）。我们看到三个不同的像素可能被投影到像素 P 上。直觉告诉我们 P₁ 应该被写入 P，因为它离观看者更近，遮挡了另外两个像素。深度缓冲算法提供了一个在计算机上确定这一点的机械过程。注意我们图中显示的深度值是相对于所观察的三维场景的，但存入深度缓冲时它们实际被归一化到 [0.0, 1.0] 范围。" />
+
+<Figure src="images/tbl129.jpg" alt="按圆柱、球、圆锥顺序绘制时像素 P 与深度值 d 的更新表" caption="按圆柱、球、圆锥顺序绘制物体时，像素 P 及其深度值的更新过程。" />
+
+可以看到，只有当我们发现某个像素的深度值更小时，才更新该像素以及深度缓冲中对应的深度值。这样一来，一切完成之后，被渲染的就是离观看者最近的像素。（如果你仍未被说服，可以试着把绘制顺序调换过来，再把这个例子推演一遍。）
+
+总而言之，深度缓冲的工作方式是：为每个像素计算一个深度值并执行深度测试。深度测试比较那些竞争写入后缓冲上某个特定像素位置的像素的深度。深度值离观看者最近的像素胜出，它就是要写入后缓冲的像素。这样讲是合理的，因为离观看者最近的像素会遮挡它后面的像素。
+
+深度缓冲是一种纹理，因此必须用特定的数据格式创建。用于深度缓冲的格式如下：
+
+1. `DXGI_FORMAT_D32_FLOAT_S8X24_UINT`：指定一个 32 位浮点深度缓冲，另预留 8 位（无符号整数）供模板缓冲使用并映射到 [0, 255] 范围，还有 24 位不用作填充。
+2. `DXGI_FORMAT_D32_FLOAT`：指定一个 32 位浮点深度缓冲。
+3. `DXGI_FORMAT_D24_UNORM_S8_UINT`：指定一个 24 位无符号深度缓冲并映射到 [0, 1] 范围，另预留 8 位（无符号整数）供模板缓冲使用并映射到 [0, 255] 范围。
+4. `DXGI_FORMAT_D16_UNORM`：指定一个 16 位无符号深度缓冲并映射到 [0, 1] 范围。
+
+注：应用程序并不要求必须有模板缓冲，但如果有，模板缓冲总是与深度缓冲绑定在一起。例如，32 位格式
+
+```cpp
+DXGI_FORMAT_D24_UNORM_S8_UINT
+```
+
+用 24 位作深度缓冲、8 位作模板缓冲。因此，深度缓冲更准确的叫法是深度/模板缓冲。模板缓冲的使用是一个更高级的话题，将在第 11 章讲解。
+
+<h3>4.1.6 资源与描述符</h3>
+
+在渲染过程中，GPU 会写入资源（例如后缓冲、深度/模板缓冲），也会读取资源（例如描述表面外观的纹理、存储场景中几何体三维位置的缓冲区）。在发出绘制命令之前，我们需要把将要被该绘制调用引用的资源**绑定**（或链接）到渲染管线上。部分资源可能每次绘制调用都会变化，因此必要时我们需要在每次绘制调用时更新绑定。不过，GPU 资源并不直接绑定。相反，资源是通过一个**描述符**对象来引用的，描述符可以看作向 GPU 描述资源的轻量结构。本质上它是一层间接层：给定一个资源描述符，GPU 就能取得实际的资源数据并了解关于它的必要信息。我们通过指定绘制调用中将要引用的描述符，把资源绑定到渲染管线上。
+
+为什么要用描述符多这一层间接？原因是 GPU 资源本质上是一块块通用的内存。资源保持通用，是为了能在渲染管线的不同阶段使用；一个常见的例子是把纹理<a id="page97"/>用作渲染目标（即 Direct3D 绘制到该纹理中），之后再用作着色器资源（即该纹理被采样并作为着色器的输入数据）。资源本身并不会说明它是被用作渲染目标、深度/模板缓冲还是着色器资源。此外，也许我们只想把资源数据的一个子区域绑定到渲染管线上——面对整个资源，我们该怎么做？此外，资源可以用无类型格式创建，那样 GPU 甚至不知道该资源的格式。
+
+描述符正是为此而生。除了标识资源数据之外，描述符还向 GPU 描述资源：它们告诉 Direct3D 该资源将如何使用（即你会把它绑定到管线的哪个阶段）、在适用的情况下可以在描述符中指定要绑定的资源子区域，并且如果资源在创建时格式被指定为无类型，那么现在必须在创建描述符时说明其类型。
+
+注：view 是 descriptor 的同义词。"view"这一术语在早期版本的 Direct3D 中使用，在 Direct3D 12 API 的某些部分仍在使用。本书把两者 interchangeable 地使用；例如，constant buffer view 与 constant buffer descriptor 含义相同。
+
+描述符具有类型，而类型意味着资源将被如何使用。本书用到的描述符类型有：
+
+1. CBV/SRV/UAV 描述符描述常量缓冲、着色器资源和无序访问视图资源。
+2. 采样器描述符描述采样器资源（用于纹理处理）。
+3. RTV 描述符描述渲染目标资源。
+4. DSV 描述符描述深度/模板资源。
+
+**描述符堆**是一个描述符数组；它是应用程序所用某一种类型的所有描述符的内存后备。你需要为每种描述符类型各准备一个独立的描述符堆。你也可以创建多个同类型的堆。
+
+我们可以让多个描述符引用同一个资源。例如，可以让多个描述符引用同一资源的不同子区域。此外，如前所述，资源可以绑定到渲染管线的不同阶段；每个阶段都需要一个独立的描述符。以把纹理同时用作渲染目标和着色器资源为例，我们需要创建两个描述符：一个 RTV 类型的描述符和一个 SRV 类型的描述符。同理，如果你用无类型格式创建了资源，那么纹理中的元素就可以例如被看作浮点值或整数；这需要两个描述符，其中一个指定浮点格式，另一个指定整数格式。
+
+描述符应该在初始化时创建。这是因为其中会有一些类型检查和验证，在初始化时做比在运行时做更好。
+
+注：2009 年 8 月的 SDK 文档写道："创建完全带类型的资源会把该资源限制为创建时所用的格式。这使运行时能够优化访问 […]。"因此，只有在确实需要无类型资源所提供的灵活性（用多个视图以多种方式重新解释数据）时，才创建无类型资源；否则应创建完全带类型的资源。
+
+<h3>4.1.7 多重采样理论</h3>
+
+由于显示器上的像素不是无限小的，任意一条直线都无法在计算机显示器上被完美表示。图 4.4 展示了用像素矩阵逼近一条直线时可能出现的"阶梯"（**走样**）效应。三角形的边缘也会出现类似的走样效应。
+
+<Figure src="images/Fig4-4.jpg" alt="上图为走样产生的阶梯效应，下图为经过抗锯齿处理的平滑线条" figureNumber="图 4.4" caption="上图我们看到走样（试图用像素矩阵表示直线时的阶梯效应）。下图我们看到一条经过抗锯齿处理的直线，它通过对相邻像素采样并使用其值来决定一个像素的最终颜色；这得到更平滑的图像，并淡化了阶梯效应。" />
+
+通过提高显示器分辨率来缩小像素尺寸，可以大幅缓解该问题，使阶梯效应基本不被察觉。
+
+当无法提高显示器分辨率或提高得不够时，我们可以应用**抗锯齿**技术。一种称为**超采样**（supersampling）的技术，其做法是把后缓冲和深度缓冲<a id="page99"/>做到屏幕分辨率的 4 倍大小。然后以这个更大的分辨率把三维场景渲染到后缓冲。接下来，当把后缓冲呈现到屏幕时，对后缓冲进行**解析**（resolve，即降采样），使 4 个像素块的颜色被平均为一个平均像素颜色。实际上，超采样通过在软件中提高分辨率来工作。
+
+超采样代价高昂，因为它把像素处理量和内存都提高到四倍。Direct3D 支持一种折中的抗锯齿技术，称为**多重采样**（multisampling），它在子像素之间共享部分计算信息，因此比超采样便宜。假设我们使用 4X 多重采样（每像素 4 个子像素），多重采样同样使用比屏幕分辨率大 4 倍的后缓冲和深度缓冲；不过，它不是为每个子像素计算图像颜色，而是每像素只计算一次（在像素中心处），然后根据可见性（深度/模板测试按子像素求值）和覆盖率（子像素中心位于多边形内部还是外部？）把该颜色信息与其子像素共享。图 4.5 给出了一个例子。
+
+<Figure src="images/Fig4-5.jpg" alt="一个跨越多边形边缘的像素：绿色覆盖三个子像素，解析后得到浅绿色" figureNumber="图 4.5" caption="我们考虑一个跨越多边形边缘的像素。(a) 在像素中心求得的绿色被存入被多边形覆盖的三个可见子像素。第四象限的子像素没有被多边形覆盖，因此不会用绿色更新——它只保留之前由已绘制几何体或 Clear 操作计算出的颜色。(b) 为计算解析后的像素颜色，我们对四个子像素（三个绿色像素和一个白色像素）取平均，得到沿多边形边缘的浅绿色。这通过淡化多边形边缘的阶梯效应，使图像看起来更平滑。" />
+
+注：注意超采样与多重采样之间的关键差别。使用超采样时，图像颜色是按子像素计算的，因此每个子像素都可能是不同的颜色。使用多重采样（图 4.5）时，图像颜色每像素只计算一次，然后该颜色被复制到所有被多边形覆盖的可见子像素中。由于计算图像颜色是图形管线中最昂贵的步骤之一，多重采样相对超采样所节省的开销相当可观。另一方面，超采样更精确。
+
+在图 4.5 中，我们展示了一个被均匀网格模式细分为四个子像素的像素。实际使用的模式（子像素所在的位置）在各硬件厂商之间可能不同，因为 Direct3D 并不定义子像素的摆放方式。有些模式在某些情形下效果更好。
+
+<h3>4.1.8 Direct3D 中的多重采样</h3>
+
+下一节中，我们需要填写一个 `DXGI_SAMPLE_DESC` 结构。该结构有两个成员，定义如下：
+
+```cpp
+typedef struct DXGI_SAMPLE_DESC
+{
+    UINT Count;
+    UINT Quality;
+} DXGI_SAMPLE_DESC;
+```
+
+`Count` 成员指定每像素要采样的次数，`Quality` 成员用于指定期望的质量级别（"质量级别"的含义可能因硬件制造商而异）。更高的采样数或更高的质量级别渲染起来更昂贵，因此必须在质量与速度之间做取舍。可用的质量级别范围取决于纹理格式和每像素的采样数。
+
+我们可以用 `ID3D12Device::CheckFeatureSupport` 方法查询给定纹理格式与采样数所支持的质量级别数：
+
+```cpp
+typedef struct D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS {
+    DXGI_FORMAT                    Format;
+    UINT                           SampleCount;
+    D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG Flags;
+    UINT                           NumQualityLevels;
+} D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS;
+
+D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
+msQualityLevels.Format = mBackBufferFormat;
+msQualityLevels.SampleCount = 4;
+msQualityLevels.Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
+msQualityLevels.NumQualityLevels = 0;
+ThrowIfFailed(md3dDevice->CheckFeatureSupport(
+    D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,
+    &msQualityLevels,
+    sizeof(msQualityLevels)));
+```
+
+注意第二个参数既是输入参数也是输出参数。作为输入，我们必须指定希望查询多重采样支持的纹理格式、采样数和标志。该函数随后会把质量级别作为输出填写进来。某个纹理格式与采样数组合的有效质量级别从 0 到 `NumQualityLevels–1`。
+
+每像素可采样的最大次数定义为：
+
+```cpp
+#define    D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT    ( 32 )
+```
+
+不过为了把多重采样的性能和内存开销控制在合理范围，通常采用 4 或 8 的采样数。如果你不想使用多重采样，就把采样数设为 1、质量级别设为 0。所有支持 Direct3D 11 的设备都支持对所有渲染目标格式进行 4X 多重采样。
+
+注：交换链缓冲区和深度缓冲都需要填写一个 `DXGI_SAMPLE_DESC` 结构。后缓冲和深度缓冲必须以相同的多重采样设置创建。
+
+<h3>4.1.9 特性级别</h3>
+
+Direct3D 11 引入了特性级别（feature level）的概念（在代码中由 `D3D_FEATURE_LEVEL` 枚举类型表示），它们大致对应从 9 到 11 的各个 Direct3D 版本：
+
+```cpp
+enum D3D_FEATURE_LEVEL
+{
+    D3D_FEATURE_LEVEL_9_1   = 0x9100,
+    D3D_FEATURE_LEVEL_9_2   = 0x9200,
+    D3D_FEATURE_LEVEL_9_3   = 0x9300,
+    D3D_FEATURE_LEVEL_10_0  = 0xa000,
+    D3D_FEATURE_LEVEL_10_1  = 0xa100,
+    D3D_FEATURE_LEVEL_11_0  = 0xb000,
+    D3D_FEATURE_LEVEL_11_1  = 0xb100
+}D3D_FEATURE_LEVEL;
+```
+
+特性级别定义了一组严格的功能（每个特性级别支持的具体能力请查阅 SDK 文档）。例如，支持特性级别 11 的 GPU 必须支持整个 Direct3D 11 能力集，只有少数例外（某些东西比如多重采样数仍需查询，因为它们允许在不同 Direct3D 11 硬件之间变化）。特性集使开发更容易——一旦你知道了支持的特性集，就知道有哪些 Direct3D 功能可供使用。
+
+如果用户的硬件不支持某个特性级别，应用程序可以回退到较旧的特性级别。例如，为支持更广泛的用户群，应用程序可能同时支持 Direct3D 11、10 和 9.3 级别的硬件。应用程序会从新到旧检查特性级别支持：也就是先检查是否支持 Direct3D 11，再检查 Direct3D 10，最后检查 Direct3D 9.3。本书始终要求支持特性级别 `D3D_FEATURE_LEVEL_11_0`。不过现实中的应用程序确实需要考虑支持较旧的硬件，以尽量扩大用户群。
+
+<h3>4.1.10 DirectX 图形基础设施</h3>
+
+DirectX 图形基础设施（DXGI）是与 Direct3D 一起使用的 API。DXGI 的基本思路是：某些与图形相关的任务是多个图形 API 共通的。例如，二维渲染 API 和三维渲染 API 同样需要交换链与页面翻转来实现平滑动画；因此交换链接口 `IDXGISwapChain`（§4.1.4）实际上是 DXGI API 的一部分。DXGI 还处理其他共通的图形功能，比如全屏模式切换、枚举图形系统信息（显示适配器、监视器以及支持的显示模式<a id="page102"/>，即分辨率、刷新率等）；它还定义了各种受支持的表面格式（`DXGI_FORMAT`）。
+
+我们简要介绍一些在 Direct3D 初始化过程中会用到的 DXGI 概念与接口。关键的 DXGI 接口之一是 `IDXGIFactory` 接口，它主要用于创建 `IDXGISwapChain` 接口和枚举显示适配器。显示适配器实现了图形功能。通常，*显示适配器*是一块物理硬件（例如显卡）；不过系统也可以有软件显示适配器来模拟硬件图形功能。一个系统可以有若干适配器（例如装有多块显卡时）。适配器由 `IDXGIAdapter` 接口表示。可以用下面的代码枚举系统上的所有适配器：
+
+```cpp
+void D3DApp::LogAdapters()
+{
+    UINT i = 0;
+    IDXGIAdapter* adapter = nullptr;
+    std::vector<IDXGIAdapter*> adapterList;
+    while(mdxgiFactory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND)
+    {
+        DXGI_ADAPTER_DESC desc;
+        adapter->GetDesc(&desc);
+
+        std::wstring text = L"***Adapter: ";
+        text += desc.Description;
+        text += L"\n";
+
+        OutputDebugString(text.c_str());
+
+        adapterList.push_back(adapter);
+    
+        ++i;
+    }
+
+    for(size_t i = 0; i < adapterList.size(); ++i)
+    {
+        LogAdapterOutputs(adapterList[i]);
+        ReleaseCom(adapterList[i]);
+    }
+}
+```
+
+该方法输出的一个例子如下：
+
+```
+***Adapter: NVIDIA GeForce GTX 760
+***Adapter: Microsoft Basic Render Driver
+```
+
+"Microsoft Basic Render Driver"是 Windows 8 及更高版本附带的一个软件适配器。
+
+一个系统可以有若干监视器。监视器是**显示输出**（display output）的一个例子。输出由 `IDXGIOutput` 接口表示。每个适配器都关联一个输出列表。<a id="page103"/>例如，考虑一个有两块显卡和三台监视器的系统，其中两台监视器接在一块显卡上，第三台接在另一块显卡上。这种情况下，一个适配器关联两个输出，另一个适配器关联一个输出。可以用下面的代码枚举与某个适配器关联的所有输出：
+
+```cpp
+void D3DApp::LogAdapterOutputs(IDXGIAdapter* adapter)
+{
+    UINT i = 0;
+    IDXGIOutput* output = nullptr;
+    while(adapter->EnumOutputs(i, &output) != DXGI_ERROR_NOT_FOUND)
+    {
+        DXGI_OUTPUT_DESC desc;
+        output->GetDesc(&desc);
+    
+        std::wstring text = L"***Output: ";
+        text += desc.DeviceName;
+        text += L"\n";
+        OutputDebugString(text.c_str());
+
+        LogOutputDisplayModes(output, DXGI_FORMAT_B8G8R8A8_UNORM);
+
+        ReleaseCom(output);
+
+        ++i;
+    }
+}
+```
+
+注意，根据文档，"Microsoft Basic Render Driver"没有显示输出。
+
+每台监视器都有一组它支持的显示模式。显示模式指 `DXGI_MODE_DESC` 中的以下数据：
+
+```cpp
+typedef struct DXGI_MODE_DESC
+{
+    UINT Width;                        // Resolution width
+    UINT Height;                       // Resolution height
+    DXGI_RATIONAL RefreshRate;
+    DXGI_FORMAT Format;                // Display format
+    DXGI_MODE_SCANLINE_ORDER ScanlineOrdering; //Progressive vs. interlaced
+    DXGI_MODE_SCALING Scaling;         // How the image is stretched 
+                                     // over the monitor.
+
+} DXGI_MODE_DESC;
+
+typedef struct DXGI_RATIONAL
+{
+    UINT Numerator;
+    UINT Denominator;
+} DXGI_RATIONAL;
+
+typedef enum DXGI_MODE_SCANLINE_ORDER
+{
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED       = 0,
+    DXGI_MODE_SCANLINE_ORDER_PROGRESSIVE       = 1,
+    DXGI_MODE_SCANLINE_ORDER_UPPER_FIELD_FIRST = 2,
+    DXGI_MODE_SCANLINE_ORDER_LOWER_FIELD_FIRST = 3
+} DXGI_MODE_SCANLINE_ORDER;
+
+typedef enum DXGI_MODE_SCALING
+{
+    DXGI_MODE_SCALING_UNSPECIFIED   = 0,
+    DXGI_MODE_SCALING_CENTERED      = 1,
+    DXGI_MODE_SCALING_STRETCHED     = 2
+} DXGI_MODE_SCALING;
+```
+
+固定一种显示模式格式后，<a id="page104"/>可以用下面的代码获得某个输出在该格式下支持的所有显示模式列表：
+
+```cpp
+void D3DApp::LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT format)
+{
+    UINT count = 0;
+    UINT flags = 0;
+
+    // Call with nullptr to get list count.
+    output->GetDisplayModeList(format, flags, &count, nullptr);
+
+    std::vector<DXGI_MODE_DESC> modeList(count);
+    output->GetDisplayModeList(format, flags, &count, &modeList[0]);
+
+    for(auto& x : modeList)
+    {
+        UINT n = x.RefreshRate.Numerator;
+        UINT d = x.RefreshRate.Denominator;
+        std::wstring text =
+            L"Width = " + std::to_wstring(x.Width) + L" " +
+            L"Height = " + std::to_wstring(x.Height) + L" " +
+            L"Refresh = " + std::to_wstring(n) + L"/" + std::to_wstring(d) +
+            L"\n";
+
+        ::OutputDebugString(text.c_str());
+    }
+}
+```
+
+该代码输出的部分例子如下：
+
+```
+***Output: \\.\DISPLAY2
+...
+Width = 1920 Height = 1080 Refresh = 59950/1000
+Width = 1920 Height = 1200 Refresh = 59950/1000
+```
+
+在进入全屏模式时，枚举显示模式尤为重要。为了获得最佳的全屏性能，指定的显示模式（包括刷新率）<a id="page105"/>必须与监视器支持的某个显示模式完全匹配。指定一个枚举得到的显示模式就能保证这一点。
+
+想获得更多 DXGI 参考资料，我们建议阅读在线文章"DXGI Overview"、"DirectX Graphics Infrastructure: Best Practices"和"DXGI 1.4 Improvements"：
+
+**DXGI Overview：** http://msdn.microsoft.com/en-us/library/windows/desktop/bb205075(v=vs.85).aspx
+
+**DirectX Graphics Infrastructure: Best Practices：** http://msdn.microsoft.com/en-us/library/windows/desktop/ee417025(v=vs.85).aspx
+
+**DXGI 1.4 Improvements：** https://msdn.microsoft.com/en-us/library/windows/desktop/mt427784%28v=vs.85%29.aspx
+
+<h3>4.1.11 检查特性支持</h3>
+
+我们已经用 `ID3D12Device::CheckFeatureSupport` 方法检查过当前图形驱动对多重采样的支持。不过那只是该函数可以检查的特性支持之一。该方法的原型如下：
+
+```cpp
+HRESULT ID3D12Device::CheckFeatureSupport(
+    D3D12_FEATURE Feature,
+    void *pFeatureSupportData,
+    UINT FeatureSupportDataSize);
+```
+
+1. `Feature`：`D3D12_FEATURE` 枚举类型的一个成员，用于标识我们要检查支持的是哪一类特性：
+   1. `D3D12_FEATURE_D3D12_OPTIONS`：检查对各种 Direct3D 12 特性的支持。
+   2. `D3D12_FEATURE_ARCHITECTURE`：检查对硬件架构特性的支持。
+   3. `D3D12_FEATURE_FEATURE_LEVELS`：检查特性级别支持。
+   4. `D3D12_FEATURE_FORMAT_SUPPORT`：检查给定纹理格式的特性支持（例如该格式能否用作渲染目标、能否配合混合使用）。
+   5. `D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS`：检查多重采样的特性支持。
+2. `pFeatureSupportData`：指向一个用于取得特性支持信息的数据结构的指针。你使用何种结构取决于为 `Feature` 参数指定的内容：
+   1. <a id="page106"/>如果指定了 `D3D12_FEATURE_D3D12_OPTIONS`，则传入 `D3D12_FEATURE_DATA_D3D12_OPTIONS` 的一个实例。
+   2. 如果指定了 `D3D12_FEATURE_ARCHITECTURE`，则传入 `D3D12_FEATURE_DATA_ARCHITECTURE` 的一个实例。
+   3. 如果指定了 `D3D12_FEATURE_FEATURE_LEVELS`，则传入 `D3D12_FEATURE_DATA_FEATURE_LEVELS` 的一个实例。
+   4. 如果指定了 `D3D12_FEATURE_FORMAT_SUPPORT`，则传入 `D3D12_FEATURE_DATA_FORMAT_SUPPORT` 的一个实例。
+   5. 如果指定了 `D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS`，则传入 `D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS` 的一个实例。
+3. `FeatureSupportDataSize`：传入 `pFeatureSupportData` 参数的那个数据结构的大小。
+
+`ID3D12Device::CheckFeatureSupport` 函数可以检查很多特性的支持，其中许多是本书不需要检查、且较为高级的特性；每个特性结构的数据成员详见 SDK 文档。不过作为示例，下面展示如何检查受支持的特性级别（§4.1.9）：
+
+```cpp
+typedef struct D3D12_FEATURE_DATA_FEATURE_LEVELS {
+    UINT                     NumFeatureLevels;
+    const D3D_FEATURE_LEVEL *pFeatureLevelsRequested;
+    D3D_FEATURE_LEVEL        MaxSupportedFeatureLevel;
+} D3D12_FEATURE_DATA_FEATURE_LEVELS;
+
+D3D_FEATURE_LEVEL featureLevels[3] =
+{
+    D3D_FEATURE_LEVEL_11_0, // First check D3D 11 support
+    D3D_FEATURE_LEVEL_10_0, // Next, check D3D 10 support
+    D3D_FEATURE_LEVEL_9_3   // Finally, check D3D 9.3 support
+};
+
+D3D12_FEATURE_DATA_FEATURE_LEVELS featureLevelsInfo;
+featureLevelsInfo.NumFeatureLevels = 3;
+featureLevelsInfo.pFeatureLevelsRequested = featureLevels;
+md3dDevice->CheckFeatureSupport(
+    D3D12_FEATURE_FEATURE_LEVELS,
+    &featureLevelsInfo,
+    sizeof(featureLevelsInfo));
+```
+
+注意第二个参数既是输入参数也是输出参数。作为输入，我们指定特性级别数组中的元素个数（`NumFeatureLevels`），以及指向特性级别数组的指针（`pFeatureLevelsRequested`），该数组包含我们希望检查硬件支持的特性级别列表。该函数通过 `MaxSupportedFeatureLevel` 字段输出最高支持的特性级别。
+
+<h3>4.1.12 驻留</h3>
+
+一个复杂的游戏会使用大量资源，例如纹理和三维网格，但其中许多资源并不需要 GPU 一直使用。例如，设想一个带户外森林、森林中有一个大洞穴的游戏，那么洞穴的资源在玩家进入洞穴之前都不需要，而当玩家进入洞穴后，森林的资源就不再需要。
+
+在 Direct3D 12 中，应用程序通过把资源从 GPU 内存中逐出、再按需使其重新驻留在 GPU 上来管理资源驻留（本质上是资源是否在 GPU 内存中）。基本思路是尽量减少应用程序占用的 GPU 内存，因为 GPU 内存可能不足以存储整个游戏所需的全部资源，或者用户还运行着其他需要 GPU 内存的应用程序。性能方面要注意，应用程序应避免在很短时间内反复把同样的资源换入换出 GPU 内存，因为这会带来开销。理想情况下，如果你打算逐出一个资源，该资源就应当有一段时间不被需要。游戏关卡/区域的切换就是改变资源驻留的好时机。
+
+默认情况下，资源创建时即为驻留状态，销毁时被逐出。不过应用程序可以用下面的方法手动控制驻留：
+
+```cpp
+HRESULT ID3D12Device::MakeResident(
+    UINT                    NumObjects,
+    ID3D12Pageable *const *ppObjects);
+
+HRESULT ID3D12Device::Evict(
+    UINT                    NumObjects,
+    ID3D12Pageable *const *ppObjects);
+```
+
+对这两个方法来说，第二个参数是 `ID3D12Pageable` 资源数组，第一个参数是数组中资源的数量。
+
+本书出于简化考虑，并且由于我们的演示程序相比游戏很小，因此不管理驻留。关于驻留的更多信息请查阅文档：https://msdn.microsoft.com/en-us/library/windows/desktop/mt186622%28v=vs.85%29.aspx
+</section>
+
+<section className="lesson-section" id="s42">
+<h2>4.2 CPU/GPU 交互</h2>
+
+我们必须明白：在图形编程中有两个处理器在协同工作——CPU 和 GPU。它们并行工作，有时还需要同步。为了获得最佳性能，目标是让两者尽可能长时间保持忙碌，并把同步降到最少。同步之所以不可取，是因为它意味着一个处理<a id="page108"/>单元在等待另一个完成某些工作时空闲；换句话说，它破坏了并行性。
+
+<h3>4.2.1 命令队列与命令列表</h3>
+
+GPU 有一条命令队列。CPU 通过命令列表使用 Direct3D API 向该队列提交命令（见图 4.6）。理解下面这一点很重要：一组命令一旦被提交到命令队列，并不会被 GPU 立即执行。它们会留在队列中，直到 GPU 有空处理它们，因为 GPU 很可能正忙于处理先前放入的命令。
+
+<Figure src="images/Fig4-6.jpg" alt="CPU 通过命令列表向 GPU 的命令队列提交命令" figureNumber="图 4.6" caption="命令队列。" />
+
+如果命令队列变空，GPU 会因为无工作可做而空闲；另一方面，如果命令队列太满，CPU 迟早会在 GPU 追上来时被迫空闲[Crawfis12]。这两种情况都不可取；对于游戏这类高性能应用，目标是让 CPU 和 GPU 都保持忙碌，以充分利用可用的硬件资源。
+
+在 Direct3D 12 中，命令队列由 `ID3D12CommandQueue` 接口表示。创建它的方法是填写一个描述该队列的 `D3D12_COMMAND_QUEUE_DESC` 结构，然后调用 `ID3D12Device::CreateCommandQueue`。本书创建命令队列的方式如下：
+
+```cpp
+Microsoft::WRL::ComPtr<ID3D12CommandQueue> mCommandQueue;
+D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+ThrowIfFailed(md3dDevice->CreateCommandQueue(
+    &queueDesc, IID_PPV_ARGS(&mCommandQueue)));
+```
+
+`IID_PPV_ARGS` 辅助宏定义为：
+
+```cpp
+#define IID_PPV_ARGS(ppType) __uuidof(**(ppType)), IID_PPV_ARGS_Helper(ppType)
+```
+
+其中 `__uuidof(**(ppType))` 求值为 `(**(ppType))` 的 COM 接口 ID，在上面的代码中即 `ID3D12CommandQueue`。`IID_PPV_ARGS_Helper` 函数本质上把 `ppType` 转换为 `void**`。本书会一直使用这个宏，因为许多 Direct3D 12 API 调用都有一个参数要求提供正在创建的接口的 COM ID，并接收一个 `void**`。
+
+该接口的主要方法之一是 `ExecuteCommandLists` 方法，它把命令列表中的命令加入队列：
+
+```cpp
+void ID3D12CommandQueue::ExecuteCommandLists(
+    // Number of commands lists in the array
+    UINT Count,
+    // Pointer to the first element in an array of command lists
+    ID3D12CommandList *const *ppCommandLists);
+```
+
+命令列表按顺序执行，从数组第一个元素开始。
+
+从上面的方法声明可以看出，图形命令列表由 `ID3D12GraphicsCommandList` 接口表示，它继承自 `ID3D12CommandList` 接口。`ID3D12GraphicsCommandList` 接口有大量用于向命令列表添加命令的方法。例如，下面的代码添加了设置视口、清空渲染目标视图以及发出绘制调用的命令：
+
+```cpp
+// mCommandList 指向 ID3D12CommandList
+mCommandList->RSSetViewports(1, &mScreenViewport);
+mCommandList->ClearRenderTargetView(mBackBufferView, 
+    Colors::LightSteelBlue, 0, nullptr);
+mCommandList->DrawIndexedInstanced(36, 1, 0, 0, 0);
+```
+
+这些方法名暗示命令会立即执行，但事实并非如此。上面这段代码只是把命令加入命令列表。`ExecuteCommandLists` 方法把命令加入命令队列，然后 GPU 从队列中处理命令。随着本书内容的推进，我们会逐步学习 `ID3D12GraphicsCommandList` 支持的各种命令。当我们把命令全部加入命令列表后，必须调用 `ID3D12GraphicsCommandList::Close` 方法表明命令记录结束：
+
+```cpp
+// Done recording commands.
+mCommandList->Close();
+```
+
+命令列表必须先关闭，才能交给 `ID3D12CommandQueue::ExecuteCommandLists`。
+
+与命令列表关联的是一个名为 `ID3D12CommandAllocator` 的内存后备类。<a id="page110"/>当命令被记录到命令列表时，它们实际上被存储在关联的命令分配器中。当命令列表通过 `ID3D12CommandQueue::ExecuteCommandLists` 执行时，命令队列会引用该分配器中的命令。命令分配器由 `ID3D12Device` 创建：
+
+```cpp
+HRESULT ID3D12Device::CreateCommandAllocator(
+    D3D12_COMMAND_LIST_TYPE type,
+    REFIID riid,
+    void **ppCommandAllocator);
+```
+
+1. `type`：可以关联到该分配器的命令列表类型。本书用到的两种常见类型是：
+   1. `D3D12_COMMAND_LIST_TYPE_DIRECT`：存储一份要由 GPU 直接执行的命令列表（也就是我们迄今描述的那种命令列表）。
+   2. `D3D12_COMMAND_LIST_TYPE_BUNDLE`：指定该命令列表表示一个 *bundle*。构建命令列表存在一定的 CPU 开销，因此 Direct3D 12 提供了一项优化，允许我们把一系列命令记录到所谓的 bundle 中。bundle 记录完成后，驱动会预处理这些命令，以优化其在渲染期间的执行。因此，bundle 应当在初始化时记录。是否使用 bundle 应被视为一种优化——只有当性能分析显示构建特定命令列表耗时可观时才使用。Direct3D 12 的绘制 API 已经非常高效，因此你通常不需要频繁使用 bundle，而且只有能证明它们带来性能提升时才使用；也就是说，不要默认使用它们。本书不使用 bundle；更多细节请查阅 DirectX 12 文档。
+2. `riid`：我们想创建的 `ID3D12CommandAllocator` 接口的 COM ID。
+3. `ppCommandAllocator`：输出指向创建的命令分配器的指针。
+
+命令列表同样由 `ID3D12Device` 创建：
+
+```cpp
+HRESULT ID3D12Device::CreateCommandList(
+    UINT nodeMask,
+    D3D12_COMMAND_LIST_TYPE type,
+    ID3D12CommandAllocator *pCommandAllocator,
+    ID3D12PipelineState *pInitialState,
+    REFIID riid,
+    void **ppCommandList);
+```
+
+1. `nodeMask`：单 GPU 系统设为 0。<a id="page111"/>否则，节点掩码标识该命令列表关联的物理 GPU。本书假定为单 GPU 系统。
+2. `type`：命令列表的类型：`_COMMAND_LIST_TYPE_DIRECT` 或 `D3D12_COMMAND_LIST_TYPE_BUNDLE`。
+3. `pCommandAllocator`：与所创建命令列表关联的分配器。命令分配器的类型必须与命令列表类型一致。
+4. `pInitialState`：指定命令列表的初始管线状态。对 bundle 可以为 null；在命令列表仅为初始化目的而执行、且不包含任何绘制命令的特殊情形下也可以为 null。`ID3D12PipelineState` 会在第 6 章讨论。
+5. `riid`：我们想创建的 `ID3D12CommandList` 接口的 COM ID。
+6. `ppCommandList`：输出指向创建的命令列表的指针。
+
+注：可以用 `ID3D12Device::GetNodeCount` 方法查询系统上 GPU 适配器节点的数量。
+
+你可以创建多个关联到同一个分配器的命令列表，但不能同时记录。也就是说，除正在记录命令的那一个之外，所有命令列表都必须处于关闭状态。因此，来自某个命令列表的所有命令都会连续地加入该分配器。注意，命令列表在创建或重置时处于"打开"状态。所以如果试图用同一个分配器连续创建两个命令列表，就会得到一个错误：
+
+```
+D3D12 ERROR: ID3D12CommandList::{Create,Reset}CommandList: The command allocator is currently in-use by another command list.
+```
+
+在调用 `ID3D12CommandQueue::ExecuteCommandList(C)` 之后，就可以安全地复用 `C` 的内部内存来记录一组新命令，方法是调用 `ID3D12CommandList::Reset` 方法。该方法的参数与 `ID3D12Device::CreateCommandList` 中对应的参数相同：
+
+```cpp
+HRESULT ID3D12CommandList::Reset(
+    ID3D12CommandAllocator *pAllocator,
+    ID3D12PipelineState *pInitialState);
+```
+
+该方法把命令列表置于与刚创建时相同的状态，但允许我们复用内部内存，避免释放旧命令列表再分配一个新的。注意，重置命令列表不会影响命令队列中的命令，因为关联的命令分配器仍然在内存中保存着命令队列所引用的命令。
+
+<a id="page112"/>当我们把完整一帧的渲染命令提交给 GPU 之后，希望能在下一帧复用命令分配器中的内存。为此可以使用 `ID3D12CommandAllocator::Reset` 方法：
+
+```cpp
+HRESULT ID3D12CommandAllocator::Reset(void);
+```
+
+这个想法类似于调用 `std::vector::clear`：它把 vector 的大小变回零，但保持当前容量不变。不过，由于命令队列可能正在引用某个分配器中的数据，**在确定 GPU 已执行完该分配器中所有命令之前，绝不能重置命令分配器**；具体做法将在下一节讲解。
+
+<h3>4.2.2 CPU/GPU 同步</h3>
+
+由于有两个处理器并行运行，会出现一系列同步问题。
+
+假设我们有一个资源 $R$，它存储了某个想要绘制的几何体的位置。再假设 CPU 把 $R$ 的数据更新为存储位置 $p_1$，然后向命令队列加入一条引用 $R$ 的绘制命令 $C$，意图是在位置 $p_1$ 绘制该几何体。向命令队列添加命令不会阻塞 CPU，因此 CPU 会继续往下走。如果在 GPU 执行绘制命令 $C$ 之前，CPU 就继续往下走并把 $R$ 的数据改写为新位置 $p_2$，那就是错误（见图 4.7）。
+
+<Figure src="images/Fig4-7.jpg" alt="CPU 在 GPU 执行绘制命令前改写资源数据导致错误" figureNumber="图 4.7" caption="这是错误，因为 C 会以 p₂ 绘制该几何体，或者在 R 正在被更新的过程中绘制。无论哪种情况，都不是期望的行为。" />
+
+解决这一情况的一种办法是强制 CPU 等待，直到 GPU 处理完队列中直到某个指定围栏点为止的所有命令。我们称之为**清空命令队列**（flushing the command queue）。可以用 *fence*（围栏）来做这件事。围栏由 `ID3D12Fence` 接口表示，用于同步 GPU 与 CPU。围栏对象可以用下面的方法创建：
+
+```cpp
+HRESULT ID3D12Device::CreateFence(
+    UINT64 InitialValue,
+    D3D12_FENCE_FLAGS Flags,
+    REFIID riid,
+    void **ppFence);
+
+// Example
+ThrowIfFailed(md3dDevice->CreateFence(
+    0,
+    D3D12_FENCE_FLAG_NONE,
+    IID_PPV_ARGS(&mFence)));
+```
+
+围栏对象维护<a id="page113"/>一个 `UINT64` 值，它只是一个用来标识时间上某个围栏点的整数。我们从 0 开始，每当需要标记一个新的围栏点时就把该整数加一。下面的代码/注释展示了如何用围栏清空命令队列：
+
+```cpp
+UINT64 mCurrentFence = 0;
+void D3DApp::FlushCommandQueue()
+{
+    // Advance the fence value to mark commands up to this fence point.
+    mCurrentFence++;
+
+    // Add an instruction to the command queue to set a new fence point.
+    // Because we are on the GPU timeline, the new fence point won't be 
+    // set until the GPU finishes processing all the commands prior to 
+    // this Signal().
+    ThrowIfFailed(mCommandQueue->Signal(mFence.Get(), mCurrentFence));
+
+    // Wait until the GPU has completed commands up to this fence point.
+    if(mFence->GetCompletedValue() < mCurrentFence)
+    {
+        HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+
+        // Fire event when GPU hits current fence.
+        ThrowIfFailed(mFence->SetEventOnCompletion(mCurrentFence, eventHandle));
+
+        // Wait until the GPU hits current fence event is fired.
+        WaitForSingleObject(eventHandle, INFINITE);
+        CloseHandle(eventHandle);
+    }
+}
+```
+
+图 4.8 从图形上解释了这段代码。
+
+<Figure src="images/Fig4-8.jpg" alt="CPU 调用 Signal 后等待 GPU 到达围栏点的示意图" figureNumber="图 4.8" caption="在这一快照中，GPU 已处理到 x_gpu 处的命令，而 CPU 刚调用了 ID3D12CommandQueue::Signal(fence, n+1) 方法。这实质上是在队列末尾加入一条指令，把围栏值改为 n + 1。然而，在 GPU 处理完 Signal(fence, n+1) 指令之前加入队列的所有命令之前，mFence->GetCompletedValue() 会一直返回 n。" />
+
+因此在上面的例子中，CPU 发出绘制命令 $C$ 之后，会在改写 $R$ 的数据以存储新位置 $p_2$ 之前清空命令队列。这个解决方案并不理想，因为它意味着 CPU 在等待 GPU 完成时空闲，但它提供了一个简单的解决方案，我们一直用到第 7 章。你几乎可以在任何位置清空命令队列（不必每帧只有一次）；例如，如果你有一些初始化的 GPU 命令，可以在进入主渲染循环之前清空命令队列以执行这些初始化。
+
+<a id="page114"/>注意，清空命令队列也可以用来解决上一节末尾提到的问题；也就是说，我们可以清空命令队列，以确保在重置命令分配器之前所有 GPU 命令都已执行完毕。
+
+<h3>4.2.3 资源状态转换</h3>
+
+为了实现常见的渲染效果，GPU 常常先在某一步写入资源 $R$，然后在稍后一步从资源 $R$ 读取。然而，如果 GPU 尚未写完某个资源，或根本还没开始写，就去读取它，会构成一次*资源冲突*（resource hazard）。为解决这个问题，Direct3D 给资源关联一个状态。资源创建时处于默认状态，应用程序负责把任何状态转换告知 Direct3D。这让 GPU 可以做任何必要工作来完成转换并避免资源冲突。例如，如果我们要写入一个资源（比如一张纹理），就把该纹理状态设置为渲染目标状态；当需要读取该纹理时，把它的状态改为着色器资源状态。通过把转换告知 Direct3D，GPU 就能采取措施避免冲突，例如在读取资源之前等待所有写操作完成。出于性能原因，资源转换的负担由应用开发者承担——应用开发者知道这些转换何时发生，而自动的转换跟踪系统会带来额外开销。
+
+资源转换通过在命令列表上设置一组*转换资源屏障*（transition resource barriers）来指定；之所以是数组，是为了能用一次 API 调用转换多个资源。在代码中，资源屏障由 `D3D12_RESOURCE_BARRIER_DESC` 结构表示。下面的辅助函数（定义在 *d3dx12.h* 中）为给定资源返回一份转换资源屏障描述，并指定转换前后的状态：
+
+```cpp
+struct CD3DX12_RESOURCE_BARRIER : public D3D12_RESOURCE_BARRIER
+{
+    // [...] convenience methods
+
+static inline CD3DX12_RESOURCE_BARRIER Transition(
+    _In_ ID3D12Resource* pResource,
+    D3D12_RESOURCE_STATES stateBefore,
+    D3D12_RESOURCE_STATES stateAfter,
+    UINT subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+    D3D12_RESOURCE_BARRIER_FLAGS flags = D3D12_RESOURCE_BARRIER_FLAG_NONE)
+    {
+        CD3DX12_RESOURCE_BARRIER result;
+        ZeroMemory(&result, sizeof(result));
+        D3D12_RESOURCE_BARRIER &barrier = result;
+        result.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        result.Flags = flags;
+        barrier.Transition.pResource = pResource;
+        barrier.Transition.StateBefore = stateBefore;
+        barrier.Transition.StateAfter = stateAfter;
+        barrier.Transition.Subresource = subresource;
+        return result;
+    }
+
+    // [...] more convenience methods
+};
+```
+
+注意 `CD3DX12_RESOURCE_BARRIER` 扩展了 `D3D12_RESOURCE_BARRIER_DESC` 并增加了便利方法。大多数 Direct3D 12 结构都有扩展的辅助变体，我们更倾向使用这些变体以获得便利。所有 CD3DX12 变体都定义在 *d3dx12.h* 中。该文件不属于 DirectX 12 SDK 的核心部分，但可从 Microsoft 下载。为方便起见，本书源代码的 *Common* 目录中包含了一份副本。
+
+本章示例应用中该函数的一个用法如下：
+
+```cpp
+mCommandList->ResourceBarrier(1,
+    &CD3DX12_RESOURCE_BARRIER::Transition(
+        CurrentBackBuffer(),
+        D3D12_RESOURCE_STATE_PRESENT,
+        D3D12_RESOURCE_STATE_RENDER_TARGET));
+```
+
+这段代码把表示屏幕上所显示图像的纹理从呈现状态转换为渲染目标状态。注意，资源屏障是被加入命令列表的。你可以把资源屏障转换本身看作一条命令，用来告诉 GPU 某个资源的状态正在转换，从而让它在执行后续命令时采取必要措施避免资源冲突。
+
+注：除转换类型之外，资源屏障还有其他类型。我们目前只需要转换类型，等到需要时再介绍其他类型。
+
+<h3>4.2.4 命令的多线程</h3>
+
+Direct3D 12 在设计时就考虑了高效多线程。命令列表的设计就是 Direct3D 利用多线程的一种方式。对于含有大量对象的大型场景，构建绘制整个场景的命令列表会花费 CPU 时间。因此思路是并行地构建命令列表：例如，你可以派生四个线程，每个线程负责构建一个绘制 25% 场景对象的命令列表。
+
+关于命令列表多线程有几点需要注意：
+
+1. 命令列表不是自由线程的（free-threaded）；也就是说，多个线程不能共享同一个命令列表并并发调用其方法。因此通常每个线程都有自己的命令列表。
+2. 命令分配器也不是自由线程的；也就是说，多个线程不能共享同一个命令分配器并并发调用其方法。因此通常每个线程都有自己的命令分配器。
+3. 命令队列是自由线程的，因此多个线程可以访问命令队列并并发调用其方法。特别地，每个线程都可以并发地把自己生成的命令列表提交到命令队列。
+4. 出于性能原因，应用程序必须在初始化时指定它将并发记录的命令列表的最大数量。
+
+为简单起见，本书不使用多线程。读完本书之后，我们建议读者研究 Multithreading12 SDK 示例，看看命令列表如何并行生成。想最大化利用系统资源的应用程序当然应使用多线程来利用多个 CPU 核心。
+</section>
+
+<section className="lesson-section" id="s43">
+<h2>4.3 初始化 Direct3D</h2>
+
+下面各小节展示如何为我们的演示框架初始化 Direct3D。这个过程很长，但只需做一次。我们的 Direct3D 初始化流程可以分解为以下步骤：
+
+1. 使用 `D3D12CreateDevice` 函数创建 `ID3D12Device`。
+2. 创建一个 `ID3D12Fence` 对象并查询描述符大小。
+3. 检查 4X MSAA 质量级别支持。
+4. 创建命令队列、命令列表分配器和主命令列表。
+5. 描述并创建交换链。
+6. 创建应用程序所需的描述符堆。
+7. <a id="page117"/>调整后缓冲大小并创建指向后缓冲的渲染目标视图。
+8. 创建深度/模板缓冲及其关联的深度/模板视图。
+9. 设置视口和裁剪矩形。
+
+<h3>4.3.1 创建设备</h3>
+
+初始化 Direct3D 首先要创建 Direct3D 12 设备（`ID3D12Device`）。设备代表一个显示适配器。通常显示适配器是一块三维硬件（例如显卡）；不过系统也可以有模拟三维硬件功能的软件显示适配器（例如 WARP 适配器）。Direct3D 12 设备用于检查特性支持，以及创建所有其他 Direct3D 接口对象，如资源、视图和命令列表。可以用下面的函数创建设备：
+
+```cpp
+HRESULT WINAPI D3D12CreateDevice(
+    IUnknown* pAdapter,
+    D3D_FEATURE_LEVEL MinimumFeatureLevel,
+    REFIID riid, // Expected: ID3D12Device
+    void** ppDevice );
+```
+
+1. `pAdapter`：指定我们希望所创建设备代表的显示适配器。该参数为 null 表示使用主显示适配器。本书的示例程序始终使用主适配器。§4.1.10 展示了如何枚举系统上所有显示适配器。
+2. `MinimumFeatureLevel`：我们的应用程序要求支持的最低特性级别；如果适配器不支持该特性级别，设备创建将失败。在我们的框架中，我们指定 `D3D_FEATURE_LEVEL_11_0`（即 Direct3D 11 特性支持）。
+3. `riid`：我们想创建的 `ID3D12Device` 接口的 COM ID。
+4. `ppDevice`：返回创建的设备。
+
+该函数的一个调用示例如下：
+
+```cpp
+#if defined(DEBUG) || defined(_DEBUG) 
+    // Enable the D3D12 debug layer.
+    {
+        ComPtr<ID3D12Debug> debugController;
+        ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
+        debugController->EnableDebugLayer();
+    }
+#endif
+
+ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&mdxgiFactory)));
+
+// Try to create hardware device.
+HRESULT hardwareResult = D3D12CreateDevice(
+    nullptr,     // default adapter
+    D3D_FEATURE_LEVEL_11_0,
+    IID_PPV_ARGS(&md3dDevice));
+
+// Fallback to WARP device.
+if(FAILED(hardwareResult))
+{
+    ComPtr<IDXGIAdapter> pWarpAdapter;
+    ThrowIfFailed(mdxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter)));
+
+    ThrowIfFailed(D3D12CreateDevice(
+        pWarpAdapter.Get(),
+        D3D_FEATURE_LEVEL_11_0,
+        IID_PPV_ARGS(&md3dDevice)));
+}
+```
+
+注意我们首先为调试模式构建启用调试层。启用调试层时，Direct3D 会启用额外的调试功能，并把调试消息发送到 VC++ 输出窗口，例如：
+
+```
+D3D12 ERROR: ID3D12CommandList::Reset: Reset fails because the command list was not closed.
+```
+
+还要注意，如果我们对 `D3D12CreateDevice` 的调用失败，我们会回退到 WARP 设备，它是一个软件适配器。WARP 代表 Windows Advanced Rasterization Platform。在 Windows 7 及更低版本上，WARP 设备最高支持特性级别 10.1；在 Windows 8 上，WARP 设备最高支持特性级别 11.1。要创建 WARP 适配器，需要创建一个 `IDXGIFactory4` 对象，以便枚举 WARP 适配器：
+
+```cpp
+ComPtr<IDXGIFactory4> mdxgiFactory;
+CreateDXGIFactory1(IID_PPV_ARGS(&mdxgiFactory));
+mdxgiFactory->EnumWarpAdapter(
+    IID_PPV_ARGS(&pWarpAdapter));
+```
+
+`mdxgiFactory` 对象还会用于创建我们的交换链，因为它属于 DXGI 的一部分。
+
+<h3>4.3.2 创建围栏与查询描述符大小</h3>
+
+创建设备之后，我们可以创建用于 CPU/GPU 同步的围栏对象。此外，一旦开始处理描述符，我们就需要知道它们的大小。描述符大小可能因 GPU 而异，因此我们需要查询该信息并缓存描述符大小，以便在需要各种描述符类型时可直接使用：
+
+```cpp
+ThrowIfFailed(md3dDevice->CreateFence(
+    0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+
+mRtvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+    D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+mDsvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+    D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+mCbvSrvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+```
+
+<h3>4.3.3 检查 4X MSAA 质量支持</h3>
+
+本书检查对 4X MSAA 的支持。选择 4X 的原因是：它能在不过分昂贵的前提下带来明显改善，而且所有支持 Direct3D 11 的设备都支持对所有渲染目标格式使用 4X MSAA。因此在 Direct3D 11 硬件上它必然可用，我们不必验证其支持情况。不过我们确实需要检查受支持的质量级别，可以用下面的方法完成：
+
+```cpp
+D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
+msQualityLevels.Format = mBackBufferFormat;
+msQualityLevels.SampleCount = 4;
+msQualityLevels.Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
+msQualityLevels.NumQualityLevels = 0;
+ThrowIfFailed(md3dDevice->CheckFeatureSupport(
+    D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,
+    &msQualityLevels,
+    sizeof(msQualityLevels)));
+
+m4xMsaaQuality = msQualityLevels.NumQualityLevels;
+assert(m4xMsaaQuality > 0 && "Unexpected MSAA quality level.");
+```
+
+由于 4X MSAA 总是受支持，返回的质量级别应当总大于 0；因此我们用断言确认这一点。
+
+<h3>4.3.4 创建命令队列与命令列表</h3>
+
+回顾 §4.2.1：命令队列由 `ID3D12CommandQueue` 接口表示，命令分配器由 `ID3D12CommandAllocator` 接口表示，命令列表由 `ID3D12GraphicsCommandList` 接口表示。下面的函数展示我们如何创建命令队列、命令分配器和命令列表：
+
+```cpp
+ComPtr<ID3D12CommandQueue> mCommandQueue;
+ComPtr<ID3D12CommandAllocator> mDirectCmdListAlloc;
+ComPtr<ID3D12GraphicsCommandList> mCommandList;
+void D3DApp::CreateCommandObjects()
+{
+    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    ThrowIfFailed(md3dDevice->CreateCommandQueue(
+        &queueDesc, IID_PPV_ARGS(&mCommandQueue)));
+
+    ThrowIfFailed(md3dDevice->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        IID_PPV_ARGS(mDirectCmdListAlloc.GetAddressOf())));
+
+    ThrowIfFailed(md3dDevice->CreateCommandList(
+        0,
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        mDirectCmdListAlloc.Get(), // Associated command allocator
+        nullptr,                    // Initial PipelineStateObject
+        IID_PPV_ARGS(mCommandList.GetAddressOf())));
+
+    // Start off in a closed state. This is because the first time we 
+    // refer to the command list we will Reset it, and it needs to be 
+    // closed before calling Reset.
+    mCommandList->Close();
+}
+```
+
+注意在 `CreateCommandList` 中，我们为管线状态对象参数指定 null。在本章的示例程序中，我们没有发出任何绘制命令，因此不需要有效的管线状态对象。管线状态对象将在第 6 章讨论。
+
+<h3>4.3.5 描述并创建交换链</h3>
+
+初始化过程的下一一步是创建交换链。做法是先填写一个 `DXGI_SWAP_CHAIN_DESC` 结构实例，它描述我们将要创建的交换链的特性。该结构定义如下：
+
+```cpp
+typedef struct DXGI_SWAP_CHAIN_DESC
+{
+    DXGI_MODE_DESC BufferDesc;
+    DXGI_SAMPLE_DESC SampleDesc;
+    DXGI_USAGE BufferUsage;
+    UINT BufferCount;
+    HWND OutputWindow;
+    BOOL Windowed;
+    DXGI_SWAP_EFFECT SwapEffect;
+    UINT Flags;
+} DXGI_SWAP_CHAIN_DESC;
+```
+
+`DXGI_MODE_DESC` 是另一个结构，定义如下：
+
+```cpp
+typedef struct DXGI_MODE_DESC
+{
+    UINT Width;                        // Buffer resolution width
+    UINT Height;                       // Buffer resolution height
+    DXGI_RATIONAL RefreshRate;
+    DXGI_FORMAT Format;                // Buffer display format
+    DXGI_MODE_SCANLINE_ORDER ScanlineOrdering; //Progressive vs. interlaced
+    DXGI_MODE_SCALING Scaling;         // How the image is stretched 
+                                     // over the monitor.
+
+} DXGI_MODE_DESC;
+```
+
+<a id="page121"/>在下面各数据成员的说明中，我们只讲对初学者此时最重要的常用标志和选项；更多标志和选项请查阅 SDK 文档。
+
+1. `BufferDesc`：该结构描述我们想创建的后缓冲的属性。我们主要关心的是宽度、高度和像素格式；其他成员的更多细节请查阅 SDK 文档。
+2. `SampleDesc`：多重采样数和质量级别；参见 §4.1.8。若使用单重采样，请指定采样数为 1、质量级别为 0。
+3. `BufferUsage`：指定 `DXGI_USAGE_RENDER_TARGET_OUTPUT`，因为我们要渲染到后缓冲（即把它用作渲染目标）。
+4. `BufferCount`：交换链中使用的缓冲区数量；指定 2 以实现双缓冲。
+5. `OutputWindow`：我们要渲染到的窗口句柄。
+6. `Windowed`：指定 `true` 以窗口模式运行，指定 `false` 以全屏模式运行。
+7. `SwapEffect`：指定 `DXGI_SWAP_EFFECT_FLIP_DISCARD`。
+8. `Flags`：可选标志。如果指定 `DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH`，那么当应用程序切换到全屏模式时，它会选择一个最匹配当前应用程序窗口尺寸的显示模式。如果不指定该标志，那么当应用程序切换到全屏模式时，它会使用当前桌面显示模式。
+
+描述完交换链之后，就可以用 `IDXGIFactory::CreateSwapChain` 方法创建它：
+
+```cpp
+HRESULT IDXGIFactory::CreateSwapChain(
+    IUnknown *pDevice,       // Pointer to ID3D12CommandQueue.
+    DXGI_SWAP_CHAIN_DESC *pDesc, // Pointer to swap chain description.
+    IDXGISwapChain **ppSwapChain);// Returns created swap chain interface.
+```
+
+下面的代码展示了我们在示例框架中如何创建交换链。注意该函数被设计为可以多次调用：它会先销毁旧的交换链，再创建新的。这让我们可以用不同的设置重新创建交换链；特别地，我们可以在运行时更改多重采样设置。
+
+```cpp
+DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+void D3DApp::CreateSwapChain()
+{
+    // Release the previous swapchain we will be recreating.
+    mSwapChain.Reset();
+
+    DXGI_SWAP_CHAIN_DESC sd;
+    sd.BufferDesc.Width = mClientWidth;
+    sd.BufferDesc.Height = mClientHeight;
+    sd.BufferDesc.RefreshRate.Numerator = 60;
+    sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.BufferDesc.Format = mBackBufferFormat;
+    sd.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+    sd.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+    sd.SampleDesc.Count = m4xMsaaState ? 4 : 1;
+    sd.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.BufferCount = SwapChainBufferCount;
+    sd.OutputWindow = mhMainWnd;
+    sd.Windowed = true;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+	// Note: Swap chain uses queue to perform flush.
+    ThrowIfFailed(mdxgiFactory->CreateSwapChain(
+        mCommandQueue.Get(),
+        &sd, 
+        mSwapChain.GetAddressOf()));
+}
+```
+
+<h3>4.3.6 创建描述符堆</h3>
+
+我们需要创建描述符堆来存放应用程序所需的描述符/视图（§4.1.6）。描述符堆由 `ID3D12DescriptorHeap` 接口表示。堆用 `ID3D12Device::CreateDescriptorHeap` 方法创建。在本章的示例程序中，我们需要 `SwapChainBufferCount` 个渲染目标视图（RTV）来描述将要渲染进去的交换链缓冲区资源，以及一个深度/模板视图（DSV）来描述用于深度测试的深度/模板缓冲资源。因此，我们需要一个存放 `SwapChainBufferCount` 个 RTV 的堆，以及一个存放一个 DSV 的堆。这些堆用下面的代码创建：
+
+```cpp
+ComPtr<ID3D12DescriptorHeap> mRtvHeap;
+ComPtr<ID3D12DescriptorHeap> mDsvHeap;
+void D3DApp::CreateRtvAndDsvDescriptorHeaps()
+{
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+    rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    	rtvHeapDesc.NodeMask = 0;
+    ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
+        &rtvHeapDesc, IID_PPV_ARGS(mRtvHeap.GetAddressOf())));
+
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+    dsvHeapDesc.NumDescriptors = 1;
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    	dsvHeapDesc.NodeMask = 0;
+    ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
+        &dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));
+}
+```
+
+<a id="page123"/>在我们的应用框架中，我们定义
+
+```cpp
+static const int SwapChainBufferCount = 2;
+int mCurrBackBuffer = 0;
+```
+
+并用 `mCurrBackBuffer` 跟踪当前后缓冲索引（回顾前缓冲与后缓冲在页面翻转时会互换，因此我们需要跟踪哪个缓冲区是当前后缓冲，才知道该渲染到哪一个）。
+
+创建堆之后，我们需要能够访问它们所存放的描述符。应用程序通过句柄引用描述符。堆中第一个描述符的句柄用 `ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart` 方法获得。下面的函数分别取得当前后缓冲的 RTV 和 DSV：
+
+```cpp
+D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()const
+{
+    // CD3DX12 constructor to offset to the RTV of the current back buffer.
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
+        mRtvHeap->GetCPUDescriptorHandleForHeapStart(),// handle start
+        mCurrBackBuffer,    // index to offset
+        mRtvDescriptorSize); // byte size of descriptor
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const
+{
+    return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
+```
+
+现在我们看到了需要描述符大小的例子。为了偏移到当前后缓冲的 RTV 描述符，我们需要知道 RTV 描述符的字节大小。
+
+<h3>4.3.7 创建渲染目标视图</h3>
+
+如 §4.1.6 所述，我们不会把资源直接绑定到管线的某个阶段；相反，必须为资源创建一个资源视图（描述符），再把该视图绑定到管线阶段。特别地，<a id="page124"/>为了把后缓冲绑定到管线的输出合并阶段（以便 Direct3D 能在其上渲染），我们需要为后缓冲创建一个渲染目标视图。第一步是取得存放在交换链中的缓冲资源：
+
+```cpp
+HRESULT IDXGISwapChain::GetBuffer(
+    UINT Buffer,
+    REFIID riid,
+    void **ppSurface);
+```
+
+1. `Buffer`：标识我们想取得的那个特定后缓冲的索引（如果不止一个）。
+2. `riid`：我们希望获得指针的 `ID3D12Resource` 接口的 COM ID。
+3. `ppSurface`：返回一个指向表示后缓冲的 `ID3D12Resource` 的指针。
+
+对 `IDXGISwapChain::GetBuffer` 的调用会增加对后缓冲的 COM 引用计数，因此用完必须释放它。如果使用 `ComPtr`，这会自动完成。
+
+要创建渲染目标视图，我们使用 `ID3D12Device::CreateRenderTargetView` 方法：
+
+```cpp
+void ID3D12Device::CreateRenderTargetView(
+    ID3D12Resource *pResource,
+    const D3D12_RENDER_TARGET_VIEW_DESC *pDesc,
+    D3D12_CPU_DESCRIPTOR_HANDLE DestDescriptor);
+```
+
+1. `pResource`：指定将被用作渲染目标的资源；在上面的例子中就是后缓冲（即我们正在为后缓冲创建渲染目标视图）。
+2. `pDesc`：指向 `D3D12_RENDER_TARGET_VIEW_DESC` 的指针。该结构除其他内容外，还描述资源中元素的数据类型（格式）。如果资源创建时使用的是带类型格式（即非无类型），该参数可以为 null，表示为该资源的第一个 mipmap 层级（后缓冲只有一个 mipmap 层级）以及资源创建时的格式创建视图。（mipmap 将在第 9 章讨论。）由于我们已经指定了后缓冲的类型，因此为该参数指定 null。
+3. `DestDescriptor`：指向将存放所创建渲染目标视图的描述符的句柄。
+
+下面是调用这两个方法的示例，我们为交换链中的每个缓冲创建一个 RTV：
+
+```cpp
+ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
+CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(
+    mRtvHeap->GetCPUDescriptorHandleForHeapStart());
+for (UINT i = 0; i < SwapChainBufferCount; i++)
+{
+    // Get the ith buffer in the swap chain.
+    ThrowIfFailed(mSwapChain->GetBuffer(
+        i, IID_PPV_ARGS(&mSwapChainBuffer[i])));
+
+    // Create an RTV to it.
+    md3dDevice->CreateRenderTargetView(
+        mSwapChainBuffer[i].Get(), nullptr, rtvHeapHandle);
+
+    // Next entry in heap.
+    rtvHeapHandle.Offset(1, mRtvDescriptorSize);
+}
+```
+
+<h3>4.3.8 创建深度/模板缓冲与视图</h3>
+
+现在我们需要创建深度/模板缓冲。如 §4.1.5 所述，深度缓冲只是一块存储最近可见物体深度信息的二维纹理（如果使用模板，则还存储模板信息）。纹理是一种 GPU 资源，因此我们通过填写一个描述该纹理资源的 `D3D12_RESOURCE_DESC` 结构、再调用 `ID3D12Device::CreateCommittedResource` 方法来创建它。`D3D12_RESOURCE_DESC` 结构定义如下：
+
+```cpp
+typedef struct D3D12_RESOURCE_DESC
+    {
+    D3D12_RESOURCE_DIMENSION Dimension;
+    UINT64 Alignment;
+    UINT64 Width;
+    UINT Height;
+    UINT16 DepthOrArraySize;
+    UINT16 MipLevels;
+    DXGI_FORMAT Format;
+    DXGI_SAMPLE_DESC SampleDesc;
+    D3D12_TEXTURE_LAYOUT Layout;
+    D3D12_RESOURCE_MISC_FLAG MiscFlags;
+} D3D12_RESOURCE_DESC;
+```
+
+1. `Dimension`：资源的维度，是下列枚举类型之一：
+
+   ```cpp
+   enum D3D12_RESOURCE_DIMENSION
+   {
+       D3D12_RESOURCE_DIMENSION_UNKNOWN    = 0,
+       D3D12_RESOURCE_DIMENSION_BUFFER     = 1,
+       D3D12_RESOURCE_DIMENSION_TEXTURE1D  = 2,
+       D3D12_RESOURCE_DIMENSION_TEXTURE2D  = 3,
+       D3D12_RESOURCE_DIMENSION_TEXTURE3D  = 4
+   } D3D12_RESOURCE_DIMENSION;
+   ```
+
+2. `Width`：纹理的宽度（以纹素计）。<a id="page126"/>对于缓冲资源，该值是缓冲区中的字节数。
+3. `Height`：纹理的高度（以纹素计）。
+4. `DepthOrArraySize`：纹理的深度（以纹素计），或纹理数组的大小（对一维和二维纹理而言）。注意不能对三维纹理使用纹理数组。
+5. `MipLevels`：mipmap 层级数。mipmap 会在第 9 章纹理处理中讲解。对于创建深度/模板缓冲，我们的纹理只需要一个 mipmap 层级。
+6. `Format`：`DXGI_FORMAT` 枚举类型的一个成员，指定纹素的格式。对深度/模板缓冲而言，它必须是 §4.1.5 中所示的格式之一。
+7. `SampleDesc`：多重采样数和质量级别；参见 §4.1.7 与 §4.1.8。回顾 4X MSAA 使用比屏幕分辨率大 4 倍的后缓冲和深度缓冲，以便按子像素存储颜色和深度/模板信息。因此，深度/模板缓冲所用的多重采样设置必须与渲染目标所用的设置一致。
+8. `Layout`：`D3D12_TEXTURE_LAYOUT` 枚举类型的一个成员，指定纹理布局。目前我们不必关心布局，可以指定 `D3D12_TEXTURE_LAYOUT_UNKNOWN`。
+9. `MiscFlags`：杂项资源标志。对深度/模板缓冲资源，请指定 `D3D12_RESOURCE_MISC_DEPTH_STENCIL`。
+
+GPU 资源存放在堆中，堆本质上是具有特定属性的 GPU 内存块。`ID3D12Device::CreateCommittedResource` 方法按我们指定的属性把资源创建并提交到某个特定的堆中。
+
+```cpp
+HRESULT ID3D12Device::CreateCommittedResource(
+    const D3D12_HEAP_PROPERTIES *pHeapProperties,
+    D3D12_HEAP_MISC_FLAG HeapMiscFlags,
+    const D3D12_RESOURCE_DESC *pResourceDesc,
+    D3D12_RESOURCE_USAGE InitialResourceState,
+    const D3D12_CLEAR_VALUE *pOptimizedClearValue,
+    REFIID riidResource,
+    void **ppvResource);
+
+typedef struct D3D12_HEAP_PROPERTIES {
+    D3D12_HEAP_TYPE          Type;
+    D3D12_CPU_PAGE_PROPERTIES CPUPageProperties;
+    D3D12_MEMORY_POOL        MemoryPoolPreference;
+    UINT CreationNodeMask;
+    UINT VisibleNodeMask;
+} D3D12_HEAP_PROPERTIES;
+```
+
+1. `pHeapProperties`：我们想把资源提交到的堆的属性。<a id="page127"/>其中一些属性用于高级用法。目前我们主要需要关心的是 `D3D12_HEAP_TYPE`，它可以是 `D3D12_HEAP_PROPERTIES` 枚举类型的下列成员之一：
+   1. `D3D12_HEAP_TYPE_DEFAULT`：默认堆。我们把只由 GPU 访问的资源提交到这里。以深度/模板缓冲为例：GPU 会读写深度/模板缓冲，CPU 从不需要访问它，因此深度/模板缓冲会放在默认堆中。
+   2. `D3D12_HEAP_TYPE_UPLOAD`：上传堆。我们把需要从 CPU 上传数据到 GPU 资源的资源提交到这里。
+   3. `D3D12_HEAP_TYPE_READBACK`：回读堆。我们把需要由 CPU 读取的资源提交到这里。
+   4. `D3D12_HEAP_TYPE_CUSTOM`：用于高级用法场景——更多信息请查阅 MSDN 文档。
+2. `HeapMiscFlags`：关于目标堆的附加标志，通常为 `D3D12_HEAP_MISC_NONE`。
+3. `pResourceDesc`：指向一个 `D3D12_RESOURCE_DESC` 实例的指针，描述我们想创建的资源。
+4. `InitialResourceState`：回顾 §4.2.3，资源有一个当前的使用状态。用该参数设置资源创建时的初始状态。对深度/模板缓冲而言，初始状态为 `D3D12_RESOURCE_USAGE_INITIAL`，随后我们要把它转换到 `D3D12_RESOURCE_USAGE_DEPTH`，以便能作为深度/模板缓冲绑定到管线。
+5. `pOptimizedClearValue`：指向一个 `D3D12_CLEAR_VALUE` 对象的指针，描述清除资源的优化值。与优化清除值匹配的清除调用可能比不匹配的清除调用更快。也可以为该值指定 null，表示不指定优化清除值。
+
+   ```cpp
+   struct D3D12_CLEAR_VALUE
+   {
+       DXGI_FORMAT Format;
+       union 
+       {
+           FLOAT Color[ 4 ];
+           D3D12_DEPTH_STENCIL_VALUE DepthStencil;
+       };
+   }     D3D12_CLEAR_VALUE;
+   ```
+
+6. `riidResource`：我们希望获得指针的 `ID3D12Resource` 接口的 COM ID。<a id="page128"/>
+7. `ppvResource`：返回一个指向表示新建资源的 `ID3D12Resource` 的指针。
+
+注：为了获得最佳性能，资源应放在默认堆中。只有确实需要相应特性时才使用上传堆或回读堆。
+
+此外，在使用深度/模板缓冲之前，我们必须创建一个关联的深度/模板视图以便绑定到管线。其做法与创建渲染目标视图类似。下面的代码示例展示我们如何创建深度/模板纹理及其对应的深度/模板视图：
+
+```cpp
+// Create the depth/stencil buffer and view.
+D3D12_RESOURCE_DESC depthStencilDesc;
+depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+depthStencilDesc.Alignment = 0;
+depthStencilDesc.Width = mClientWidth;
+depthStencilDesc.Height = mClientHeight;
+depthStencilDesc.DepthOrArraySize = 1;
+depthStencilDesc.MipLevels = 1;
+depthStencilDesc.Format = mDepthStencilFormat;
+depthStencilDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
+depthStencilDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+D3D12_CLEAR_VALUE optClear;
+optClear.Format = mDepthStencilFormat;
+optClear.DepthStencil.Depth = 1.0f;
+optClear.DepthStencil.Stencil = 0;
+```
+
+```cpp
+ThrowIfFailed(md3dDevice->CreateCommittedResource(
+    &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+    D3D12_HEAP_FLAG_NONE,
+    &depthStencilDesc,
+    D3D12_RESOURCE_STATE_COMMON,
+    &optClear,
+    IID_PPV_ARGS(mDepthStencilBuffer.GetAddressOf())));
+
+// Create descriptor to mip level 0 of entire resource using the
+// format of the resource.
+md3dDevice->CreateDepthStencilView(
+    mDepthStencilBuffer.Get(),
+    nullptr, 
+    DepthStencilView());
+
+// Transition the resource from its initial state to be used as a depth buffer.
+mCommandList->ResourceBarrier(
+    1, 
+    &CD3DX12_RESOURCE_BARRIER::Transition(
+        mDepthStencilBuffer.Get(),
+        D3D12_RESOURCE_STATE_COMMON,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE));
+```
+
+注意我们用 `CD3DX12_HEAP_PROPERTIES` 辅助构造函数来创建堆属性结构，其实现如下：
+
+```cpp
+explicit CD3DX12_HEAP_PROPERTIES(
+            D3D12_HEAP_TYPE type, 
+            UINT creationNodeMask = 1, 
+            UINT nodeMask = 1 )
+{
+    Type = type;
+    CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    CreationNodeMask = creationNodeMask;
+    VisibleNodeMask = nodeMask;
+}
+```
+
+`CreateDepthStencilView` 的第二个参数是指向 `D3D12_DEPTH_STENCIL_VIEW_DESC` 的指针。该结构除其他内容外，还描述资源中元素的数据类型（格式）。如果资源创建时使用的是带类型格式（即非无类型），该参数可以为 null，表示为该资源的第一个 mipmap 层级（深度/模板缓冲创建时只有一个 mipmap 层级）以及资源创建时的格式创建视图。（mipmap 将在第 9 章讨论。）由于我们已经指定了深度/模板缓冲的类型，因此为该参数指定 null。
+
+<h3>4.3.9 设置视口</h3>
+
+通常我们希望把三维场景绘制到整个后缓冲上，后缓冲的大小对应整个屏幕（全屏模式）或窗口的整个客户区。不过有时我们只想把三维场景绘制到后缓冲的一个子矩形中；见图 4.9。
+
+<Figure src="images/Fig4-9.jpg" alt="后缓冲中的子矩形视口，场景被绘制在其中" figureNumber="图 4.9" caption="通过修改视口，我们可以把三维场景绘制到后缓冲的一个子矩形中。后缓冲随后被呈现到窗口的客户区。" />
+
+我们绘制到的后缓冲<a id="page130"/>子矩形称为**视口**（viewport），由下面的结构描述：
+
+```cpp
+typedef struct D3D12_VIEWPORT {
+    FLOAT TopLeftX;
+    FLOAT TopLeftY;
+    FLOAT Width;
+    FLOAT Height;
+    FLOAT MinDepth;
+    FLOAT MaxDepth;
+} D3D12_VIEWPORT;
+```
+
+前四个数据成员定义相对于后缓冲的视口矩形（注意因为数据成员是 `float` 类型，我们可以指定小数像素坐标）。在 Direct3D 中，深度值以 0 到 1 的归一化范围存储在深度缓冲中。`MinDepth` 和 `MaxDepth` 成员用于把深度区间 [0, 1] 变换到深度区间 [`MinDepth`, `MaxDepth`]。能够变换深度范围可用于实现某些效果；例如，你可以设置 `MinDepth=0` 且 `MaxDepth=0`，使所有用该视口绘制的物体深度值都为 0，从而出现在场景中所有其他物体之前。不过通常 `MinDepth` 设为 0、`MaxDepth` 设为 1，使深度值不被修改。
+
+填写完 `D3D12_VIEWPORT` 结构后，我们用 `ID3D12CommandList::RSSetViewports` 方法在 Direct3D 中设置视口。下面的示例创建并设置了一个绘制到整个后缓冲的视口：
+
+```cpp
+D3D12_VIEWPORT vp;
+vp.TopLeftX = 0.0f;
+vp.TopLeftY = 0.0f;
+vp.Width  = static_cast<float>(mClientWidth);
+vp.Height = static_cast<float>(mClientHeight);
+vp.MinDepth = 0.0f;
+vp.MaxDepth = 1.0f;
+
+mCommandList->RSSetViewports(1, &vp);
+```
+
+第一个参数是要绑定的视口数量（使用多于一个视口是用于高级效果），第二个参数是指向视口数组的指针。
+
+注：不能对同一个渲染目标指定多个视口。多个视口用于同时渲染到多个渲染目标的高级技术。
+
+注：每次重置命令列表时都需要重新设置视口。
+
+例如，可以用视口实现双人游戏模式的分屏。你会创建两个视口，一个用于屏幕左半部分，一个用于<a id="page131"/>屏幕右半部分。然后把玩家 1 视角的三维场景绘制到左侧视口，把玩家 2 视角的三维场景绘制到右侧视口。
+
+<h3>4.3.10 设置裁剪矩形</h3>
+
+我们可以相对后缓冲定义一个*裁剪矩形*（scissor rectangle），使该矩形之外的像素被剔除（即不会被光栅化到后缓冲）。这可以用于优化。例如，如果我们知道屏幕的某块区域会覆盖一个矩形 UI 元素，那么就不需要处理那些会被该 UI 元素遮挡的三维世界像素。
+
+裁剪矩形由 `D3D12_RECT` 结构定义，该结构被 `typedef` 为如下结构：
+
+```cpp
+typedef struct tagRECT
+{
+    LONG left;
+    LONG top;
+    LONG right;
+    LONG bottom;
+} RECT;
+```
+
+我们用 `ID3D12CommandList::RSSetScissorRects` 方法在 Direct3D 中设置裁剪矩形。下面的示例创建并设置了一个覆盖后缓冲左上四分之一区域的裁剪矩形：
+
+```cpp
+mScissorRect = { 0, 0, mClientWidth/2, mClientHeight/2 };
+mCommandList->RSSetScissorRects(1, &mScissorRect);
+```
+
+与 `RSSetViewports` 类似，第一个参数是要绑定的裁剪矩形数量（使用多于一个是用于高级效果），第二个参数是指向矩形数组的指针。
+
+注：不能对同一个渲染目标指定多个裁剪矩形。多个裁剪矩形用于同时渲染到多个渲染目标的高级技术。
+
+注：每次重置命令列表时都需要重新设置裁剪矩形。
+</section>
+
+<section className="lesson-section" id="s44">
+<h2>4.4 计时与动画</h2>
+
+要正确地进行动画，我们需要跟踪时间。特别是，我们需要测量动画各帧之间流逝的时间。如果帧率很高，这些帧间隔会非常短；因此我们需要一个高精度的计时器。<a id="page132"/>
+
+<h3>4.4.1 性能计时器</h3>
+
+为了进行精确的时间测量，我们使用性能计时器（或性能计数器）。要使用查询性能计时器的 Win32 函数，我们必须 `#include <windows.h>`。
+
+性能计时器以称为 counts（计数）的单位来度量时间。我们用 `QueryPerformanceCounter` 函数取得性能计时器当前的时间值（以 counts 为单位）：
+
+```cpp
+    __int64 currTime;
+    QueryPerformanceCounter((LARGE_INTEGER*)&currTime);
+```
+
+注意该函数通过其参数返回当前时间值，该参数是一个 64 位整数值。
+
+要取得性能计时器的频率（每秒的 counts 数），我们使用 `QueryPerformanceFrequency` 函数：
+
+```cpp
+    __int64 countsPerSec;
+    QueryPerformanceFrequency((LARGE_INTEGER*)&countsPerSec);
+```
+
+于是每个 count 对应的秒数（或秒的小数）就是每秒 counts 数的倒数：
+
+```cpp
+    mSecondsPerCount = 1.0 / (double)countsPerSec;
+```
+
+因此，要把时间读数 `valueInCounts` 转换为秒，只需把它乘以转换因子 `mSecondsPerCount`：
+
+```cpp
+    valueInSecs = valueInCounts * mSecondsPerCount;
+```
+
+`QueryPerformanceCounter` 函数返回的值本身并不是特别有意义。我们真正要做的是：先用 `QueryPerformanceCounter` 取得当前时间值，稍后再用 `QueryPerformanceCounter` 取得一次当前时间值。两次取时之间流逝的时间就是两者之差。也就是说，我们总是通过两个时间戳的相对差来度量时间，而不是性能计数器返回的实际值。下面的例子更清楚地说明了这一思路：
+
+```cpp
+    __int64 A = 0;
+    QueryPerformanceCounter((LARGE_INTEGER*)&A);
+
+    /* Do work */
+
+    __int64 B = 0;
+    QueryPerformanceCounter((LARGE_INTEGER*)&B);
+```
+
+于是完成这些工作花费了 (B–A) 个 counts，或者说 (B–A)*mSecondsPerCount 秒。
+
+注：MSDN 对 `QueryPerformanceCounter` 有如下说明："在多处理器计算机上，无论调用哪个处理器都不应有影响。但是，由于基本输入/输出系统（BIOS）或硬件抽象层（HAL）中的缺陷，你可能在不同处理器上得到不同的结果。"你可以用 `SetThreadAffinityMask` 函数，使主应用线程不被切换到其他处理器。
+
+<h3>4.4.2 游戏计时器类</h3>
+
+在接下来的两节中，我们将讨论下面这个 `GameTimer` 类的实现。
+
+```cpp
+class GameTimer
+{
+public:
+    GameTimer();
+
+    float GameTime()const; // in seconds
+    float DeltaTime()const; // in seconds
+
+    void Reset(); // Call before message loop.
+    void Start(); // Call when unpaused.
+    void Stop(); // Call when paused.
+    void Tick(); // Call every frame.
+
+private:
+    double mSecondsPerCount;
+    double mDeltaTime;
+
+    __int64 mBaseTime;
+    __int64 mPausedTime;
+    __int64 mStopTime;
+    __int64 mPrevTime;
+    __int64 mCurrTime;
+
+    bool mStopped;
+};
+```
+
+构造函数特别之处在于它查询了性能计数器的频率。其他成员函数将在接下来的两节中讨论。
+
+```cpp
+GameTimer::GameTimer()
+: mSecondsPerCount(0.0), mDeltaTime(-1.0), mBaseTime(0), 
+  mPausedTime(0), mPrevTime(0), mCurrTime(0), mStopped(false)
+{
+    __int64 countsPerSec;
+    QueryPerformanceFrequency((LARGE_INTEGER*)&countsPerSec);
+    mSecondsPerCount = 1.0 / (double)countsPerSec;
+}
+```
+
+`GameTimer` 类及其实现位于 <a id="page134"/>*GameTimer.h* 和 *GameTimer.cpp* 文件中，可在示例代码的 *Common* 目录里找到。
+
+<h3>4.4.3 帧之间流逝的时间</h3>
+
+当我们渲染动画的各帧时，需要知道帧之间流逝了多少时间，以便根据经过的时间更新游戏对象。计算帧间流逝时间的做法如下。设 $t_i$ 为第 $i$ 帧期间性能计数器返回的时间，$t_{i-1}$ 为上一帧期间性能计数器返回的时间。那么从 $t_{i-1}$ 读数到 $t_i$ 读数之间流逝的时间为 $\Delta t=t_i-t_{i-1}$。对于实时渲染，为获得平滑动画我们通常要求至少每秒 30 帧（而实际帧率通常高得多）；因此 $\Delta t=t_i-t_{i-1}$ 往往是一个相对较小的数值。
+
+下面的代码展示了如何用代码计算 $\Delta t$：
+
+```cpp
+void GameTimer::Tick()
+{
+    if( mStopped )
+    {
+        mDeltaTime = 0.0;
+        return;
+    }
+
+    // Get the time this frame.
+    __int64 currTime;
+    QueryPerformanceCounter((LARGE_INTEGER*)&currTime);
+    mCurrTime = currTime;
+
+    // Time difference between this frame and the previous.
+    mDeltaTime = (mCurrTime - mPrevTime)*mSecondsPerCount;
+
+    // Prepare for next frame.
+    mPrevTime = mCurrTime;
+
+    // Force nonnegative. The DXSDK's CDXUTTimer mentions that if the 
+    // processor goes into a power save mode or we get shuffled to 
+    // another processor, then mDeltaTime can be negative.
+    if(mDeltaTime < 0.0)
+    {
+        mDeltaTime = 0.0;
+    }
+}
+```
+
+```cpp
+float GameTimer::DeltaTime()const
+{
+    return (float)mDeltaTime;
+}
+```
+
+`Tick` 函数在应用程序消息循环<a id="page135"/>中这样调用：
+
+```cpp
+int D3DApp::Run()
+{
+    MSG msg = {0};
+
+    mTimer.Reset();
+
+    while(msg.message != WM_QUIT)
+    {
+        // If there are Window messages then process them.
+        if(PeekMessage( &msg, 0, 0, 0, PM_REMOVE ))
+        {
+            TranslateMessage( &msg );
+            DispatchMessage( &msg );
+        }
+        // Otherwise, do animation/game stuff.
+        else
+        {    
+            mTimer.Tick();
+
+            if( !mAppPaused )
+            {
+                CalculateFrameStats();
+                Update(mTimer);    
+                Draw(mTimer);
+            }
+            else
+            {
+                Sleep(100);
+            }
+        }
+    }
+
+    return (int)msg.wParam;
+}
+```
+
+这样，$\Delta t$ 每帧都会被计算并送入 `UpdateScene` 方法，从而让场景根据自上一帧动画以来经过的时间来更新。`Reset` 方法的实现如下：
+
+```cpp
+void GameTimer::Reset()
+{
+    __int64 currTime;
+    QueryPerformanceCounter((LARGE_INTEGER*)&currTime);
+
+    mBaseTime = currTime;
+    mPrevTime = currTime;
+    mStopTime = 0;
+    mStopped = false;
+} 
+```
+
+上面展示的某些变量还没有讨论过（见 §4.4.4）。不过我们看到，它在调用 `Reset` 时把 `mPrevTime` 初始化为当前时间。这一点很重要，因为对于动画的第一帧来说并不存在上一帧，也就没有上一个时间戳 $t_{i-1}$。<a id="page136"/>因此这个值必须在消息循环开始之前于 `Reset` 方法中初始化。
+
+<h3>4.4.4 总时间</h3>
+
+另一个可能有用的时间测量是从应用程序开始以来流逝的时间（不计暂停时间）；我们称之为*总时间*（total time）。下面这个场景说明它如何发挥作用。假设玩家有 300 秒完成一个关卡。关卡开始时，我们可以取得时间 $t_{start}$，即自应用程序开始以来流逝的时间。关卡开始后，我们每隔一段时间检查一次自应用程序开始以来的时间 $t$。如果 $t-t_{start}>300\text{s}$（见图 4.10），那么玩家在这一关中已超过 300 秒，判定失败。显然在这种情形下，我们不希望把游戏暂停的时间算在玩家头上。
+
+<Figure src="images/Fig4-10.jpg" alt="以应用程序开始时刻为原点计量关卡内已用时间" figureNumber="图 4.10" caption="计算自关卡开始以来经过的时间。注意我们选择应用程序开始时刻作为原点（0），并相对于该参考坐标系来度量时间值。" />
+
+总时间的另一个应用是当我们希望把某个量做成时间的函数来制作动画时。例如，假设我们希望一盏灯绕场景做轨道运动，其位置可以用参数方程描述：
+
+$$
+\begin{cases}
+x=10\cos t\\
+y=20\\
+z=10\sin t
+\end{cases}
+$$
+
+这里 $t$ 表示时间；随着 $t$（时间）增大，灯的坐标不断更新，使灯在 $y=20$ 平面上沿半径为 10 的圆移动。对于这类动画，我们同样不希望计入暂停时间；见图 4.11。
+
+<Figure src="images/Fig4-11.jpg" alt="暂停与恢复时位置跳变的示意" figureNumber="图 4.11" caption="若在 t₁ 暂停、t₂ 恢复并且计入暂停时间，那么恢复时位置会从 p(t₁) 突然跳到 p(t₂)。" />
+
+为实现总时间，我们使用下列变量：
+
+```cpp
+    __int64 mBaseTime;
+    __int64 mPausedTime;
+    __int64 mStopTime;
+```
+
+如 §4.4.3 所见，`mBaseTime` 在调用 `Reset` 时被初始化为当前时间，我们可以把它看作应用程序启动的时间。在大多数情况下，你只会在消息循环之前调用<a id="page137"/>`Reset` 一次，因此 `mBaseTime` 在应用程序整个生命周期中保持不变。变量 `mPausedTime` 累积我们处于暂停状态期间经过的所有时间。我们需要累积这段时间，以便从总运行时间中减去它，从而不把暂停时间算进去。`mStopTime` 变量给出计时器被停止（暂停）的时间，它用于帮助我们跟踪暂停时间。
+
+`GameTimer` 类的两个重要方法是 `Stop` 和 `Start`。它们应分别在应用程序暂停和恢复时被调用，以便 `GameTimer` 能跟踪暂停时间。代码注释说明了这两个方法的细节。
+
+```cpp
+void GameTimer::Stop()
+{
+    // If we are already stopped, then don't do anything.
+    if( !mStopped )
+    {
+        __int64 currTime;
+        QueryPerformanceCounter((LARGE_INTEGER*)&currTime);
+
+        // Otherwise, save the time we stopped at, and set 
+        // the Boolean flag indicating the timer is stopped.
+        mStopTime = currTime;
+        mStopped = true;
+    }
+}
+
+void GameTimer::Start()
+{
+    __int64 startTime;
+    QueryPerformanceCounter((LARGE_INTEGER*)&startTime);
+
+    // Accumulate the time elapsed between stop and start pairs.
+    //
+    //     |<-------d------->|
+    // ---------------*-----------------*------------> time
+    //            mStopTime       startTime
+
+    // If we are resuming the timer from a stopped state...
+    if( mStopped )
+    {
+        // then accumulate the paused time.
+        mPausedTime += (startTime - mStopTime);    
+
+        // since we are starting the timer back up, the current 
+        // previous time is not valid, as it occurred while paused.
+        // So reset it to the current time.
+        mPrevTime = startTime;
+
+        // no longer stopped...
+        mStopTime = 0;
+        mStopped = false;
+    }
+}
+```
+
+最后，`TotalTime` 成员函数返回自调用 `Reset` 以来流逝的时间（不计暂停时间），<a id="page138"/>其实现如下：
+
+```cpp
+float GameTimer::TotalTime()const
+{
+// If we are stopped, do not count the time that has passed
+// since we stopped. Moreover, if we previously already had
+// a pause, the distance mStopTime - mBaseTime includes paused 
+// time,which we do not want to count. To correct this, we can
+// subtract the paused time from mStopTime: 
+//
+//                 previous paused time
+//                 |<----------->|
+// ---*------------*-------------*-------*-----------*------> time
+// mBaseTime                     mStopTime    mCurrTime
+
+    if( mStopped )
+    {
+        return (float)(((mStopTime - mPausedTime)-
+                       mBaseTime)*mSecondsPerCount);
+    }
+
+// The distance mCurrTime - mBaseTime includes paused time,
+// which we do not want to count. To correct this, we can subtract 
+// the paused time from mCurrTime: 
+//
+// (mCurrTime - mPausedTime) - mBaseTime 
+//                         |<--paused time-->|
+// ----*---------------*-----------------*------------*------> time
+// mBaseTime          mStopTime      startTime    mCurrTime
+    
+    else
+    {
+        return (float)(((mCurrTime-mPausedTime)-
+                       mBaseTime)*mSecondsPerCount);
+    }
+}
+```
+
+我们的演示框架<a id="page139"/>创建了一个 `GameTimer` 实例，用来测量自应用程序开始以来的总时间以及帧之间流逝的时间；不过你也可以创建额外的实例，把它们当作通用的"秒表"使用。例如，炸弹被点燃时可以启动一个新的 `GameTimer`，当 `TotalTime` 达到 5 秒时，就触发一个炸弹爆炸的事件。
+</section>
+
+<section className="lesson-section" id="s45">
+<h2>4.5 演示应用程序框架</h2>
+
+本书的演示程序使用 *d3dUtil.h、d3dUtil.cpp、d3dApp.h 和 d3dApp.cpp* 中的代码，这些文件可从本书网站下载。*d3dUtil.h* 和 *d3dUtil.cpp* 包含有用的工具代码，*d3dApp.h* 和 *d3dApp.cpp* 包含核心的 Direct3D 应用程序类代码，用于封装一个 Direct3D 示例应用程序。我们鼓励读者在读完本章后研究这些文件，因为书中没有覆盖这些文件的每一行代码（例如，我们不展示如何创建窗口，因为基本的 Win32 编程是本书的先修要求）。该框架的目标是隐藏窗口创建代码和 Direct3D 初始化代码；通过隐藏这些代码，我们觉得可以让演示程序更少干扰阅读，从而让你把注意力只放在示例代码试图说明的具体细节上。
+
+<h3>4.5.1 D3DApp</h3>
+
+`D3DApp` 类是基础的 Direct3D 应用程序类，它提供创建主应用窗口、运行应用程序消息循环、处理窗口消息和初始化 Direct3D 的函数。此外，该类还为演示应用程序定义了框架函数。客户端应当从 `D3DApp` 派生、重写这些虚框架函数，并且只实例化一个派生 `D3DApp` 类的实例。`D3DApp` 类定义如下：
+
+```cpp
+#include "d3dUtil.h"
+#include "GameTimer.h"
+
+// Link necessary d3d12 libraries.
+#pragma comment(lib,"d3dcompiler.lib")
+#pragma comment(lib, "D3D12.lib")
+#pragma comment(lib, "dxgi.lib")
+
+class D3DApp
+{
+protected:
+
+    D3DApp(HINSTANCE hInstance);
+    D3DApp(const D3DApp& rhs) = delete;
+    D3DApp& operator=(const D3DApp& rhs) = delete;
+    virtual ~D3DApp();
+
+public:
+
+    static D3DApp* GetApp();
+
+    HINSTANCE AppInst()const;
+    HWND     MainWnd()const;
+    float    AspectRatio()const;
+
+    bool Get4xMsaaState()const;
+    void Set4xMsaaState(bool value);
+
+    int Run();
+
+    virtual bool Initialize();
+    virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+protected:
+    virtual void CreateRtvAndDsvDescriptorHeaps();
+    virtual void OnResize(); 
+    virtual void Update(const GameTimer& gt)=0;
+    virtual void Draw(const GameTimer& gt)=0;
+
+    // Convenience overrides for handling mouse input.
+    virtual void OnMouseDown(WPARAM btnState, int x, int y){ }
+    virtual void OnMouseUp(WPARAM btnState, int x, int y) { }
+    virtual void OnMouseMove(WPARAM btnState, int x, int y){ }
+
+protected:
+
+    bool InitMainWindow();
+    bool InitDirect3D();
+    void CreateCommandObjects();
+    void CreateSwapChain();
+
+    void FlushCommandQueue();
+
+    ID3D12Resource* CurrentBackBuffer()const
+    {
+        return mSwapChainBuffer[mCurrBackBuffer].Get();
+    }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()const
+    {
+        return CD3DX12_CPU_DESCRIPTOR_HANDLE(
+            mRtvHeap->GetCPUDescriptorHandleForHeapStart(), 
+            mCurrBackBuffer, 
+            mRtvDescriptorSize);
+    }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const
+    {
+        return mDsvHeap->GetCPUDescriptorHandleForHeapStart();
+    }
+
+    void CalculateFrameStats();
+
+    void LogAdapters();
+    void LogAdapterOutputs(IDXGIAdapter* adapter);
+    void LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT format);
+
+protected:
+
+    static D3DApp* mApp;
+
+    HINSTANCE mhAppInst = nullptr; // application instance handle
+    HWND      mhMainWnd = nullptr; // main window handle
+    bool      mAppPaused = false; // is the application paused?
+    bool      mMinimized = false; // is the application minimized?
+    bool      mMaximized = false; // is the application maximized?
+    bool      mResizing = false;	// are the resize bars being dragged?
+    bool      mFullscreenState = false;// fullscreen enabled
+
+    // Set true to use 4X MSAA (§4.1.8). The default is false.
+    bool      m4xMsaaState = false;	// 4X MSAA enabled
+    UINT      m4xMsaaQuality = 0;	 // quality level of 4X MSAA
+
+    // Used to keep track of the "delta-time" and game time (§4.4).
+    GameTimer mTimer;
+    
+    Microsoft::WRL::ComPtr<IDXGIFactory4> mdxgiFactory;
+    Microsoft::WRL::ComPtr<IDXGISwapChain> mSwapChain;
+    Microsoft::WRL::ComPtr<ID3D12Device> md3dDevice;
+
+    Microsoft::WRL::ComPtr<ID3D12Fence> mFence;
+    UINT64 mCurrentFence = 0;
+    
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> mCommandQueue;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> mDirectCmdListAlloc;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> mCommandList;
+
+    static const int SwapChainBufferCount = 2;
+    int mCurrBackBuffer = 0;
+    Microsoft::WRL::ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
+    Microsoft::WRL::ComPtr<ID3D12Resource> mDepthStencilBuffer;
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mRtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mDsvHeap;
+
+    D3D12_VIEWPORT mScreenViewport;	
+    D3D12_RECT mScissorRect;	
+
+    UINT mRtvDescriptorSize = 0;
+    UINT mDsvDescriptorSize = 0;
+    UINT mCbvSrvDescriptorSize = 0;
+
+    // Derived class should set these in derived constructor to customize 
+    // starting values.
+    std::wstring mMainWndCaption = L"d3d App";
+    D3D_DRIVER_TYPE md3dDriverType = D3D_DRIVER_TYPE_HARDWARE;
+    DXGI_FORMAT mBackBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    int mClientWidth = 800;
+    int mClientHeight = 600;
+};
+```
+
+上面代码中我们用注释描述了其中一些数据成员；这些方法将在随后各小节中讨论。
+
+<h3>4.5.2 非框架方法</h3>
+
+1. `D3DApp`：构造函数只是把数据成员初始化为默认值。
+2. `~D3DApp`：析构函数释放 `D3DApp` 获取的 COM 接口，并清空命令队列。之所以需要在析构函数中清空命令队列，是因为我们必须等待 GPU 处理完队列中的命令之后，才能销毁任何 GPU 仍在引用的资源。否则，GPU 可能在应用程序退出时崩溃。
+
+   ```cpp
+   D3DApp::~D3DApp()
+   {
+       if(md3dDevice != nullptr)
+           FlushCommandQueue();
+   } 
+   ```
+
+3. `AppInst`：简单的访问函数，返回应用实例句柄的一份拷贝。
+4. `MainWnd`：简单的访问函数，返回主窗口句柄的一份拷贝。
+5. `AspectRatio`：宽高比定义为后缓冲宽度与高度之比。宽高比将在下一章用到。它的实现很简单：
+
+   ```cpp
+   float D3DApp::AspectRatio()const
+   {
+       return static_cast<float>(mClientWidth) / mClientHeight;
+   }
+   ```
+
+6. `Get4xMsaaState`：若启用了 4X MSAA 则返回 true，否则返回 false。
+7. `Set4xMsaaState`：启用/禁用 4X MSAA。
+8. `Run`：该方法封装了应用程序消息循环。它使用 Win32 的 `PeekMessage` 函数，以便在没有消息时处理我们的游戏逻辑。该函数的实现已在 §4.4.3 中给出。
+9. `InitMainWindow`：初始化主应用<a id="page143"/>窗口；我们假定读者熟悉基本的 Win32 窗口初始化。
+10. `InitDirect3D`：通过实现 §4.3 中讨论的各个步骤来初始化 Direct3D。
+11. `CreateSwapChain`：创建交换链（§4.3.5）。
+12. `CreateCommandObjects`：创建命令队列、命令列表分配器和命令列表，如 §4.3.4 所述。
+13. `FlushCommandQueue`：强制 CPU 等待，直到 GPU 处理完队列中的所有命令（见 §4.2.2）。
+14. `CurrentBackBuffer`：返回指向交换链中当前后缓冲的 `ID3D12Resource`。
+15. `CurrentBackBufferView`：返回当前后缓冲的 RTV（渲染目标视图）。
+16. `DepthStencilView`：返回主深度/模板缓冲的 DSV（深度/模板视图）。
+17. `CalculateFrameStats`：计算平均每秒帧数和平均每帧毫秒数。该方法的实现将在 §4.4.4 中讨论。
+18. `LogAdapters`：枚举系统上的所有适配器（§4.1.10）。
+19. `LogAdapterOutputs`：枚举与某个适配器关联的所有输出（§4.1.10）。
+20. `LogOutputDisplayModes`：枚举某个输出在给定格式下支持的所有显示模式（§4.1.10）。
+
+<h3>4.5.3 框架方法</h3>
+
+对于本书中的每个示例应用程序，我们都会一致地重写 `D3DApp` 的六个虚函数。这六个函数用来实现特定示例所需的代码。这样安排的好处是，初始化代码、消息处理等都在 `D3DApp` 类中实现，因此派生类只需专注于该演示程序特有的代码。下面是对这些框架方法的说明：
+
+1. `Initialize`：用该方法放置应用程序的初始化代码，例如分配资源、初始化对象和搭建三维场景。`D3DApp` 中该方法的实现会调用 `InitMainWindow` 和 `InitDirect3D`；因此，在你的派生实现中应该先调用 `D3DApp` 版本的该方法，例如：
+
+   ```cpp
+   bool TestApp::Init()
+   {
+       if(!D3DApp::Init())
+           return false;
+
+       /* Rest of initialization code goes here */
+   }
+   ```
+
+   这样你的初始化<a id="page144"/>代码才能访问 `D3DApp` 中已初始化的成员。
+2. `MsgProc`：该方法为主应用窗口实现窗口过程函数。一般来说，只有当 `D3DApp::MsgProc` 没有处理（或处理方式不满足你的需要）的消息时，你才需要重写该方法。`D3DApp` 中该方法的实现将在 §4.5.5 中探讨。如果重写了该方法，任何你都不处理的消息都应转发给 `D3DApp::MsgProc`。
+3. `CreateRtvAndDsvDescriptorHeaps`：这是一个虚函数，你应在其中创建应用程序所需的 RTV 和 DSV 描述符堆。默认实现创建一个含 `SwapChainBufferCount` 个描述符的 RTV 堆（用于交换链中的缓冲），以及一个含一个描述符的 DSV 堆（用于深度/模板缓冲）。默认实现对我们许多演示程序已经足够；对于使用多个渲染目标的更高级渲染技术，我们将不得不重写该方法。
+4. `OnResize`：当收到 `WM_SIZE` 消息时，`D3DApp::MsgProc` 会调用该方法。当窗口尺寸变化时，某些 Direct3D 属性需要改变，因为它们依赖客户区的尺寸。特别地，后缓冲和深度/模板缓冲需要重新创建以匹配窗口的新客户区尺寸。调整后缓冲大小可以调用 `IDXGISwapChain::ResizeBuffers` 方法；深度/模板缓冲则需要先销毁再根据新尺寸重建。此外，渲染目标视图和深度/模板视图也需要重新创建。`D3DApp` 中 `OnResize` 的实现处理了调整后缓冲和深度/模板缓冲大小所需的代码；直观的细节请查阅源代码。除了缓冲之外，其他属性也依赖客户区尺寸（例如投影矩阵），因此该方法属于框架的一部分，因为窗口尺寸变化时客户代码可能需要执行自己的某些代码。
+5. `Update`：这个抽象方法每帧被调用一次，应当用于随时间更新三维应用（例如执行动画、移动摄像机、做碰撞检测、检查用户输入等）。
+6. `Draw`：这个抽象方法每帧被调用一次，我们在这里发出渲染命令，把当前帧实际绘制到后缓冲上。当我们绘制完当前帧时，调用 `IDXGISwapChain::Present` 方法把后缓冲呈现到屏幕。
+
+注：除了上面这六个<a id="page145"/>框架方法之外，我们还提供三个便于使用的虚函数，用来处理鼠标按钮按下、释放和鼠标移动事件：
+
+```cpp
+    virtual void OnMouseDown(WPARAM btnState, int x, int y){ }
+    virtual void OnMouseUp(WPARAM btnState, int x, int y) { }
+    virtual void OnMouseMove(WPARAM btnState, int x, int y){ }
+```
+
+这样，如果你想处理鼠标消息，就可以重写这些方法，而不必重写 `MsgProc` 方法。第一个参数与各种鼠标消息的 `WPARAM` 参数相同，用于存储鼠标按钮状态（即事件发生时按下了哪些鼠标键）。第二、第三个参数是鼠标光标在客户区中的 (x, y) 坐标。
+
+<h3>4.5.4 帧统计</h3>
+
+游戏和图形应用程序通常会测量每秒渲染的帧数（FPS）。做法很简单：在某个指定时间段 $t$ 内统计已处理的帧数（并存入变量 $n$）。于是时间段 $t$ 内的平均 FPS 就是 $fps_{avg}=n/t=n$。如果取 $t=1$，则 $fps_{avg}=n/1=n$。在我们的代码中取 $t=1$（秒），因为这样避免了除法，而且一秒给出的平均值已经相当不错——不算太长也不算太短。计算 FPS 的代码由 `D3DApp::CalculateFrameStats` 方法提供：
+
+```cpp
+void D3DApp::CalculateFrameStats()
+{
+    // Code computes the average frames per second, and also the 
+    // average time it takes to render one frame. These stats 
+    // are appended to the window caption bar.
+    
+    static int frameCnt = 0;
+    static float timeElapsed = 0.0f;
+
+    frameCnt++;
+
+    // Compute averages over one second period.
+    if( (mTimer.TotalTime() - timeElapsed) >= 1.0f )
+    {
+        float fps = (float)frameCnt; // fps = frameCnt / 1
+        float mspf = 1000.0f / fps;
+
+        wstring fpsStr = to_wstring(fps);
+        wstring mspfStr = to_wstring(mspf);
+
+        wstring windowText = mMainWndCaption +
+            L"    fps: " + fpsStr +
+            L"    mspf: " + mspfStr;
+
+        SetWindowText(mhMainWnd, windowText.c_str());
+
+        // Reset for next average.
+        frameCnt = 0;
+        timeElapsed += 1.0f;
+    }
+}
+```
+
+该方法<a id="page146"/>每帧被调用一次以统计帧数。
+
+除了计算 FPS，上述代码还计算了平均处理一帧所需的毫秒数：
+
+```cpp
+    float mspf = 1000.0f / fps;
+```
+
+每帧的秒数就是 FPS 的倒数，但我们乘以 1000 ms / 1 s 把秒转换为毫秒（回顾每秒有 1000 毫秒）。
+
+这一行的思路是以毫秒为单位计算渲染一帧所需的时间；这与 FPS 是不同的量（但注意该值可以由 FPS 推导出来）。实际上，渲染一帧所需的时间比 FPS 更有用，因为当我们修改场景时，可以直接看到渲染一帧所需时间的增减。相比之下，FPS 不会立即告诉我们渲染时间的增减。而且，正如 [Dunlop03] 在其文章《FPS versus Frame Time》中指出的，由于 FPS 曲线是非线性的，使用 FPS 可能给出误导性结果。例如，考虑情形 (1)：假设我们的应用程序以 1000 FPS 运行，渲染一帧需要 1 毫秒。如果帧率降到 250 FPS，那么渲染一帧需要 4 毫秒。现在考虑情形 (2)：假设我们的应用程序以 100 FPS 运行，渲染一帧需要 10 毫秒。如果帧率降到约 76.9 FPS，那么渲染一帧约需 13 毫秒。在两种情形中，每帧的渲染时间都增加了 3 毫秒，因此两者代表相同的渲染时间增量。读取 FPS 并没有那么直观。从 1000 FPS 降到 250 FPS 看起来比从 100 FPS 降到 76.9 FPS 剧烈得多；然而正如我们刚才证明的，它们实际上代表相同的渲染时间增量。
+
+<h3>4.5.5 消息处理</h3>
+
+我们为应用框架实现的窗口过程只做最基本的工作。一般来说，我们本来也不会过多地与 Win32 消息打交道。事实上，我们应用程序代码的核心是在空闲处理（即没有窗口消息时）期间执行的。尽管如此，仍有一些重要消息需要处理。不过，由于窗口过程篇幅较长，我们不在这里嵌入全部代码，而只说明<a id="page147"/>我们所处理的每条消息背后的动机。我们鼓励读者下载源代码文件，并花些时间熟悉应用框架代码，因为它是本书每个示例的基础。
+
+我们处理的第一条消息是 `WM_ACTIVATE` 消息。当应用程序被激活或失去激活时会收到该消息。实现如下：
+
+```cpp
+case WM_ACTIVATE:
+    if( LOWORD(wParam) == WA_INACTIVE )
+    {
+        mAppPaused = true;
+        mTimer.Stop();
+    }
+    else
+    {
+        mAppPaused = false;
+        mTimer.Start();
+    }
+    return 0;
+```
+
+可以看到，当应用程序失去激活时，我们把数据成员 `mAppPaused` 设为 `true`；当应用程序被激活时，把它设为 `false`。此外，应用程序暂停时我们停止计时器，等应用程序再次被激活时恢复计时器。回顾 `D3DApp::Run` 的实现（§4.4.3），如果应用程序被暂停，我们就不更新应用程序代码，而是把一些 CPU 周期还给操作系统；这样我们的应用程序在非活动状态下就不会占用 CPU 周期。
+
+我们处理的下一条消息是 `WM_SIZE` 消息。回顾一下，该消息在窗口被调整尺寸时被调用。处理它的主要原因是，我们希望后缓冲和深度/模板的尺寸与客户区矩形的尺寸一致（这样不会出现拉伸）。因此，每次窗口尺寸变化时我们都希望调整缓冲尺寸。调整缓冲的代码在 `D3DApp::OnResize` 中实现。如前所述，可以调用 `IDXGISwapChain::ResizeBuffers` 方法调整后缓冲；深度/模板缓冲需要先销毁再根据新尺寸重建。此外，渲染目标视图和深度/模板视图也需要重新创建。如果用户正在拖动调整手柄，我们必须小心，因为拖动调整手柄会连续发送 `WM_SIZE` 消息，而我们不希望不停调整缓冲尺寸。因此，如果我们判断用户是在拖动调整大小，那么除了暂停应用程序之外什么也不做，直到用户松开调整手柄为止。我们可以通过处理 `WM_EXITSIZEMOVE` 消息做到这一点，该消息在用户松开调整手柄时发送。
+
+```cpp
+// WM_ENTERSIZEMOVE is sent when the user grabs the resize bars.
+case WM_ENTERSIZEMOVE:
+    mAppPaused = true;
+    mResizing = true;
+    mTimer.Stop();
+    return 0;
+
+// WM_EXITSIZEMOVE is sent when the user releases the resize bars.
+// Here we reset everything based on the new window dimensions.
+case WM_EXITSIZEMOVE:
+    mAppPaused = false;
+    mResizing = false;
+    mTimer.Start();
+    OnResize();
+    return 0;
+```
+
+我们处理的<a id="page148"/>接下来三条消息实现起来很平凡，因此只展示代码：
+
+```cpp
+// WM_DESTROY is sent when the window is being destroyed.
+case WM_DESTROY:
+    PostQuitMessage(0);
+    return 0;
+
+// The WM_MENUCHAR message is sent when a menu is active and the user 
+// presses a key that does not correspond to any mnemonic or 
+// accelerator key. 
+case WM_MENUCHAR:
+    // Don't beep when we alt-enter.
+    return MAKELRESULT(0, MNC_CLOSE);
+
+// Catch this message to prevent the window from becoming too small.
+case WM_GETMINMAXINFO:
+    ((MINMAXINFO*)lParam)->ptMinTrackSize.x = 200;
+    ((MINMAXINFO*)lParam)->ptMinTrackSize.y = 200;	
+    return 0;
+```
+
+最后，为支持我们的鼠标输入虚函数，我们按如下方式处理以下消息：
+
+```cpp
+case WM_LBUTTONDOWN:
+case WM_MBUTTONDOWN:
+case WM_RBUTTONDOWN:
+    OnMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+    return 0;
+case WM_LBUTTONUP:
+case WM_MBUTTONUP:
+case WM_RBUTTONUP:
+    OnMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+    return 0;
+case WM_MOUSEMOVE:
+    OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+    return 0;		
+```
+
+为了使用 `GET_X_LPARAM` 和 `GET_Y_LPARAM` 宏，我们必须 `#include <Windowsx.h>`。<a id="page149"/>
+
+<h3>4.5.6 "初始化 Direct3D" 演示程序</h3>
+
+既然我们已经讨论了应用框架，就用它来做一个小程序。由于父类 `D3DApp` 完成了该演示所需的大部分工作，这个程序几乎不需要我们做什么真正的工作。需要注意的是我们如何从 `D3DApp` 派生一个类并实现框架函数，我们会在其中编写示例特有的代码。本书所有程序都遵循同样的模板。
+
+```cpp
+#include "../../Common/d3dApp.h"
+#include <DirectXColors.h>
+
+using namespace DirectX;
+
+class InitDirect3DApp : public D3DApp
+{
+public:
+    InitDirect3DApp(HINSTANCE hInstance);
+    ~InitDirect3DApp();
+
+    virtual bool Initialize()override;
+
+private:
+    virtual void OnResize()override;
+    virtual void Update(const GameTimer& gt)override;
+    virtual void Draw(const GameTimer& gt)override;
+
+};
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
+                                   PSTR cmdLine, int showCmd)
+{
+    // Enable run-time memory check for debug builds.
+#if defined(DEBUG) | defined(_DEBUG)
+    _CrtSetDbgFlag( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
+#endif
+
+    try
+    {
+        InitDirect3DApp theApp(hInstance);
+        if(!theApp.Initialize())
+            return 0;
+
+        return theApp.Run();
+    }
+    catch(DxException& e)
+    {
+        MessageBox(nullptr, e.ToString().c_str(), L"HR Failed", MB_OK);
+        return 0;
+    }
+}
+```
+
+```cpp
+InitDirect3DApp::InitDirect3DApp(HINSTANCE hInstance)
+: D3DApp(hInstance) 
+{
+}
+
+InitDirect3DApp::~InitDirect3DApp()
+{
+}
+
+bool InitDirect3DApp::Initialize()
+{
+    if(!D3DApp::Initialize())
+        return false;
+    
+    return true;
+}
+
+void InitDirect3DApp::OnResize()
+{
+    D3DApp::OnResize();
+}
+
+void InitDirect3DApp::Update(const GameTimer& gt)
+{
+
+}
+```
+
+```cpp
+void InitDirect3DApp::Draw(const GameTimer& gt)
+{
+    // Reuse the memory associated with command recording.
+    // We can only reset when the associated command lists have finished
+    // execution on the GPU.
+    ThrowIfFailed(mDirectCmdListAlloc->Reset());
+
+    // A command list can be reset after it has been added to the 
+    // command queue via ExecuteCommandList. Reusing the command list reuses memory.
+    ThrowIfFailed(mCommandList->Reset(
+        mDirectCmdListAlloc.Get(), nullptr));
+
+    // Indicate a state transition on the resource usage.
+    mCommandList->ResourceBarrier(
+        1, &CD3DX12_RESOURCE_BARRIER::Transition(
+            CurrentBackBuffer(),
+            D3D12_RESOURCE_STATE_PRESENT, 
+            D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+    // Set the viewport and scissor rect. This needs to be reset 
+    // whenever the command list is reset.
+    mCommandList->RSSetViewports(1, &mScreenViewport);
+    mCommandList->RSSetScissorRects(1, &mScissorRect);
+
+    // Clear the back buffer and depth buffer.
+    mCommandList->ClearRenderTargetView(
+        CurrentBackBufferView(),
+        Colors::LightSteelBlue, 0, nullptr);
+    mCommandList->ClearDepthStencilView(
+        DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH |
+        D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+    
+    // Specify the buffers we are going to render to.
+    mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(),
+                                     true, &DepthStencilView());
+
+    // Indicate a state transition on the resource usage.
+    mCommandList->ResourceBarrier(
+        1, &CD3DX12_RESOURCE_BARRIER::Transition(
+            CurrentBackBuffer(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT));
+
+    // Done recording commands.
+    ThrowIfFailed(mCommandList->Close());
+
+    // Add the command list to the queue for execution.
+    ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+    mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+    
+    // swap the back and front buffers
+    ThrowIfFailed(mSwapChain->Present(0, 0));
+    mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+
+    // Wait until frame commands are complete. This waiting is 
+    // inefficient and is done for simplicity. Later we will show how to 
+    // organize our rendering code so we do not have to wait per frame.
+    FlushCommandQueue();
+}
+```
+
+还有一些我们<a id="page151"/>尚未讨论的方法。`ClearRenderTargetView` 方法把指定的渲染目标清为给定颜色，`ClearDepthStencilView` 方法清除指定的深度/模板缓冲。我们总是每帧在绘制之前清空后缓冲渲染目标和深度/模板缓冲，以便从一张"白纸"开始绘制图像。这些方法的声明如下：
+
+```cpp
+void ID3D12GraphicsCommandList::ClearRenderTargetView(
+    D3D12_CPU_DESCRIPTOR_HANDLE RenderTargetView,
+    const FLOAT ColorRGBA[ 4 ],
+    UINT NumRects,
+    const D3D12_RECT *pRects);
+```
+
+1. `RenderTargetView`：指向我们要清除的资源的 RTV。
+2. `ColorRGBA`：定义把渲染目标清除到的颜色。
+3. `NumRects`：`pRects` 数组中的元素个数，可以为 0。
+4. `pRects`：一个 `D3D12_RECT` 数组，用于标识渲染目标上要清除的矩形区域。<a id="page152"/>可以是 `nullptr`，表示清除整个渲染目标。
+
+```cpp
+void ID3D12GraphicsCommandList::ClearDepthStencilView(
+    D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView,
+    D3D12_CLEAR_FLAGS ClearFlags,
+    FLOAT Depth,
+    UINT8 Stencil,
+    UINT NumRects,
+    const D3D12_RECT *pRects);
+```
+
+1. `DepthStencilView`：指向要清除的深度/模板缓冲的 DSV。
+2. `ClearFlags`：指示清除深度/模板缓冲哪一部分的标志。可以是 `D3D12_CLEAR_FLAG_DEPTH`、`D3D12_CLEAR_FLAG_STENCIL`，或两者按位或在一起。
+3. `Depth`：定义把深度值清除到的值。
+4. `Stencil`：定义把模板值清除到的值。
+5. `NumRects`：`pRects` 数组中的元素个数，可以为 0。
+6. `pRects`：一个 `D3D12_RECT` 数组，用于标识渲染目标上要清除的矩形区域。可以是 `nullptr`，表示清除整个渲染目标。
+
+另一个新方法是 `ID3D12GraphicsCommandList::OMSetRenderTargets` 方法。该方法设置我们要绑定到管线的渲染目标和深度/模板缓冲。目前我们希望把当前后缓冲用作渲染目标，并使用主深度/模板缓冲。本书后面会介绍使用多个渲染目标的技术。该方法的原型如下：
+
+```cpp
+void ID3D12GraphicsCommandList::OMSetRenderTargets(
+    UINT NumRenderTargetDescriptors,
+    const D3D12_CPU_DESCRIPTOR_HANDLE *pRenderTargetDescriptors,
+    BOOL RTsSingleHandleToDescriptorRange,
+    const D3D12_CPU_DESCRIPTOR_HANDLE *pDepthStencilDescriptor);
+```
+
+1. `NumRenderTargetDescriptors`：指定我们要绑定的 RTV 数量。同时使用多个渲染目标只用于某些高级技术；目前我们始终只用一个 RTV。
+2. `pRenderTargetDescriptors`：指向 RTV 数组的指针，该数组指定我们要绑定到管线的渲染目标。
+3. `RTsSingleHandleToDescriptorRange`：如果上一个数组中的所有 RTV 在描述符堆中连续，请指定 true；否则指定 false。
+4. `pDepthStencilDescriptor`：指向 DSV 的指针，指定我们要绑定到管线的深度/模板缓冲。
+
+最后，`IDXGISwapChain::Present` 方法交换后缓冲与<a id="page153"/>前缓冲。当我们用 `Present` 把交换链的前后缓冲交换时，还必须更新当前后缓冲的索引，以便在随后的帧中渲染到新的后缓冲：
+
+```cpp
+ThrowIfFailed(mSwapChain->Present(0, 0));
+mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+```
+
+<Figure src="images/Fig4-12.jpg" alt="第 4 章示例程序运行后显示的浅蓝色空窗口" figureNumber="图 4.12" caption="第 4 章示例程序的截图。" />
+</section>
+
+<section className="lesson-section" id="s46">
+<h2>4.6 调试 Direct3D 应用程序</h2>
+
+许多 Direct3D 函数会返回 `HRESULT` 错误码。在我们的示例程序中，我们使用一套简单的错误处理系统：检查返回的 `HRESULT`，如果失败，就抛出一个异常，其中保存错误码、函数名、文件名以及出错调用的行号。这通过 *d3dUtil.h* 中的以下代码实现：
+
+```cpp
+class DxException
+{
+public:
+    DxException() = default;
+    DxException(HRESULT hr, const std::wstring& functionName,
+                const std::wstring& filename, int lineNumber);
+
+    std::wstring ToString()const;
+
+    HRESULT ErrorCode = S_OK;
+    std::wstring FunctionName;
+    std::wstring Filename;
+    int LineNumber = -1;
+};
+
+#ifndef ThrowIfFailed
+#define ThrowIfFailed(x) \
+{ \
+    HRESULT hr__ = (x); \
+    std::wstring wfn = AnsiToWString(__FILE__); \
+    if(FAILED(hr__)) { throw DxException(hr__, L#x, wfn, __LINE__); } \
+}
+#endif
+```
+
+注意 `ThrowIfFailed` 必须是宏而不是<a id="page154"/>函数；否则 `__FILE__` 和 `__LINE__` 指向的将是函数实现的文件和行，而不是书写 `ThrowIfFailed` 的文件和行。
+
+`L#x` 把 `ThrowIfFailed` 宏的参数记号转换成 Unicode 字符串。这样我们就可以把导致错误的函数调用输出到消息框中。
+
+对于返回 `HRESULT` 的 Direct3D 函数，我们这样使用该宏：
+
+```cpp
+ThrowIfFailed(md3dDevice->CreateCommittedResource(
+    &CD3D12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+    D3D12_HEAP_MISC_NONE,
+    &depthStencilDesc,
+    D3D12_RESOURCE_USAGE_INITIAL,
+    IID_PPV_ARGS(&mDepthStencilBuffer)));
+```
+
+我们的整个应用程序都放在一个 try/catch 块中：
+
+```cpp
+    try
+    {
+        InitDirect3DApp theApp(hInstance);
+        if(!theApp.Initialize())
+            return 0;
+
+        return theApp.Run();
+    }
+    catch(DxException& e)
+    {
+        MessageBox(nullptr, e.ToString().c_str(), L"HR Failed", MB_OK);
+        return 0;
+    }
+```
+
+如果某个 `HRESULT` 失败，就会抛出异常，我们通过 `MessageBox` 函数输出相关信息，然后退出应用程序。例如，如果我们给 `CreateCommittedResource` 传入无效参数，就会得到下面的消息框：
+
+<Figure src="images/Fig4-13.jpg" alt="HRESULT 失败时弹出的错误消息框，显示 HR_FAILED、函数名、文件名与行号" figureNumber="图 4.13" caption="HRESULT 失败时显示的错误消息框示例。" />
+</section>
+
+<section className="lesson-section" id="s47">
+<h2>4.7 本章小结</h2>
+
+1. 可以把 Direct3D 看作程序员与图形硬件之间的中介。例如，程序员调用 Direct3D 函数把资源视图绑定到硬件渲染管线、配置渲染管线的输出，并绘制三维几何体。
+2. 组件对象模型（COM）是让 DirectX 与语言无关并具备向后兼容性的技术。Direct3D 程序员不需要知道 COM 的细节及其工作原理；他们只需要知道如何获取 COM 接口以及如何释放它们。
+3. 一维纹理类似一维数据元素数组，二维纹理类似二维数据元素数组，三维纹理类似三维数据元素数组。纹理中的元素必须具有由 `DXGI_FORMAT` 枚举类型成员所描述的格式。纹理通常包含图像数据，但也可以包含其他数据，例如深度信息（如深度缓冲）。GPU 可以对纹理执行特殊操作，例如对它们做过滤和多重采样。
+4. 为避免动画闪烁，最好把一整帧动画绘制到称为后缓冲的离屏纹理中。一旦给定帧的整个场景都绘制到后缓冲上，它就作为完整的一帧呈现到屏幕；这样观看者就不会看到帧被逐段绘制的过程。当该帧绘制完成后，后缓冲与前缓冲的角色互换：后缓冲成为前缓冲，前缓冲成为下一帧动画的后缓冲。交换后缓冲与前缓冲角色的操作称为呈现。前缓冲与后缓冲构成交换链，由 `IDXGISwapChain` 接口表示。使用两个缓冲区（前缓冲和后缓冲）称为双缓冲。
+5. 假设场景物体是不透明的，离摄像机最近的点会遮挡其后的任何点。深度缓冲是一种确定场景中离摄像机最近的点的技术。这样我们就不必关心绘制场景物体的顺序。
+6. 在 Direct3D 中，资源不会直接绑定到管线。相反，我们通过指定绘制调用中将要引用的描述符，把资源绑定到渲染管线。描述符对象可以看作向 GPU 标识并描述资源的轻量结构。同一资源可以创建不同的描述符；这样一个资源就能以不同方式被查看，例如绑定到渲染管线的不同阶段，<a id="page156"/>或把它的位解释为不同的 `DXGI_FORMAT`。应用程序创建的描述符堆构成描述符的内存后备。
+7. `ID3D12Device` 是主要的 Direct3D 接口，可以看作我们对物理图形设备硬件的软件控制器；通过它我们可以创建 GPU 资源，以及创建其他用于控制图形硬件、指示其执行操作的专用接口。
+8. GPU 有一条命令队列。CPU 通过命令列表使用 Direct3D API 向队列提交命令。一条命令指示 GPU 做某件事。已提交的命令在到达队列前端之前不会被 GPU 执行。如果命令队列变空，GPU 会因为无工作可做而空闲；另一方面，如果命令队列太满，CPU 迟早会在 GPU 追上来时被迫空闲。这两种情形都会使系统硬件资源得不到充分利用。
+9. GPU 是系统中与 CPU 并行运行的第二个处理器。有时 CPU 与 GPU 需要同步。例如，如果 GPU 队列中有命令引用某个资源，那么在 GPU 用完该资源之前 CPU 不得修改或销毁它。任何导致某个处理器等待而空闲的同步方法都应尽量少用，因为这意味着我们没有充分利用这两个处理器。
+10. 性能计数器是一种高分辨率计时器，提供测量小时间差（例如帧间流逝时间）所需的精确计时。性能计时器以称为 *counts* 的时间单位工作。`QueryPerformanceFrequency` 输出性能计时器的每秒 counts 数，随后可用它把 counts 单位转换为秒。性能计时器的当前时间值（以 counts 计）用 `QueryPerformanceCounter` 函数取得。
+11. 为计算平均每秒帧数（FPS），我们在某个时间间隔 $\Delta t$ 内统计已处理的帧数。设 $n$ 为在时间 $\Delta t$ 内统计到的帧数，则该时间间隔内的平均每秒帧数为
+
+    $$
+    fps_{avg}=\frac{n}{\Delta t}
+    $$
+
+    帧率可能对性能给出误导性结论；处理一帧所需的时间信息量更大。处理一帧所花的秒数是帧率的倒数，即 $1/fps_{avg}$。
+12. 示例框架用于提供一个统一的接口，本书所有演示程序都遵循它。*d3dUtil.h*、*d3dUtil.cpp*、*d3dApp.h* 和 *d3dApp.cpp* 文件中提供的代码，封装了每个应用程序都必须实现的标准初始化<a id="page157"/>代码。通过封装这些代码，我们把它隐藏起来，从而让示例更聚焦于当前主题。
+13. 对于调试模式构建，我们启用调试层（`debugController->EnableDebugLayer()`）。启用调试层时，Direct3D 会把调试消息发送到 VC++ 输出窗口。
+</section>
+
+
+
+

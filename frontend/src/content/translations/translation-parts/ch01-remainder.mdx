@@ -1,51 +1,124 @@
 <section className="lesson-section" id="s16">
 <h2>1.6 DirectXMath 向量</h2>
 
-从 Windows 8 开始，DirectXMath 是 Windows SDK 的一部分，是用于 Direct3D 应用程序的三维数学库。它使用 SSE2（流式 SIMD 扩展 2）指令集。SIMD（单指令多数据）寄存器宽 128 位；一条 SIMD 指令可以同时处理四个 32 位浮点数或整数。这对向量计算很有用：向量加法只需把对应分量相加，因此 SIMD 可以用一条指令完成四维向量加法，而不是执行四条标量指令。三维向量也可以使用 SIMD，只需忽略第四个分量；二维向量则忽略第三、第四个分量。
+从 Windows 8 开始，DirectXMath 是 Windows SDK 的一部分，是用于 Direct3D 应用程序的三维数学库。它使用 SSE2（流式 SIMD 扩展 2）指令集。SIMD（单指令多数据）寄存器宽 128 位；一条 SIMD 指令可以同时处理四个 32 位 `float` 或 `int`。这对向量计算非常有用。例如，观察向量加法：
 
-本节不会完整介绍 DirectXMath，只讲本书需要的关键部分。完整细节请查阅在线文档 [DirectXMath]。若希望了解如何高效实现跨平台 SIMD 向量库，并进一步理解 DirectXMath 的设计选择，作者推荐阅读 Oliveira 的文章《Designing Fast Cross-Platform SIMD Vector Libraries》[Oliveira2010]。
+$$
+\mathbf{u}+\mathbf{v}=(u_x+v_x,\;u_y+v_y,\;u_z+v_z)
+$$
 
-使用 DirectXMath 时需要包含 `DirectXMath.h`；有些额外数据类型还需要 `DirectXPackedVector.h`。不需要链接额外库文件，因为代码都以内联方式写在头文件中。`DirectXMath.h` 中的代码属于 `DirectX` 命名空间，`DirectXPackedVector.h` 中的代码属于 `DirectX::PackedVector` 命名空间。对于 x86 平台，应在“项目属性 > 配置属性 > C/C++ > 代码生成 > 启用增强指令集”中启用 SSE2；所有平台都应在“项目属性 > 配置属性 > C/C++ > 代码生成 > 浮点模型”中启用快速浮点模型 `/fp:fast`。x64 平台不必单独启用 SSE2，因为所有 x64 CPU 都支持 SSE2。
+可以看到，加法就是把对应分量相加。利用 SIMD，我们可以用一条 SIMD 指令完成四维向量加法，而不是执行四条标量指令。如果三维运算只需要三个坐标，仍然可以使用 SIMD，只是忽略第四个坐标；同理，二维运算则忽略第三、第四个坐标。
+
+本节不会完整介绍 DirectXMath，只讲本书需要的关键部分。完整细节请查阅在线文档 [DirectXMath]。若希望了解如何高效实现跨平台 SIMD 向量库，并进一步理解 DirectXMath 库做出某些设计决策的原因，作者推荐阅读 Oliveira 的文章《Designing Fast Cross-Platform SIMD Vector Libraries》[Oliveira2010]。
+
+使用 DirectXMath 库需要 `#include <DirectXMath.h>`；某些额外数据类型还需要 `#include <DirectXPackedVector.h>`。不需要链接额外的库文件，因为所有代码都以inline方式实现在头文件中。`DirectXMath.h` 中的代码属于 `DirectX` 命名空间，`DirectXPackedVector.h` 中的代码属于 `DirectX::PackedVector` 命名空间。此外，对于 x86 平台，应启用 SSE2（**项目属性 > 配置属性 > C/C++ > 代码生成 > 启用增强指令集**）；对所有平台，应启用快速浮点模型 /fp:fast（**项目属性 > 配置属性 > C/C++ > 代码生成 > 浮点模型**）。x64 平台不需要启用 SSE2，因为所有 x64 CPU 都支持 SSE2（http://en.wikipedia.org/wiki/SSE2）。
 
 <h3>1.6.1 向量类型</h3>
 
-DirectXMath 的核心向量类型是 `XMVECTOR`，它映射到 SIMD 硬件寄存器。该类型宽 128 位，一条 SIMD 指令可以处理四个 32 位浮点数。支持 SSE2 时，x86 和 x64 平台上的定义如下：
+DirectXMath 的核心向量类型是 `XMVECTOR`，它映射到 SIMD 硬件寄存器。这是一个 128 位类型，可以用一条 SIMD 指令处理四个 32 位浮点数。在支持 SSE2 时，它在 x86 和 x64 平台上的定义如下：
 
 ```cpp
 typedef __m128 XMVECTOR;
 ```
 
-`__m128` 是一种特殊的 SIMD 类型。要利用 SIMD 进行计算，向量必须使用这种类型。如前所述，二维、三维向量仍使用 `XMVECTOR`，只是把未使用的分量置零并忽略它们。
+`__m128` 是一种特殊的 SIMD 类型。进行计算时，向量必须是这种类型才能利用 SIMD。如前所述，二维和三维向量也使用这个类型以利用 SIMD，只是把未使用的分量置零并忽略它们。
 
-`XMVECTOR` 需要按 16 字节对齐；局部变量和全局变量会自动完成对齐。作为类的数据成员时，建议改用 `XMFLOAT2`（二维）、`XMFLOAT3`（三维）和 `XMFLOAT4`（四维）结构。它们分别保存 2、3、4 个 `float` 分量。若直接用这些类型进行运算，就无法利用 SIMD；需要通过 DirectXMath 的加载函数将它们转换为 `XMVECTOR`，并通过存储函数转换回来。
+`XMVECTOR` 需要 16 字节对齐；对局部变量和全局变量会自动完成对齐。作为类的数据成员时，建议改用 `XMFLOAT2`（二维）、`XMFLOAT3`（三维）和 `XMFLOAT4`（四维）；这些结构的定义如下：
 
-因此，使用规则可以概括为：局部或全局计算变量使用 `XMVECTOR`；类成员使用 `XMFLOAT2/3/4`；计算前用加载函数转换为 `XMVECTOR`，完成计算后再用存储函数写回 `XMFLOATn`。
+```cpp
+struct XMFLOAT2
+{
+  float x;
+  float y;
+
+  XMFLOAT2() {}
+  XMFLOAT2(float _x, float _y) : x(_x), y(_y) {}
+  explicit XMFLOAT2(_In_reads_(2) const float *pArray) :
+    x(pArray[0]), y(pArray[1]) {}
+
+  XMFLOAT2& operator= (const XMFLOAT2& Float2)
+  { x = Float2.x; y = Float2.y; return *this; }
+};
+
+struct XMFLOAT3
+{
+  float x;
+  float y;
+  float z;
+
+  XMFLOAT3() {}
+  XMFLOAT3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
+  explicit XMFLOAT3(_In_reads_(3) const float *pArray) :
+    x(pArray[0]), y(pArray[1]), z(pArray[2]) {}
+
+  XMFLOAT3& operator= (const XMFLOAT3& Float3)
+  { x = Float3.x; y = Float3.y; z = Float3.z; return *this; }
+};
+
+struct XMFLOAT4
+{
+  float x;
+  float y;
+  float z;
+  float w;
+
+  XMFLOAT4() {}
+  XMFLOAT4(float _x, float _y, float _z, float _w) :
+    x(_x), y(_y), z(_z), w(_w) {}
+  explicit XMFLOAT4(_In_reads_(4) const float *pArray) :
+    x(pArray[0]), y(pArray[1]), z(pArray[2]), w(pArray[3]) {}
+
+  XMFLOAT4& operator= (const XMFLOAT4& Float4)
+  { x = Float4.x; y = Float4.y; z = Float4.z; w = Float4.w; return *this; }
+};
+```
+
+不过，如果直接用这些类型进行计算，就无法利用 SIMD。要利用 SIMD，需要把这些类型的实例转换成 `XMVECTOR` 类型。这通过 DirectXMath 的加载函数完成；反过来，DirectXMath 也提供存储函数，用于把数据从 `XMVECTOR` 转换回上述 `XMFLOATn` 类型。
+
+概括起来：
+
+1. 局部或全局变量使用 `XMVECTOR`。
+2. 类的数据成员使用 `XMFLOAT2`、`XMFLOAT3` 和 `XMFLOAT4`。
+3. 计算前，用加载函数把 `XMFLOATn` 转换为 `XMVECTOR`。
+4. 用 `XMVECTOR` 实例完成计算。
+5. 用存储函数把 `XMVECTOR` 转换回 `XMFLOATn`。
 
 <h3>1.6.2 加载与存储方法</h3>
 
-以下函数把数据从 `XMFLOATn` 加载到 `XMVECTOR`：
+用以下方法把数据从 `XMFLOATn` 加载到 `XMVECTOR`：
 
 ```cpp
-XMVECTOR XM_CALLCONV XMLoadFloat2(const XMFLOAT2* pSource);
-XMVECTOR XM_CALLCONV XMLoadFloat3(const XMFLOAT3* pSource);
-XMVECTOR XM_CALLCONV XMLoadFloat4(const XMFLOAT4* pSource);
+// 将 XMFLOAT2 载入 XMVECTOR
+XMVECTOR XM_CALLCONV XMLoadFloat2(const XMFLOAT2 *pSource);
+
+// 将 XMFLOAT3 载入 XMVECTOR
+XMVECTOR XM_CALLCONV XMLoadFloat3(const XMFLOAT3 *pSource);
+
+// 将 XMFLOAT4 载入 XMVECTOR
+XMVECTOR XM_CALLCONV XMLoadFloat4(const XMFLOAT4 *pSource);
 ```
 
-以下函数把数据从 `XMVECTOR` 存储到 `XMFLOATn`：
+用以下方法把数据从 `XMVECTOR` 存储到 `XMFLOATn`：
 
 ```cpp
-void XM_CALLCONV XMStoreFloat2(XMFLOAT2* pDestination, FXMVECTOR V);
-void XM_CALLCONV XMStoreFloat3(XMFLOAT3* pDestination, FXMVECTOR V);
-void XM_CALLCONV XMStoreFloat4(XMFLOAT4* pDestination, FXMVECTOR V);
+// 将 XMVECTOR 存入 XMFLOAT2
+void XM_CALLCONV XMStoreFloat2(XMFLOAT2 *pDestination, FXMVECTOR V);
+
+// 将 XMVECTOR 存入 XMFLOAT3
+void XM_CALLCONV XMStoreFloat3(XMFLOAT3 *pDestination, FXMVECTOR V);
+
+// 将 XMVECTOR 存入 XMFLOAT4
+void XM_CALLCONV XMStoreFloat4(XMFLOAT4 *pDestination, FXMVECTOR V);
 ```
 
-有时只需要读取或设置 `XMVECTOR` 的一个分量，可以使用 `XMVectorGetX/Y/Z/W` 和 `XMVectorSetX/Y/Z/W`。前一组函数返回相应的 `float` 分量；后一组函数返回更新后的 `XMVECTOR`。
+有时我们只想读取或设置 `XMVECTOR` 的一个分量；下面的 getter 和 setter 函数可以满足这一需求：
 
 ```cpp
 float XM_CALLCONV XMVectorGetX(FXMVECTOR V);
 float XM_CALLCONV XMVectorGetY(FXMVECTOR V);
 float XM_CALLCONV XMVectorGetZ(FXMVECTOR V);
 float XM_CALLCONV XMVectorGetW(FXMVECTOR V);
+
 XMVECTOR XM_CALLCONV XMVectorSetX(FXMVECTOR V, float x);
 XMVECTOR XM_CALLCONV XMVectorSetY(FXMVECTOR V, float y);
 XMVECTOR XM_CALLCONV XMVectorSetZ(FXMVECTOR V, float z);
@@ -54,66 +127,163 @@ XMVECTOR XM_CALLCONV XMVectorSetW(FXMVECTOR V, float w);
 
 <h3>1.6.3 参数传递</h3>
 
-为了提高效率，可以通过 SSE/SSE2 寄存器传递 `XMVECTOR` 参数，而不是把它们放在栈上。能以这种方式传递多少个参数，取决于平台（例如 32 位 Windows、64 位 Windows 和 Windows RT）以及编译器。为了不依赖特定平台或编译器，应使用 `FXMVECTOR`、`GXMVECTOR`、`HXMVECTOR` 和 `CXMVECTOR` 这些类型传递 `XMVECTOR` 参数；它们会根据平台和编译器映射到合适的类型。另外，函数名前必须标注 `XM_CALLCONV`，以采用正确的调用约定；具体约定同样取决于编译器版本。
+为了提高效率，`XMVECTOR` 值可以作为函数参数通过 SSE/SSE2 寄存器传递，而不是放在栈上。能这样传递的参数个数取决于平台（例如 32 位 Windows、64 位 Windows 和 Windows RT）以及编译器。因此，为了做到平台/编译器无关，我们使用 `FXMVECTOR`、`GXMVECTOR`、`HXMVECTOR` 和 `CXMVECTOR` 这些类型来传递 `XMVECTOR` 参数；它们会根据平台和编译器映射到正确的类型。此外，还必须在函数名前标注调用约定 `XM_CALLCONV`，以便使用正确的调用约定；该约定同样取决于编译器版本。
 
-传递 `XMVECTOR` 参数时遵循以下规则：前三个参数使用 `FXMVECTOR`；第四个使用 `GXMVECTOR`；第五、六个使用 `HXMVECTOR`；后续参数使用 `CXMVECTOR`。
+传递 `XMVECTOR` 参数的规则如下：
 
-原书以 32 位 Windows 为例，对比支持 `__fastcall` 和较新的 `__vectorcall` 的编译器。在 `__fastcall` 下，前三个 `XMVECTOR` 参数通过寄存器传递，其余参数放在栈上；在 `__vectorcall` 下，前六个通过寄存器传递，其余放在栈上。对应的类型别名因此不同。其他平台上的定义请查看 DirectXMath 文档“Library Internals”中的“Calling Conventions”。
+1. 前三个 `XMVECTOR` 参数应是 `FXMVECTOR` 类型；
+2. 第四个 `XMVECTOR` 参数应是 `GXMVECTOR` 类型；
+3. 第五、第六个 `XMVECTOR` 参数应是 `HXMVECTOR` 类型；
+4. 其余 `XMVECTOR` 参数应是 `CXMVECTOR` 类型。
 
-构造函数是例外。DirectXMath 建议：如果构造函数接收 `XMVECTOR` 参数，前三个参数使用 `FXMVECTOR`，其余使用 `CXMVECTOR`；构造函数前不要加 `XM_CALLCONV`。
+下面以 32 位 Windows 为例，说明在支持 `__fastcall` 调用约定的编译器和支持较新 `__vectorcall` 调用约定的编译器中，这些类型是如何定义的：
 
-例如，`XMMatrixTransformation` 接收六个 `XMVECTOR` 参数，前三个使用 `FXMVECTOR`，第四个用 `GXMVECTOR`，第五、六个用 `HXMVECTOR`。非 `XMVECTOR` 参数可以穿插其中，但不计入上述编号；规则只适用于输入参数。输出参数若使用 `XMVECTOR&` 或 `XMVECTOR*`，不会通过 SSE/SSE2 寄存器传递，而是按普通参数处理。
+```cpp
+// 32 位 Windows 的 __fastcall 通过寄存器传递前 3 个 XMVECTOR 参数，
+// 其余参数放在栈上。
+typedef const XMVECTOR FXMVECTOR;
+typedef const XMVECTOR& GXMVECTOR;
+typedef const XMVECTOR& HXMVECTOR;
+typedef const XMVECTOR& CXMVECTOR;
+
+// 32 位 Windows 的 __vectorcall 通过寄存器传递前 6 个 XMVECTOR 参数，
+// 其余参数放在栈上。
+typedef const XMVECTOR FXMVECTOR;
+typedef const XMVECTOR GXMVECTOR;
+typedef const XMVECTOR HXMVECTOR;
+typedef const XMVECTOR& CXMVECTOR;
+```
+
+这些类型在其他平台上的定义细节，请查阅 DirectXMath 文档 [DirectXMath] 中 “Library Internals” 下的 “Calling Conventions”。这条规则的例外是构造函数。[DirectXMath] 建议在编写接收 `XMVECTOR` 参数的构造函数时，前三个 `XMVECTOR` 参数使用 `FXMVECTOR`，其余使用 `CXMVECTOR`；并且不要给构造函数加 `XM_CALLCONV` 标注。
+
+下面是 DirectXMath 库中的一个例子：
+
+```cpp
+inline XMMATRIX XM_CALLCONV XMMatrixTransformation(
+  FXMVECTOR ScalingOrigin, 
+  FXMVECTOR ScalingOrientationQuaternion, 
+  FXMVECTOR Scaling, 
+  GXMVECTOR RotationOrigin, 
+  HXMVECTOR RotationQuaternion, 
+  HXMVECTOR Translation);
+```
+
+该函数接收 6 个 `XMVECTOR` 参数；按照参数传递规则，它对前三个参数使用 `FXMVECTOR`，第四个使用 `GXMVECTOR`，第五、第六个使用 `HXMVECTOR`。
+
+`XMVECTOR` 参数之间可以夹杂非 `XMVECTOR` 参数；此时规则不变，且统计 `XMVECTOR` 参数时把非 `XMVECTOR` 参数当作不存在。例如下面的函数中，前三个 `XMVECTOR` 参数是 `FXMVECTOR` 类型，第四个 `XMVECTOR` 参数是 `GXMVECTOR` 类型：
+
+```cpp
+inline XMMATRIX XM_CALLCONV XMMatrixTransformation2D(
+  FXMVECTOR ScalingOrigin, 
+  float ScalingOrientation, 
+  FXMVECTOR Scaling, 
+  FXMVECTOR RotationOrigin, 
+  float Rotation, 
+  GXMVECTOR Translation);
+```
+
+传递 `XMVECTOR` 参数的规则适用于“输入”参数。“输出” `XMVECTOR` 参数（`XMVECTOR&` 或 `XMVECTOR*`）不会使用 SSE/SSE2 寄存器，因此会像非 `XMVECTOR` 参数一样处理。
 
 <h3>1.6.4 常量向量</h3>
 
-常量 `XMVECTOR` 实例应使用 `XMVECTORF32` 类型。DirectX SDK 的 CascadedShadowMaps11 示例中有如下常量：
+常量 `XMVECTOR` 实例应使用 `XMVECTORF32` 类型。下面是 DirectX SDK 的 CascadedShadowMaps11 示例中的一些例子：
 
 ```cpp
 static const XMVECTORF32 g_vHalfVector = { 0.5f, 0.5f, 0.5f, 0.5f };
 static const XMVECTORF32 g_vZero = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+XMVECTORF32 vRightTop = {
+  vViewFrust.RightSlope,
+  vViewFrust.TopSlope,
+  1.0f,1.0f
+};
+
+XMVECTORF32 vLeftBottom = {
+  vViewFrust.LeftSlope,
+  vViewFrust.BottomSlope,
+  1.0f,1.0f
+};
 ```
 
-需要使用初始化列表语法时，基本上就应使用 `XMVECTORF32`。它是一个按 16 字节对齐、可以转换为 `XMVECTOR` 的结构，内部用联合体同时保存四个 `float` 和一个 `XMVECTOR`，并提供相应的转换运算符。在支持 SSE 内部指令的配置下，还提供转换为 `__m128i` 和 `__m128d` 的运算符。
+基本上，只要想使用初始化语法，就应使用 `XMVECTORF32`。`XMVECTORF32` 是一个按 16 字节对齐、带有 `XMVECTOR` 转换运算符的结构，定义如下：
 
-若要创建整数数据组成的常量 `XMVECTOR`，可以使用 `XMVECTORU32`，例如：
+```cpp
+// 用于常量的转换类型
+__declspec(align(16)) struct XMVECTORF32
+{
+  union
+  {
+    float f[4];
+    XMVECTOR v;
+  };
+
+  inline operator XMVECTOR() const { return v; }
+  inline operator const float*() const { return f; }
+#if !defined(_XM_NO_INTRINSICS_) && defined(_XM_SSE_INTRINSICS_)
+  inline operator __m128i() const { return _mm_castps_si128(v); }
+  inline operator __m128d() const { return _mm_castps_pd(v); }
+#endif
+};
+```
+
+也可以用 `XMVECTORU32` 创建由整数数据组成的常量 `XMVECTOR`：
 
 ```cpp
 static const XMVECTORU32 vGrabY = {
-    0x00000000, 0xFFFFFFFF, 0x00000000, 0x00000000
+0x00000000,0xFFFFFFFF,0x00000000,0x00000000
 };
 ```
 
 <h3>1.6.5 重载运算符</h3>
 
-`XMVECTOR` 重载了多个运算符，用于向量加法、减法和数乘。除了正负号、一元与二元 `+`、`-`，也支持 `+=`、`-=`、分量乘除、与标量相乘及除以标量。因此可以像普通数学表达式一样写 `u + v`、`u - v` 和 `k * u`。
+`XMVECTOR` 重载了多个运算符，用于向量加法、减法和标量乘法：
 
 ```cpp
-XMVECTOR XM_CALLCONV operator+ (FXMVECTOR V);
-XMVECTOR XM_CALLCONV operator- (FXMVECTOR V);
-XMVECTOR& XM_CALLCONV operator+= (XMVECTOR& V1, FXMVECTOR V2);
-XMVECTOR& XM_CALLCONV operator-= (XMVECTOR& V1, FXMVECTOR V2);
-XMVECTOR& XM_CALLCONV operator*= (XMVECTOR& V1, FXMVECTOR V2);
-XMVECTOR& XM_CALLCONV operator/= (XMVECTOR& V1, FXMVECTOR V2);
-XMVECTOR& operator*= (XMVECTOR& V, float S);
-XMVECTOR& operator/= (XMVECTOR& V, float S);
-XMVECTOR XM_CALLCONV operator+ (FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV operator- (FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV operator* (FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV operator/ (FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV operator* (FXMVECTOR V, float S);
-XMVECTOR XM_CALLCONV operator* (float S, FXMVECTOR V);
-XMVECTOR XM_CALLCONV operator/ (FXMVECTOR V, float S);
+XMVECTOR  XM_CALLCONV  operator+ (FXMVECTOR V);
+XMVECTOR  XM_CALLCONV  operator- (FXMVECTOR V);
+
+XMVECTOR&  XM_CALLCONV  operator+= (XMVECTOR& V1, FXMVECTOR V2);
+XMVECTOR&  XM_CALLCONV  operator-= (XMVECTOR& V1, FXMVECTOR V2);
+XMVECTOR&  XM_CALLCONV  operator*= (XMVECTOR& V1, FXMVECTOR V2);
+XMVECTOR&  XM_CALLCONV  operator/= (XMVECTOR& V1, FXMVECTOR V2);
+
+XMVECTOR&  operator*= (XMVECTOR& V, float S);
+XMVECTOR&  operator/= (XMVECTOR& V, float S);
+
+XMVECTOR  XM_CALLCONV  operator+ (FXMVECTOR V1, FXMVECTOR V2);
+XMVECTOR  XM_CALLCONV  operator- (FXMVECTOR V1, FXMVECTOR V2);
+XMVECTOR  XM_CALLCONV  operator* (FXMVECTOR V1, FXMVECTOR V2);
+XMVECTOR  XM_CALLCONV  operator/ (FXMVECTOR V1, FXMVECTOR V2);
+XMVECTOR  XM_CALLCONV  operator* (FXMVECTOR V, float S);
+XMVECTOR  XM_CALLCONV  operator* (float S, FXMVECTOR V);
+XMVECTOR  XM_CALLCONV  operator/ (FXMVECTOR V, float S);
 ```
 
 <h3>1.6.6 其他常用定义</h3>
 
-DirectXMath 定义了一组常量，用于表示 π 的常见倍数或倒数近似值：`XM_PI = 3.141592654f`、`XM_2PI = 6.283185307f`、`XM_1DIVPI = 0.318309886f`、`XM_1DIV2PI = 0.159154943f`、`XM_PIDIV2 = 1.570796327f`、`XM_PIDIV4 = 0.785398163f`。它还提供 `XMConvertToRadians`（角度转弧度）与 `XMConvertToDegrees`（弧度转角度）两个内联函数，以及模板函数 `XMMin` 和 `XMMax`，分别返回两个值中的较小值和较大值。
+DirectXMath 库定义了下列常量，用于近似涉及 π 的各种表达式：
+
+```cpp
+const float XM_PI      = 3.141592654f;
+const float XM_2PI     = 6.283185307f;
+const float XM_1DIVPI  = 0.318309886f;
+const float XM_1DIV2PI = 0.159154943f;
+const float XM_PIDIV2  = 1.570796327f;
+const float XM_PIDIV4  = 0.785398163f;
+```
+
+此外，它还定义了下列在弧度与角度之间转换的内联函数：
 
 ```cpp
 inline float XMConvertToRadians(float fDegrees)
 { return fDegrees * (XM_PI / 180.0f); }
 inline float XMConvertToDegrees(float fRadians)
 { return fRadians * (180.0f / XM_PI); }
+```
+
+它还定义了 min/max 函数：
+
+```cpp
 template<class T> inline T XMMin(T a, T b) { return (a < b) ? a : b; }
 template<class T> inline T XMMax(T a, T b) { return (a > b) ? a : b; }
 ```
@@ -122,120 +292,454 @@ template<class T> inline T XMMax(T a, T b) { return (a > b) ? a : b; }
 
 DirectXMath 提供以下函数设置 `XMVECTOR` 的内容：
 
-- `XMVectorZero()` 返回零向量 `(0, 0, 0, 0)`。
-- `XMVectorSplatOne()` 返回 `(1, 1, 1, 1)`。
-- `XMVectorSet(x, y, z, w)` 返回 `(x, y, z, w)`。
-- `XMVectorReplicate(value)` 把同一个值复制到四个分量。
-- `XMVectorSplatX/Y/Z(v)` 分别把向量的 x、y、z 分量复制到结果的四个分量。
-
 ```cpp
+// 返回零向量 0
 XMVECTOR XM_CALLCONV XMVectorZero();
+// 返回向量 (1, 1, 1, 1)
 XMVECTOR XM_CALLCONV XMVectorSplatOne();
+// 返回向量 (x, y, z, w)
 XMVECTOR XM_CALLCONV XMVectorSet(float x, float y, float z, float w);
+// 返回向量 (s, s, s, s)
 XMVECTOR XM_CALLCONV XMVectorReplicate(float Value);
+// 返回向量 (vx, vx, vx, vx)
 XMVECTOR XM_CALLCONV XMVectorSplatX(FXMVECTOR V);
+// 返回向量 (vy, vy, vy, vy)
 XMVECTOR XM_CALLCONV XMVectorSplatY(FXMVECTOR V);
+// 返回向量 (vz, vz, vz, vz)
 XMVECTOR XM_CALLCONV XMVectorSplatZ(FXMVECTOR V);
 ```
 
-原书随后给出程序示例：先检查 SSE2 是否可用，再分别调用这些函数构造 p、q、u、v、w，并将它们输出。结果见图 1.18。向量的输出运算符先用 `XMStoreFloat3` 把 `XMVECTOR` 写入 `XMFLOAT3`，再打印三个分量。
+下面的程序演示了其中的大多数函数：
 
-<a className="source-reference-link" href="./?page=ch01&mode=original#s16">切换到英文原文查看完整程序代码</a>
+```cpp
+#include <windows.h> // for XMVerifyCPUSupport
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+#include <iostream>
+using namespace std;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+// 重载“<<”运算符，以便能用 cout 输出 XMVECTOR 对象。
+ostream& XM_CALLCONV operator<<(ostream& os, FXMVECTOR v)
+{
+  XMFLOAT3 dest;
+  XMStoreFloat3(&dest, v);
+  os << "(" << dest.x << ", " << dest.y << ", " << dest.z << ")";
+  return os;
+}
+
+int main()
+{
+  cout.setf(ios_base::boolalpha);
+  // 检查是否支持 SSE2（Pentium 4、AMD K8 及更高）。
+  if (!XMVerifyCPUSupport())
+  {
+    cout << "directx math not supported" << endl;
+    return 0;
+  }
+
+  XMVECTOR p = XMVectorZero();
+  XMVECTOR q = XMVectorSplatOne();
+  XMVECTOR u = XMVectorSet(1.0f, 2.0f, 3.0f, 0.0f);
+  XMVECTOR v = XMVectorReplicate(-2.0f);
+  XMVECTOR w = XMVectorSplatZ(u);
+
+  cout << "p = " << p << endl;
+  cout << "q = " << q << endl;
+  cout << "u = " << u << endl;
+  cout << "v = " << v << endl;
+  cout << "w = " << w << endl;
+  return 0;
+}
+```
 
 <Figure src="images/Fig1-18.jpg" alt="设置向量函数示例程序的输出" figureNumber="图 1.18" caption="上述程序的输出。" />
 
 <h3>1.6.8 向量函数</h3>
 
-DirectXMath 提供了多种向量运算函数。下面以三维版本为例；二维和四维版本也有对应函数，名称相同，只需将名称中的 3 分别改为 2 或 4。
-
-- `XMVector3Length` 返回向量长度 ‖v‖；`XMVector3LengthSq` 返回长度平方 ‖v‖²。
-- `XMVector3Dot` 返回 v₁ · v₂；`XMVector3Cross` 返回 v₁ × v₂。
-- `XMVector3Normalize` 返回 v/‖v‖；`XMVector3Orthogonal` 返回一个与 v 正交的向量。
-- `XMVector3AngleBetweenVectors` 返回 v₁ 与 v₂ 之间的角度。
-- `XMVector3ComponentsFromNormal` 将 v 分解为相对于法线 n 的平行分量和垂直分量，并通过输出参数返回两者。
-- `XMVector3Equal` 和 `XMVector3NotEqual` 分别判断两个向量相等或不等。
+DirectXMath 提供以下函数执行各种向量运算。这里以三维版本为例，但也有与之对应的二维和四维版本；二维和四维版本与三维版本名称相同，只是把名称中的 3 换成 2 或 4：
 
 ```cpp
-XMVECTOR XM_CALLCONV XMVector3Length(FXMVECTOR V);
-XMVECTOR XM_CALLCONV XMVector3LengthSq(FXMVECTOR V);
-XMVECTOR XM_CALLCONV XMVector3Dot(FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV XMVector3Cross(FXMVECTOR V1, FXMVECTOR V2);
-XMVECTOR XM_CALLCONV XMVector3Normalize(FXMVECTOR V);
-XMVECTOR XM_CALLCONV XMVector3Orthogonal(FXMVECTOR V);
-XMVECTOR XM_CALLCONV XMVector3AngleBetweenVectors(FXMVECTOR V1, FXMVECTOR V2);
+XMVECTOR XM_CALLCONV XMVector3Length(    // 返回 ||v||
+  FXMVECTOR V);    // 输入 v
+
+XMVECTOR XM_CALLCONV XMVector3LengthSq(    // 返回 ||v||²
+  FXMVECTOR V);    // 输入 v
+
+XMVECTOR XM_CALLCONV XMVector3Dot(    // 返回 v1·v2
+  FXMVECTOR V1,     // 输入 v1
+  FXMVECTOR V2);    // 输入 v2
+
+XMVECTOR XM_CALLCONV XMVector3Cross(    // 返回 v1×v2
+  FXMVECTOR V1,     // 输入 v1
+  FXMVECTOR V2);    // 输入 v2
+
+XMVECTOR XM_CALLCONV XMVector3Normalize(    // 返回 v/||v||
+  FXMVECTOR V);    // 输入 v
+
+XMVECTOR XM_CALLCONV XMVector3Orthogonal(    // 返回与 v 正交的一个向量
+  FXMVECTOR V);    // 输入 v
+
+XMVECTOR XM_CALLCONV
+XMVector3AngleBetweenVectors(    // 返回 v1 与 v2 之间的角
+  FXMVECTOR V1,     // 输入 v1
+  FXMVECTOR V2);    // 输入 v2
+
 void XM_CALLCONV XMVector3ComponentsFromNormal(
-    XMVECTOR* pParallel, XMVECTOR* pPerpendicular,
-    FXMVECTOR V, FXMVECTOR Normal);
-bool XM_CALLCONV XMVector3Equal(FXMVECTOR V1, FXMVECTOR V2);
-bool XM_CALLCONV XMVector3NotEqual(FXMVECTOR V1, FXMVECTOR V2);
+  XMVECTOR* pParallel,      // 返回 proj_n(v)
+  XMVECTOR* pPerpendicular, // 返回 perp_n(v)
+  FXMVECTOR V,     // 输入 v
+  FXMVECTOR Normal);    // 输入 n
+
+bool XM_CALLCONV XMVector3Equal(    // 返回 v1 = v2
+  FXMVECTOR V1,     // 输入 v1
+  FXMVECTOR V2);    // 输入 v2
+
+bool XM_CALLCONV XMVector3NotEqual(    // 返回 v1 ≠ v2
+  FXMVECTOR V1,     // 输入 v1
+  FXMVECTOR V2);    // 输入 v2
 ```
 
-注意：即使数学运算的结果是标量，这些函数仍会返回 `XMVECTOR`。例如点积 k = v₁ · v₂ 会把标量结果复制到每个分量，返回 `(k, k, k, k)`。这样做的原因之一是尽量避免在标量运算和 SIMD 向量运算之间来回切换；计算完成前持续使用 SIMD 通常更有效率。
+注意：即使数学运算的结果是标量（例如点积 k = v₁ · v₂），这些函数仍会返回 `XMVECTOR`。标量结果会被复制到 `XMVECTOR` 的每个分量中。例如对于点积，返回的向量是 (v₁ · v₂, v₁ · v₂, v₁ · v₂, v₁ · v₂)。这样做的原因之一是尽量减少标量运算和 SIMD 向量运算的混合；在整个计算完成之前保持 SIMD 状态通常更有效率。
 
-原书的演示程序展示了这些函数和重载运算符的用法：计算向量加减、数乘、长度、归一化、点积和叉积；将一个向量分解为相对于法线的平行与垂直部分；检查两部分之和能否还原原向量，并计算它们之间的夹角。程序输出见图 1.19。
-
-<a className="source-reference-link" href="./?page=ch01&mode=original#s16">切换到英文原文查看完整程序代码</a>
-
-<Figure src="images/Fig1-19.jpg" alt="DirectXMath 向量函数演示程序的输出" figureNumber="图 1.19" caption="上述程序的输出。" />
-
-DirectXMath 还包含一些估算函数：计算速度更快，但准确度较低。如果可以用精度换速度，可以使用这些函数，例如 `XMVector3LengthEst`（估算向量长度）和 `XMVector3NormalizeEst`（估算归一化结果）。
-
-<h3>1.6.9 浮点误差</h3>
-
-在计算机上处理向量时，也要注意浮点数比较问题。浮点精度有限，因此数学上预期相等的两个数，在程序中可能有细微差异。例如，归一化向量的长度在数学上应为 1，但程序算出的长度通常只是近似 1。又如，对任何实数 p，数学上都有 1ᵖ = 1；然而计算机只能保存对 1 的数值近似，对该近似值取 p 次幂会放大误差。因此，数值误差也会累积。原书给出了短程序，先将 `(1, 1, 1)` 归一化，再检查结果长度是否恰好等于 1，并把该长度取一百万次幂，以展示误差变化；输出见图 1.20。
-
-<Figure src="images/Fig1-20.jpg" alt="浮点数舍入误差示例程序的输出" figureNumber="图 1.20" caption="上述程序的输出。" />
-
-为补偿浮点精度不足，可以检查两个数是否近似相等。定义一个很小的常量 Epsilon 作为容许误差；两个值之间的距离小于 Epsilon 时，就认为它们近似相等。原书用下面的函数说明这一点：
+下面的演示程序展示了如何使用其中大多数函数以及一些重载运算符：
 
 ```cpp
-const float Epsilon = 0.001f;
-bool Equals(float lhs, float rhs)
+#include <windows.h> // for XMVerifyCPUSupport
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+#include <iostream>
+using namespace std;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+// 重载“<<”运算符，以便能用 cout 输出 XMVECTOR 对象。
+ostream& XM_CALLCONV operator<<(ostream& os, FXMVECTOR v)
 {
-    return fabs(lhs - rhs) < Epsilon ? true : false;
+  XMFLOAT3 dest;
+  XMStoreFloat3(&dest, v);
+
+  os << "(" << dest.x << ", " << dest.y << ", " << dest.z << ")";
+  return os;
+}
+
+int main()
+{
+  cout.setf(ios_base::boolalpha);
+
+  // 检查是否支持 SSE2（Pentium 4、AMD K8 及更高）。
+  if (!XMVerifyCPUSupport())
+  {
+    cout << "directx math not supported" << endl;
+    return 0;
+  }
+
+  XMVECTOR n = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+  XMVECTOR u = XMVectorSet(1.0f, 2.0f, 3.0f, 0.0f);
+  XMVECTOR v = XMVectorSet(-2.0f, 1.0f, -3.0f, 0.0f);
+  XMVECTOR w = XMVectorSet(0.707f, 0.707f, 0.0f, 0.0f);
+
+  // 向量加法：XMVECTOR operator +
+  XMVECTOR a = u + v;
+
+  // 向量减法：XMVECTOR operator -
+  XMVECTOR b = u - v;
+
+  // 标量乘法：XMVECTOR operator *
+  XMVECTOR c = 10.0f*u;
+
+  // ||u||
+  XMVECTOR L = XMVector3Length(u);
+
+  // d = u / ||u||
+  XMVECTOR d = XMVector3Normalize(u);
+
+  // s = u dot v
+  XMVECTOR s = XMVector3Dot(u, v);
+
+  // e = u x v
+  XMVECTOR e = XMVector3Cross(u, v);
+
+  // 求 proj_n(w) 和 perp_n(w)
+  XMVECTOR projW;
+  XMVECTOR perpW;
+  XMVector3ComponentsFromNormal(&projW, &perpW, w, n);
+
+  // projW + perpW == w 是否成立？
+  bool equal = XMVector3Equal(projW + perpW, w) != 0;
+  bool notEqual = XMVector3NotEqual(projW + perpW, w) != 0;
+
+  // projW 与 perpW 之间的夹角应为 90 度。
+  XMVECTOR angleVec = XMVector3AngleBetweenVectors(projW, perpW);
+  float angleRadians = XMVectorGetX(angleVec);
+  float angleDegrees = XMConvertToDegrees(angleRadians);
+
+  cout << "u           = " << u << endl;
+  cout << "v           = " << v << endl;
+  cout << "w           = " << w << endl;
+  cout << "n           = " << n << endl;
+  cout << "a = u + v      = " << a << endl;
+  cout << "b = u - v      = " << b << endl;
+  cout << "c = 10 * u     = " << c << endl;
+  cout << "d = u / ||u||    = " << d << endl;
+  cout << "e = u x v      = " << e << endl;
+  cout << "L = ||u||     = " << L << endl;
+  cout << "s = u.v       = " << s << endl;
+  cout << "projW         = " << projW << endl;
+  cout << "perpW         = " << perpW << endl;
+  cout << "projW + perpW == w = " << equal << endl;
+  cout << "projW + perpW != w = " << notEqual << endl;
+  cout << "angle         = " << angleDegrees << endl;
+
+  return 0;
 }
 ```
 
-判断两个向量是否在允许误差 Epsilon 内相等时，DirectXMath 提供 `XMVector3NearEqual`。它逐分量检查 `abs(U.x − V.x) <= Epsilon.x`、`abs(U.y − V.y) <= Epsilon.y` 和 `abs(U.z − V.z) <= Epsilon.z` 是否都成立。
+<Figure src="images/Fig1-19.jpg" alt="DirectXMath 向量函数演示程序的输出" figureNumber="图 1.19" caption="上述程序的输出。" />
+
+DirectXMath 库还包含一些估算（estimation）方法：准确度较低，但计算更快。如果愿意以少量精度换取速度，可以使用这些估算函数：
+
+```cpp
+XMVECTOR XM_CALLCONV XMVector3LengthEst(    // 返回 ||v|| 的估算值
+  FXMVECTOR V);         // 输入 v
+
+XMVECTOR XM_CALLCONV XMVector3NormalizeEst(    // 返回 v/||v|| 的估算值
+  FXMVECTOR V);         // 输入 v
+```
+
+<h3>1.6.9 浮点误差</h3>
+
+在计算机上处理向量时，还应注意以下问题。比较浮点数时必须小心，因为浮点数存在精度误差。数学上预期相等的两个浮点数，实际可能有细微差别。例如，数学上我们预期归一化向量的长度为 1，但在计算机程序中，该长度只是近似 1。此外，数学上对任意实数 p 都有 1ᵖ = 1，但当我们只有 1 的数值近似时，把该近似值取 p 次幂会放大误差；因此，数值误差也会累积。下面的短程序演示了这些想法：
+
+```cpp
+#include <windows.h> // for XMVerifyCPUSupport
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+#include <iostream>
+using namespace std;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+int main()
+{
+  cout.precision(8);
+
+  // 检查是否支持 SSE2（Pentium 4、AMD K8 及更高）。
+  if (!XMVerifyCPUSupport())
+  {
+    cout << "directx math not supported" << endl;
+    return 0;
+  }
+
+  XMVECTOR u = XMVectorSet(1.0f, 1.0f, 1.0f, 0.0f);
+  XMVECTOR n = XMVector3Normalize(u);
+
+  float LU = XMVectorGetX(XMVector3Length(n));
+
+  // 数学上，长度应为 1。数值上是吗？
+  cout << LU << endl;
+  if (LU == 1.0f)
+    cout << "Length 1" << endl;
+  else
+    cout << "Length not 1" << endl;
+
+  // 1 的任意次幂仍应为 1。是吗？
+  float powLU = powf(LU, 1.0e6f);
+  cout << "LU^(10^6) = " << powLU << endl;
+}
+```
+
+<Figure src="images/Fig1-20.jpg" alt="浮点数舍入误差示例程序的输出" figureNumber="图 1.20" caption="上述程序的输出。" />
+
+为了补偿浮点精度误差，我们改为测试两个浮点数是否近似相等。做法是定义一个 Epsilon 常量——一个很小的值，用作“缓冲区”。若两个值之间的距离小于 `Epsilon`，就认为它们近似相等；换句话说，`Epsilon` 为浮点误差提供了一定的容许范围。下面的函数说明了如何用 `Epsilon` 测试两个浮点值是否相等：
+
+```cpp
+const float Epsilon = 0.001f;
+
+bool Equals(float lhs, float rhs)
+{
+  // lhs 与 rhs 之间的距离是否小于 EPSILON？
+  return fabs(lhs - rhs) < Epsilon ? true : false;
+}
+```
+
+在以允许的容差 `Epsilon` 参数测试向量相等时，DirectXMath 库提供了 `XMVector3NearEqual` 函数：
+
+```cpp
+// 返回
+//   abs(U.x – V.x) <= Epsilon.x &&
+//   abs(U.y – V.y) <= Epsilon.y &&
+//   abs(U.z – V.z) <= Epsilon.z
+XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
+  FXMVECTOR U, 
+  FXMVECTOR V, 
+  FXMVECTOR Epsilon);
+```
 </section>
 
 <section className="lesson-section" id="s17">
 <h2>1.7 小结</h2>
 
-- 向量用于表示同时具有大小和方向的物理量。几何上用有向线段表示向量。把向量平行平移到尾端与坐标系原点重合的位置，就得到标准位置向量；此时可以用头端相对于坐标系的坐标来数值表示它。
-- 设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)，则：加法为 u + v = (uₓ + vₓ, uᵧ + vᵧ, u_z + v_z)；减法为 u − v = (uₓ − vₓ, uᵧ − vᵧ, u_z − v_z)；数乘为 ku = (kuₓ, kuᵧ, ku_z)。
-- 长度为 ‖u‖ = √(uₓ² + uᵧ² + u_z²)；归一化为 û = u/‖u‖；点积为 u · v = uₓvₓ + uᵧvᵧ + u_zv_z = ‖u‖‖v‖ cos θ；叉积分量为 u × v = (uᵧv_z − u_zvᵧ, u_zvₓ − uₓv_z, uₓvᵧ − u_yvₓ)。
-- 使用 DirectXMath 的 `XMVECTOR`，可以通过 SIMD 高效表示向量。类成员应使用 `XMFLOAT2`、`XMFLOAT3` 或 `XMFLOAT4`，并使用加载和存储函数在它们与 `XMVECTOR` 之间转换。需要初始化语法的常量向量使用 `XMVECTORF32`。
-- 为了提高效率，`XMVECTOR` 值可以作为函数参数通过 SSE/SSE2 寄存器传递。跨平台代码使用 `FXMVECTOR`、`GXMVECTOR`、`HXMVECTOR`、`CXMVECTOR`：前三个参数依次使用 FX、第四个使用 GX、第五和第六个使用 HX，其余使用 CX。
-- `XMVECTOR` 重载了加法、减法和数乘运算符。DirectXMath 还提供计算向量长度、长度平方、点积、叉积和归一化的函数：`XMVector3Length`、`XMVector3LengthSq`、`XMVector3Dot`、`XMVector3Cross`、`XMVector3Normalize`。
+1. 向量用于表示同时具有大小和方向的物理量。几何上用有向线段表示向量。把向量平行平移到尾端与坐标系原点重合的位置，向量就处于标准位置；此时用头端相对于坐标系的坐标即可数值地描述该向量。
+2. 设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)，则有以下向量运算：
+   1. 加法：u + v = (uₓ + vₓ, uᵧ + vᵧ, u_z + v_z)；
+   2. 减法：u − v = (uₓ − vₓ, uᵧ − vᵧ, u_z − v_z)；
+   3. 数乘：ku = (kuₓ, kuᵧ, ku_z)；
+   4. 长度：‖u‖ = √(x² + y² + z²)；
+   5. 归一化：û = u/‖u‖ = (x/‖u‖, y/‖u‖, z/‖u‖)；
+   6. 点积：u · v = ‖u‖‖v‖ cos θ = uₓvₓ + uᵧvᵧ + u_zv_z；
+   7. 叉积：u × v = (uᵧv_z − u_zvᵧ, u_zvₓ − uₓv_z, uₓvᵧ − uᵧvₓ)。
+3. 代码中使用 DirectXMath 的 `XMVECTOR` 类型，以 SIMD 操作高效描述向量。类的数据成员使用 `XMFLOAT2`、`XMFLOAT3` 和 `XMFLOAT4`，再用加载和存储方法在 `XMVECTOR` 与 `XMFLOATn` 之间来回转换。需要初始化语法的常量向量应使用 `XMVECTORF32` 类型。
+4. 出于效率考虑，`XMVECTOR` 值可以作为函数参数通过 SSE/SSE2 寄存器传递，而不是放在栈上。为了以平台无关的方式做到这一点，我们用 `FXMVECTOR`、`GXMVECTOR`、`HXMVECTOR` 和 `CXMVECTOR` 类型传递 `XMVECTOR` 参数。传递规则是：前三个 `XMVECTOR` 参数应为 `FXMVECTOR` 类型；第四个应为 `GXMVECTOR` 类型；第五、第六个应为 `HXMVECTOR` 类型；其余 `XMVECTOR` 参数应为 `CXMVECTOR` 类型。
+5. `XMVECTOR` 类重载了算术运算符，用于向量加法、减法和标量乘法。此外，DirectXMath 库提供了以下有用函数：计算向量长度、长度平方、两个向量的点积、两个向量的叉积以及向量归一化：
+
+   ```cpp
+   XMVECTOR XM_CALLCONV XMVector3Length(FXMVECTOR V);
+   XMVECTOR XM_CALLCONV XMVector3LengthSq(FXMVECTOR V);
+   XMVECTOR XM_CALLCONV XMVector3Dot(FXMVECTOR V1, FXMVECTOR V2);
+   XMVECTOR XM_CALLCONV XMVector3Cross(FXMVECTOR V1, FXMVECTOR V2);
+   XMVECTOR XM_CALLCONV XMVector3Normalize(FXMVECTOR V);
+   ```
 </section>
 
 <section className="lesson-section" id="s18">
 <h2>1.8 习题</h2>
 
-1. 设 u = (1, 2)、v = (3, −4)，计算下列结果，并在二维坐标系中画出向量：u + v；u − v；2u + ½v；−2u + v。
-2. 设 u = (−1, 3, 2)、v = (3, −4, 1)，计算 u + v、u − v、3u + 2v 和 −2u + v。
-3. 这道题说明向量代数和实数运算有许多相同的良好性质（以下并非完整列表）。设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)、w = (wₓ, wᵧ, w_z)，c、k 为标量，证明：加法交换律 u + v = v + u；加法结合律 u + (v + w) = (u + v) + w；数乘结合律 (ck)u = c(ku)；分配律 k(u + v) = ku + kv 以及 u(k + c) = ku + cu。提示：直接使用向量运算的定义和实数的性质。例如，逐分量展开 (ck)u，再把实数乘法重新组合即可。
+1. 设 u = (1, 2)、v = (3, −4)。完成下列计算，并在二维坐标系中画出这些向量。
+   1. u + v
+   2. u − v
+   3. 2u + ½v
+   4. −2u + v
+2. 设 u = (−1, 3, 2)、v = (3, −4, 1)。完成下列计算。
+   1. u + v
+   2. u − v
+   3. 3u + 2v
+   4. −2u + v
+3. 这道题说明向量代数具有许多与实数相同的良好性质（这不是完整列表）。设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)、w = (wₓ, wᵧ, w_z)，并设 c、k 为标量。证明下列向量性质。
+   1. u + v = v + u（加法交换律）
+   2. u + (v + w) = (u + v) + w（加法结合律）
+   3. (ck)u = c(ku)（数乘结合律）
+   4. k(u + v) = ku + kv（分配律 1）
+   5. u(k + c) = ku + cu（分配律 2）
+
+      提示：直接使用向量运算的定义和实数的性质。例如：
+
+      $$
+      \begin{aligned}
+      (ck)\mathbf{u} &= (ck)(u_x, u_y, u_z)\\
+      &= ((ck)u_x, (ck)u_y, (ck)u_z)\\
+      &= (c(ku_x), c(ku_y), c(ku_z))\\
+      &= c(ku_x, ku_y, ku_z)\\
+      &= c(k\mathbf{u})
+      \end{aligned}
+      $$
 4. 解方程 `2((1, 2, 3) − x) − (−2, 0, 4) = −2(1, 2, 3)`，求 x。
-5. 设 u = (−1, 3, 2)、v = (3, −4, 1)，分别将 u、v 归一化。
-6. 设 k 为标量、u = (uₓ, uᵧ, u_z)，证明 ‖ku‖ = |k|‖u‖。
-7. 判断下列每对向量的夹角是直角、锐角还是钝角：u = (1, 1, 1)、v = (2, 3, 4)；u = (1, 1, 0)、v = (−2, 2, 0)；u = (−1, −1, −1)、v = (3, 1, 0)。
-8. 设 u = (−1, 3, 2)、v = (3, −4, 1)，求 u、v 之间的角 θ。
-9. 设 u、v、w 为三维向量，c、k 为标量，证明点积性质：u · v = v · u；u · (v + w) = u · v + u · w；k(u · v) = (ku) · v = u · (kv)；v · v = ‖v‖²；0 · v = 0。提示：直接使用定义。例如，从点积各分量相乘再求和开始。
-10. 利用余弦定理 `c² = a² + b² − 2ab cos θ`（a、b、c 是三角形边长，θ 是边 a、b 的夹角），证明 u · v = ‖u‖‖v‖ cos θ。提示：考虑图 1.9，令 c² = ‖u − v‖²、a² = ‖u‖²、b² = ‖v‖²，再使用上一题证明的点积性质。
-11. 设 n = (−2, 1)，把 g = (0, −9.8) 分解为两个正交向量之和：一个平行于 n，另一个垂直于 n。并在二维坐标系中画出这些向量。
-12. 设 u = (−2, 1, 4)、v = (3, −4, 1)，求 w = u × v，并验证 w · u = 0、w · v = 0。
-13. 在某坐标系中，三角形顶点为 A = (0, 0, 0)、B = (0, 1, 3)、C = (5, 1, 0)。求一个垂直于该三角形所在平面的向量。提示：取三角形两条边上的向量并求叉积。
-14. 证明 `‖u × v‖ = ‖u‖‖v‖ sin θ`。提示：从 `‖u × v‖² = ‖u‖²‖v‖² − (u · v)²` 开始，使用三角恒等式，再应用式 1.4。
-15. 证明 ‖u × v‖ 等于 u、v 张成的平行四边形面积（见图 1.21）。
+5. 设 u = (−1, 3, 2)、v = (3, −4, 1)。将 u、v 归一化。
+6. 设 k 为标量、u = (uₓ, uᵧ, u_z)。证明 ‖ku‖ = |k|‖u‖。
+7. 下列每组 u、v 之间的角是直角、锐角还是钝角？
+   1. u = (1, 1, 1)，v = (2, 3, 4)
+   2. u = (1, 1, 0)，v = (−2, 2, 0)
+   3. u = (−1, −1, −1)，v = (3, 1, 0)
+8. 设 u = (−1, 3, 2)、v = (3, −4, 1)。求 u、v 之间的角 θ。
+9. 设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)、w = (wₓ, wᵧ, w_z)，c、k 为标量。证明下列点积性质。
+   1. u · v = v · u
+   2. u·(v + w) = u · v + u · w
+   3. k(u · v) = (ku) · v = u · (kv)
+   4. v·v = ‖v‖²
+   5. 0 · v = 0
 
-<Figure src="images/Fig1-21.jpg" alt="由向量 u 与 v 张成的平行四边形" figureNumber="图 1.21" caption="由三维向量 u、v 张成的平行四边形；底边为 ‖v‖，高为 h。" />
-16. 举出一组三维向量 u、v、w，使 `(u × v) × w ≠ u × (v × w)`；这说明叉积一般不满足结合律。提示：考虑标准基向量 i = (1, 0, 0)、j = (0, 1, 0)、k = (0, 0, 1) 的组合。
-17. 证明两个非零平行向量的叉积为零向量，即 u × ku = 0。提示：直接使用叉积定义。
+      提示：直接使用定义。例如：
+
+      $$
+      \begin{aligned}
+      \mathbf{v}\cdot\mathbf{v} &= v_xv_x+v_yv_y+v_zv_z\\
+      &= v_x^2+v_y^2+v_z^2\\
+      &=\left(\sqrt{v_x^2+v_y^2+v_z^2}\right)^2\\
+      &=\lVert\mathbf{v}\rVert^2
+      \end{aligned}
+      $$
+10. 利用余弦定理（c² = a² + b² − 2ab cos θ，其中 a、b、c 是三角形三边长，θ 是边 a 与边 b 的夹角），证明 $u_xv_x+u_yv_y+u_zv_z=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta$。
+
+    提示：考虑图 1.9，令 c² = ‖u − v‖²、a² = ‖u‖²、b² = ‖v‖²，再使用上一题证明的点积性质。
+11. 设 n = (−2, 1)。把向量 g = (0, −9.8) 分解为两个正交向量之和：一个平行于 n，另一个垂直于 n。并在二维坐标系中画出这些向量。
+12. 设 u = (−2, 1, 4)、v = (3, −4, 1)。求 w = u × v，并证明 w · u = 0 和 w · v = 0。
+13. 在某个坐标系中，以下列点为三角形顶点：A = (0, 0, 0)、B = (0, 1, 3)、C = (5, 1, 0)。求一个与该三角形正交的向量。
+
+    提示：在三角形的两条边上各取一个向量，然后使用叉积。
+14. 证明 ‖u × v‖ = ‖u‖‖v‖ sin θ。
+
+    提示：从 ‖u × v‖ = ‖u‖‖v‖|sin θ| 开始，使用三角恒等式 $\cos^2\theta+\sin^2\theta=1 \Rightarrow \sin\theta=\sqrt{1-\cos^2\theta}$，再应用式 1.4。
+15. 证明 ‖u × v‖ 给出由 u、v 张成的平行四边形的面积；见图 1.21。
+
+    <Figure src="images/Fig1-21.jpg" alt="由向量 u 与 v 张成的平行四边形" figureNumber="图 1.21" caption="由两个三维向量 u、v 张成的平行四边形；底边为 ‖v‖，高为 h。" />
+16. 举出一组三维向量 u、v、w 的例子，使 u×(v×w) ≠ (u×v)×w。这说明叉积一般不满足结合律。
+
+    提示：考虑简单向量 i = (1, 0, 0)、j = (0, 1, 0)、k = (0, 0, 1) 的组合。
+17. 证明两个非零平行向量的叉积是零向量；即 u × ku = 0。
+
+    提示：直接使用叉积定义。
 18. 用 Gram–Schmidt 过程将向量组 `{(1, 0, 0), (1, 5, 0), (2, 1, −4)}` 正交归一化。
-19. 阅读原书给出的程序及其输出，先推测每个 `XMVector*` 函数的作用，再查阅 DirectXMath 文档验证。程序会调用向量绝对值、余弦、对数、指数、幂、平方根、分量重排、逐分量乘法、饱和、最小值和最大值等函数。
+19. 阅读下面的程序及其输出。先推测每个 `XMVector*` 函数的作用，再到 DirectXMath 文档中查阅每个函数。
 
-<a className="source-reference-link" href="./?page=ch01&mode=original#s18">切换到英文原文查看练习程序代码</a>
+```cpp
+#include <windows.h> // for XMVerifyCPUSupport
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+#include <iostream>
+using namespace std;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+// 重载“<<”运算符，以便能用 cout 输出 XMVECTOR 对象。
+ostream& XM_CALLCONV operator<<(ostream& os, FXMVECTOR v)
+{
+  XMFLOAT4 dest;
+  XMStoreFloat4(&dest, v);
+
+  os << "(" << dest.x << ", " << dest.y << ", "
+     << dest.z << ", " << dest.w << ")";
+  return os;
+}
+
+int main()
+{
+  cout.setf(ios_base::boolalpha);
+
+  // 检查是否支持 SSE2（Pentium 4、AMD K8 及更高）。
+  if (!XMVerifyCPUSupport())
+  {
+    cout << "directx math not supported" << endl;
+    return 0;
+  }
+
+  XMVECTOR p = XMVectorSet(2.0f, 2.0f, 1.0f, 0.0f);
+  XMVECTOR q = XMVectorSet(2.0f, -0.5f, 0.5f, 0.1f);
+  XMVECTOR u = XMVectorSet(1.0f, 2.0f, 4.0f, 8.0f);
+  XMVECTOR v = XMVectorSet(-2.0f, 1.0f, -3.0f, 2.5f);
+  XMVECTOR w = XMVectorSet(0.0f, XM_PIDIV4, XM_PIDIV2, XM_PI);
+
+  cout << "XMVectorAbs(v)        = " << XMVectorAbs(v) << endl;
+  cout << "XMVectorCos(w)        = " << XMVectorCos(w) << endl;
+  cout << "XMVectorLog(u)        = " << XMVectorLog(u) << endl;
+  cout << "XMVectorExp(p)        = " << XMVectorExp(p) << endl;
+
+  cout << "XMVectorPow(u, p)     = " << XMVectorPow(u, p) << endl;
+  cout << "XMVectorSqrt(u)       = " << XMVectorSqrt(u) << endl;
+
+  cout << "XMVectorSwizzle(u, 2, 2, 1, 3) = "
+       << XMVectorSwizzle(u, 2, 2, 1, 3) << endl;
+  cout << "XMVectorSwizzle(u, 2, 1, 0, 3) = "
+       << XMVectorSwizzle(u, 2, 1, 0, 3) << endl;
+
+  cout << "XMVectorMultiply(u, v) = " << XMVectorMultiply(u, v) << endl;
+  cout << "XMVectorSaturate(q)   = " << XMVectorSaturate(q) << endl;
+  cout << "XMVectorMin(p, v)     = " << XMVectorMin(p, v) << endl;
+  cout << "XMVectorMax(p, v)     = " << XMVectorMax(p, v) << endl;
+
+  return 0;
+}
+```
 
 <Figure src="images/Fig1-22.jpg" alt="XMVector 函数练习程序的运行输出" figureNumber="图 1.22" caption="上述程序的输出。" />
 </section>

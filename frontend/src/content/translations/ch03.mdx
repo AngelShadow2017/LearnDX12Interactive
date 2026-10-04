@@ -1,0 +1,743 @@
+<div className="translation-progress"><b>本章译文进度</b><span>3.1–3.8 已按 EPUB 逐段录入；公式图片已识图转为 LaTeX 并经上下文核验。</span></div>
+
+本章中，我们以几何方式描述三维世界中的物体，也就是用一组近似物体外表面的三角形来描述。如果物体始终静止不动，这个世界会非常无趣。因此我们关注变换几何体的方法；几何变换的例子包括平移、旋转和缩放。本章将推导矩阵方程，可以用它们变换三维空间中的点和向量。
+
+本章目标：
+
+- 理解线性变换和仿射变换如何用矩阵表示。
+- 学习缩放、旋转和平移几何体的坐标变换。
+- 了解如何通过矩阵与矩阵相乘，把多个变换矩阵组合成一个总变换矩阵。
+- 了解如何把坐标从一个坐标系转换到另一个坐标系，以及这种坐标系转换如何用矩阵表示。
+- 熟悉 DirectXMath 库中用于构造变换矩阵的部分函数。
+
+<section className="lesson-section lesson-section--intro" id="s31">
+<h2>3.1 线性变换</h2>
+
+<h3>3.1.1 定义</h3>
+
+考虑数学函数 $\tau(\mathbf{v})=\tau(x,y,z)=(x',y',z')$。该函数输入一个三维向量并输出一个三维向量。当且仅当下列性质成立时，我们称 $\tau$ 为**线性变换**：
+
+$$
+\begin{aligned}
+\tau(\mathbf{u}+\mathbf{v})&=\tau(\mathbf{u})+\tau(\mathbf{v}),\\
+\tau(k\mathbf{u})&=k\tau(\mathbf{u})
+\end{aligned}
+\tag{3.1}
+$$
+
+其中 $\mathbf{u}=(u_x,u_y,u_z)$ 和 $\mathbf{v}=(v_x,v_y,v_z)$ 是任意三维向量，$k$ 是标量。
+
+注：线性变换的输入、输出值可以是三维向量以外的其他类型，但在三维图形书中我们不需要这种一般性。
+
+**例 3.1**　定义函数 $\tau(x,y,z)=(x^2,y^2,z^2)$；例如 $\tau(1,2,3)=(1,4,9)$。该函数不是线性的，因为当 $k=2$、$\mathbf{u}=(1,2,3)$ 时：
+
+$$
+\tau(k\mathbf{u})=\tau(2,4,6)=(4,16,36)
+$$
+
+但
+
+$$
+k\tau(\mathbf{u})=2(1,4,9)=(2,8,18)
+$$
+
+因此式 3.1 的性质 2 不成立。
+
+如果 $\tau$ 是线性的，则可推出：
+
+$$
+\begin{aligned}
+\tau(a\mathbf{u}+b\mathbf{v}+c\mathbf{w})
+&=\tau(a\mathbf{u}+(b\mathbf{v}+c\mathbf{w}))\\
+&=a\tau(\mathbf{u})+\tau(b\mathbf{v}+c\mathbf{w})\\
+&=a\tau(\mathbf{u})+b\tau(\mathbf{v})+c\tau(\mathbf{w})
+\end{aligned}
+\tag{3.2}
+$$
+
+我们将在下一节使用这个结果。
+
+<h3>3.1.2 矩阵表示</h3>
+
+设 $\mathbf{u}=(x,y,z)$。注意我们总可以把它写成：
+
+$$
+\mathbf{u}=(x,y,z)=x\mathbf{i}+y\mathbf{j}+z\mathbf{k}=x(1,0,0)+y(0,1,0)+z(0,0,1)
+$$
+
+向量 $\mathbf{i}=(1,0,0)$、$\mathbf{j}=(0,1,0)$ 和 $\mathbf{k}=(0,0,1)$ 分别是沿所用坐标轴方向的单位向量，称为 $\mathbf{R}^3$ 的**标准基向量**（$\mathbf{R}^3$ 表示所有三维坐标向量 $(x,y,z)$ 的集合）。现在设 $\tau$ 是线性变换；由线性（即式 3.2）可得：
+
+$$
+\tau(\mathbf{u})=\tau(x\mathbf{i}+y\mathbf{j}+z\mathbf{k})=x\tau(\mathbf{i})+y\tau(\mathbf{j})+z\tau(\mathbf{k})
+\tag{3.3}
+$$
+
+注意这无非是一个线性组合，而正如上一章所学，它可以写成向量与矩阵的相乘。由式 2.2 可把式 3.3 改写为：
+
+$$
+\begin{aligned}
+\tau(\mathbf{u})
+&=x\tau(\mathbf{i})+y\tau(\mathbf{j})+z\tau(\mathbf{k})\\
+&=\mathbf{u}\mathbf{A}=[x,\ y,\ z]\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}
+\end{aligned}
+\tag{3.4}
+$$
+
+其中 $\tau(\mathbf{i})=(A_{11},A_{12},A_{13})$、$\tau(\mathbf{j})=(A_{21},A_{22},A_{23})$、$\tau(\mathbf{k})=(A_{31},A_{32},A_{33})$。我们称矩阵 $\mathbf{A}$ 为线性变换 $\tau$ 的**矩阵表示**。
+
+<h3>3.1.3 缩放</h3>
+
+缩放指改变物体的大小，如图 3.1 所示。
+
+<Figure src="images/Fig3-1.jpg" alt="三个棋子：原物体、沿 y 轴放大 2 倍的棋子和沿 x 轴放大 2 倍的棋子" figureNumber="图 3.1" caption="左侧棋子是原物体。中间棋子是原棋子沿 y 轴缩放 2 个单位，使其更高。右侧棋子是原棋子沿 x 轴缩放 2 个单位，使其更胖。" />
+
+我们这样定义缩放变换：
+
+$$
+S(x,y,z)=(s_xx,\ s_yy,\ s_zz)
+$$
+
+它把向量相对于所用坐标系的原点，在 x 轴方向缩放 $s_x$ 个单位，在 y 轴方向缩放 $s_y$ 个单位，在 z 轴方向缩放 $s_z$ 个单位。下面我们证明 $S$ 的确是线性变换。我们有：
+
+$$
+\begin{aligned}
+S(\mathbf{u}+\mathbf{v})&=\left(s_x(u_x+v_x),s_y(u_y+v_y),s_z(u_z+v_z)\right)\\
+&=\left(s_xu_x+s_xv_x,s_yu_y+s_yv_y,s_zu_z+s_zv_z\right)\\
+&=\left(s_xu_x,s_yu_y,s_zu_z\right)+\left(s_xv_x,s_yv_y,s_zv_z\right)\\
+&=S(\mathbf{u})+S(\mathbf{v})
+\end{aligned}
+$$
+
+$$
+S(k\mathbf{u})=\left(s_xku_x,s_yku_y,s_zku_z\right)=k\left(s_xu_x,s_yu_y,s_zu_z\right)=kS(\mathbf{u})
+$$
+
+因此式 3.1 的两条性质都成立，所以 $S$ 是线性的，因而存在矩阵表示。要找到矩阵表示，只需像式 3.3 那样把 $S$ 作用于每个标准基向量，再把所得向量放入矩阵的各行（如式 3.4）：
+
+$$
+\begin{aligned}
+S(\mathbf{i})&=(s_x\cdot1,s_y\cdot0,s_z\cdot0)=(s_x,0,0)\\
+S(\mathbf{j})&=(s_x\cdot0,s_y\cdot1,s_z\cdot0)=(0,s_y,0)\\
+S(\mathbf{k})&=(s_x\cdot0,s_y\cdot0,s_z\cdot1)=(0,0,s_z)
+\end{aligned}
+$$
+
+于是 $S$ 的矩阵表示为：
+
+$$
+\mathbf{S}=\begin{bmatrix}s_x&0&0\\0&s_y&0\\0&0&s_z\end{bmatrix}
+$$
+
+我们称这个矩阵为**缩放矩阵**。缩放矩阵的逆由下式给出：
+
+$$
+\mathbf{S}^{-1}=\begin{bmatrix}1/s_x&0&0\\0&1/s_y&0\\0&0&1/s_z\end{bmatrix}
+$$
+
+**例 3.2**　假设有一个由最小点 $(-4,-4,0)$ 和最大点 $(4,4,0)$ 定义的方形。现在希望把它在 x 轴方向缩放 0.5 个单位、在 y 轴方向缩放 2.0 个单位，而不改变 z 轴。相应的缩放矩阵是：
+
+$$
+\mathbf{S}=\begin{bmatrix}0.5&0&0\\0&2&0\\0&0&1\end{bmatrix}
+$$
+
+现在实际对该方形进行缩放（变换），即把最小点和最大点都乘以这个矩阵：
+
+$$
+\begin{aligned}
+(-4,-4,0)\mathbf{S}&=(-4\cdot0.5,\ -4\cdot2,\ 0\cdot1)=(-2,-8,0)\\
+(4,4,0)\mathbf{S}&=(4\cdot0.5,\ 4\cdot2,\ 0\cdot1)=(2,8,0)
+\end{aligned}
+$$
+
+结果如图 3.2 所示。
+
+<Figure src="images/Fig3-2.jpg" alt="在 x 轴方向缩放 0.5、在 y 轴方向缩放 2 后的方形" figureNumber="图 3.2" caption="在 x 轴方向缩放二分之一个单位、在 y 轴方向缩放两个单位。注意沿负 z 轴方向看时，由于 z = 0，几何体基本是二维的。" />
+
+<h3>3.1.4 旋转</h3>
+
+本节描述把向量 $\mathbf{v}$ 绕轴 $\mathbf{n}$ 旋转角度 $\theta$；见图 3.3。注意我们沿 $\mathbf{n}$ 轴方向观察时按顺时针计量角度；并且假设 $\|\mathbf{n}\|=1$。
+
+<Figure src="images/Fig3-3.jpg" alt="向量 v 绕轴 n 旋转的几何示意，标出 n、v、v⊥ 与旋转后的结果" figureNumber="图 3.3" caption="绕向量 n 旋转的几何关系。" />
+
+首先，把 $\mathbf{v}$ 分解为两部分：一部分平行于 $\mathbf{n}$，另一部分与 $\mathbf{n}$ 正交。平行部分就是 $\operatorname{proj}_{\mathbf{n}}(\mathbf{v})$（回顾例 1.5）；正交部分由 $\mathbf{v}_{\perp}=\operatorname{perp}_{\mathbf{n}}(\mathbf{v})=\mathbf{v}-\operatorname{proj}_{\mathbf{n}}(\mathbf{v})$ 给出。（同样回顾例 1.5：由于 $\mathbf{n}$ 是单位向量，有 $\operatorname{proj}_{\mathbf{n}}(\mathbf{v})=(\mathbf{n}\cdot\mathbf{v})\mathbf{n}$。）关键观察是：平行于 $\mathbf{n}$ 的那部分 $\operatorname{proj}_{\mathbf{n}}(\mathbf{v})$ 在旋转下保持不变，因此只需弄清如何旋转正交部分。也就是说，根据图 3.3，旋转后的向量 $R_{\mathbf{n}}(\mathbf{v})=\operatorname{proj}_{\mathbf{n}}(\mathbf{v})+R_{\mathbf{n}}(\mathbf{v}_{\perp})$。
+
+为求出 $R_{\mathbf{n}}(\mathbf{v}_{\perp})$，我们在旋转所在平面内建立一个二维坐标系，并用 $\mathbf{v}_{\perp}$ 作一个参考向量。为得到与 $\mathbf{v}_{\perp}$ 和 $\mathbf{n}$ 都正交的第二个参考向量，取叉积 $\mathbf{n}\times\mathbf{v}$（左手拇指法则）。由图 3.3 的三角关系以及第 1 章习题 14 可知：
+
+$$
+\|\mathbf{n}\times\mathbf{v}\|=\|\mathbf{n}\|\|\mathbf{v}\|\sin\alpha=\|\mathbf{v}\|\sin\alpha=\|\mathbf{v}_{\perp}\|
+$$
+
+其中 $\alpha$ 是 $\mathbf{n}$ 与 $\mathbf{v}$ 之间的夹角。两个参考向量长度相同，且都位于旋转圆上。建立了这两个参考向量之后，由三角关系可得：
+
+$$
+R_{\mathbf{n}}(\mathbf{v}_{\perp})=\cos\theta\,\mathbf{v}_{\perp}+\sin\theta\,(\mathbf{n}\times\mathbf{v})
+$$
+
+这就给出下面的旋转公式：
+
+$$
+\begin{aligned}
+R_{\mathbf{n}}(\mathbf{v})
+&=\operatorname{proj}_{\mathbf{n}}(\mathbf{v})+R_{\mathbf{n}}(\mathbf{v}_{\perp})\\
+&=(\mathbf{n}\cdot\mathbf{v})\mathbf{n}+\cos\theta\,\mathbf{v}_{\perp}+\sin\theta\,(\mathbf{n}\times\mathbf{v})\\
+&=(\mathbf{n}\cdot\mathbf{v})\mathbf{n}+\cos\theta\big(\mathbf{v}-(\mathbf{n}\cdot\mathbf{v})\mathbf{n}\big)+\sin\theta\,(\mathbf{n}\times\mathbf{v})\\
+&=\cos\theta\,\mathbf{v}+(1-\cos\theta)(\mathbf{n}\cdot\mathbf{v})\mathbf{n}+\sin\theta\,(\mathbf{n}\times\mathbf{v})
+\end{aligned}
+\tag{3.5}
+$$
+
+我们把它留作练习，请读者证明这是一个线性变换。要找到矩阵表示，只需像式 3.3 那样把 $R_{\mathbf{n}}$ 作用于每个标准基向量，再把所得向量放入矩阵的各行（如式 3.4）。最终结果为：
+
+$$
+\mathbf{R}_{\mathbf{n}}=\begin{bmatrix}
+c+(1-c)x^2 & (1-c)xy+sz & (1-c)xz-sy\\
+(1-c)xy-sz & c+(1-c)y^2 & (1-c)yz+sx\\
+(1-c)xz+sy & (1-c)yz-sx & c+(1-c)z^2
+\end{bmatrix}
+$$
+
+其中 $c=\cos\theta$、$s=\sin\theta$。
+
+旋转矩阵有一个有趣的性质：它的每个行向量都是单位长度（请验证），且各行向量两两正交（请验证）。因此这些行向量是**正交归一的**（即两两正交且为单位长度）。行向量正交归一的矩阵称为**正交矩阵**。正交矩阵有一个吸引人的性质：它的逆实际上等于它的转置。因此，$R_{\mathbf{n}}$ 的逆为：
+
+$$
+\mathbf{R}_{\mathbf{n}}^{-1}=\mathbf{R}_{\mathbf{n}}^{T}=\begin{bmatrix}
+c+(1-c)x^2 & (1-c)xy-sz & (1-c)xz-sy\\
+(1-c)xy+sz & c+(1-c)y^2 & (1-c)yz-sx\\
+(1-c)xz-sy & (1-c)yz+sx & c+(1-c)z^2
+\end{bmatrix}
+$$
+
+一般来说，正交矩阵是理想的选择，因为它们的逆容易计算、计算效率也高。
+
+特别地，如果分别选择 x、y、z 轴作为旋转轴（即分别取 $\mathbf{n}=(1,0,0)$、$\mathbf{n}=(0,1,0)$、$\mathbf{n}=(0,0,1)$），就得到下面三个分别绕 x、y、z 轴旋转的旋转矩阵：
+
+$$
+\mathbf{R}_{\mathbf{x}}=\begin{bmatrix}1&0&0&0\\0&\cos\theta&\sin\theta&0\\0&-\sin\theta&\cos\theta&0\\0&0&0&1\end{bmatrix},\quad
+\mathbf{R}_{\mathbf{y}}=\begin{bmatrix}\cos\theta&0&-\sin\theta&0\\0&1&0&0\\\sin\theta&0&\cos\theta&0\\0&0&0&1\end{bmatrix},\quad
+\mathbf{R}_{\mathbf{z}}=\begin{bmatrix}\cos\theta&\sin\theta&0&0\\-\sin\theta&\cos\theta&0&0\\0&0&1&0\\0&0&0&1\end{bmatrix}
+$$
+
+**例 3.3**　假设有一个由最小点 $(-1,0,-1)$ 和最大点 $(1,0,1)$ 定义的方形。现在希望把它绕 y 轴顺时针旋转 $-30°$（即逆时针 30°）。此时 $\mathbf{n}=(0,1,0)$，这会使 $\mathbf{R}_{\mathbf{n}}$ 大幅简化；相应的 y 轴旋转矩阵是：
+
+$$
+\mathbf{R}_{\mathbf{y}}=\begin{bmatrix}\cos\theta&0&-\sin\theta\\0&1&0\\\sin\theta&0&\cos\theta\end{bmatrix}
+=\begin{bmatrix}\cos(-30°)&0&-\sin(-30°)\\0&1&0\\\sin(-30°)&0&\cos(-30°)\end{bmatrix}
+=\begin{bmatrix}\frac{\sqrt{3}}{2}&0&\frac{1}{2}\\0&1&0\\-\frac{1}{2}&0&\frac{\sqrt{3}}{2}\end{bmatrix}
+$$
+
+现在实际对该方形进行旋转（变换），即把最小点和最大点都乘以这个矩阵：
+
+$$
+[-1,0,-1]\begin{bmatrix}\frac{\sqrt{3}}{2}&0&\frac{1}{2}\\0&1&0\\-\frac{1}{2}&0&\frac{\sqrt{3}}{2}\end{bmatrix}\approx[-0.36,0,-1.36]
+\qquad
+[1,0,1]\begin{bmatrix}\frac{\sqrt{3}}{2}&0&\frac{1}{2}\\0&1&0\\-\frac{1}{2}&0&\frac{\sqrt{3}}{2}\end{bmatrix}\approx[0.36,0,1.36]
+$$
+
+结果如图 3.4 所示。
+
+<Figure src="images/Fig3-4.jpg" alt="绕 y 轴顺时针旋转 30 度后的方形" figureNumber="图 3.4" caption="绕 y 轴顺时针旋转 −30°。注意沿正 y 轴方向看时，由于 y = 0，几何体基本是二维的。" />
+</section>
+
+<section className="lesson-section" id="s32">
+<h2>3.2 仿射变换</h2>
+
+<h3>3.2.1 齐次坐标</h3>
+
+下一节将看到，仿射变换就是线性变换与平移的结合。然而平移对向量没有意义，因为向量只描述方向和大小，与位置无关；换句话说，向量在平移下不应改变。平移只应作用于点（即位置向量）。**齐次坐标**提供了一种方便的记法机制，使我们能够统一处理点和向量。使用齐次坐标时，我们把向量扩充为四元组，而放在第四个 $w$ 坐标中的内容取决于我们描述的是点还是向量。具体来说，我们写成：
+
+1. 向量写成 $(x,y,z,0)$；
+2. 点写成 $(x,y,z,1)$。
+
+后面会看到：对点取 $w=1$ 使点的平移能够正确工作，而对向量取 $w=0$ 可以防止向量的坐标被平移修改（我们不希望平移向量的坐标，因为那会改变它的方向和大小——平移不应改变向量的性质）。
+
+注：齐次坐标的记法与图 1.17 中的思路一致。也就是说，两点之差 $\mathbf{q}-\mathbf{p}=(q_x,q_y,q_z,1)-(p_x,p_y,p_z,1)=(q_x-p_x,q_y-p_y,q_z-p_z,0)$ 的结果是一个向量；而点加向量 $\mathbf{p}+\mathbf{v}=(p_x,p_y,p_z,1)+(v_x,v_y,v_z,1)=(p_x+v_x,p_y+v_y,p_z+v_z,1)$ 的结果是一个点。
+
+<h3>3.2.2 定义与矩阵表示</h3>
+
+线性变换无法描述我们希望进行的全部变换；因此我们把函数扩充到更大的一类，称为仿射变换。仿射变换就是线性变换加上一个平移向量 $\mathbf{b}$；即：
+
+$$
+\alpha(\mathbf{u})=\tau(\mathbf{u})+\mathbf{b}
+$$
+
+或者用矩阵记法：
+
+$$
+\alpha(\mathbf{u})=\mathbf{u}\mathbf{A}+\mathbf{b}=[x,\ y,\ z]\begin{bmatrix}A_{11}&A_{12}&A_{13}\\A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\end{bmatrix}+[b_x,\ b_y,\ b_z]=[x',\ y',\ z']
+$$
+
+其中 $\mathbf{A}$ 是某个线性变换的矩阵表示。
+
+如果扩充到 $w=1$ 的齐次坐标，就可以更紧凑地写成：
+
+$$
+[x,\ y,\ z,\ 1]\begin{bmatrix}A_{11}&A_{12}&A_{13}&0\\A_{21}&A_{22}&A_{23}&0\\A_{31}&A_{32}&A_{33}&0\\b_x&b_y&b_z&1\end{bmatrix}=[x',\ y',\ z',\ 1]
+\tag{3.6}
+$$
+
+式 3.6 中的这个 $4\times4$ 矩阵称为仿射变换的矩阵表示。
+
+注意，加上 $\mathbf{b}$ 本质上就是一次平移（即位置的改变）。我们不希望把它作用于向量，因为向量没有位置；但我们仍希望把仿射变换的线性部分作用于向量。如果对向量在第四个分量上取 $w=0$，那么平移 $\mathbf{b}$ 就*不会*被作用（可通过矩阵乘法验证）。
+
+注：因为行向量与上述 $4\times4$ 仿射变换矩阵第四列的点积为 $[x,y,z,w]\cdot[0,0,0,1]=w$，所以该矩阵不会修改输入向量的 $w$ 坐标。
+
+<h3>3.2.3 平移</h3>
+
+**单位变换**是原样返回其自变量的线性变换，即 $I(\mathbf{u})=\mathbf{u}$。可以证明该线性变换的矩阵表示就是单位矩阵。
+
+现在我们把平移变换定义为线性部分是单位变换的仿射变换，即：
+
+$$
+\tau(\mathbf{u})=\mathbf{u}\mathbf{I}+\mathbf{b}=\mathbf{u}+\mathbf{b}
+$$
+
+可以看到，这只是把点 $\mathbf{u}$ 平移（位移）了 $\mathbf{b}$。图 3.5 展示了如何用它来移动物体——我们用同一个向量 $\mathbf{b}$ 平移物体上的每个点，从而移动该物体。
+
+<Figure src="images/Fig3-5.jpg" alt="用位移向量 b 把蚂蚁从原位置移动到新位置" figureNumber="图 3.5" caption="用某个位移向量 b 改变蚂蚁的位置。" />
+
+由式 3.6，$\tau$ 的矩阵表示为：
+
+$$
+\mathbf{T}=\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\b_x&b_y&b_z&1\end{bmatrix}
+$$
+
+这个矩阵称为**平移矩阵**。平移矩阵的逆由下式给出：
+
+$$
+\mathbf{T}^{-1}=\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\-b_x&-b_y&-b_z&1\end{bmatrix}
+$$
+
+**例 3.4**　假设有一个由最小点 $(-8,2,0)$ 和最大点 $(-2,8,0)$ 定义的方形。现在希望把它在 x 轴方向平移 12 个单位、在 y 轴方向平移 $-10.0$ 个单位，而不改变 z 轴。相应的平移矩阵是：
+
+$$
+\mathbf{T}=\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\12&-10&0&1\end{bmatrix}
+$$
+
+现在实际对该方形进行平移（变换），即把最小点和最大点都乘以这个矩阵：
+
+$$
+\begin{aligned}
+(-8,2,0)\mathbf{T}&=(-8+12,\ 2-10,\ 0+0)=(4,-8,0)\\
+(-2,8,0)\mathbf{T}&=(-2+12,\ 8-10,\ 0+0)=(10,-2,0)
+\end{aligned}
+$$
+
+结果如图 3.6 所示。
+
+<Figure src="images/Fig3-6.jpg" alt="在 x 轴方向平移 12、在 y 轴方向平移 −10 后的方形" figureNumber="图 3.6" caption="在 x 轴方向平移 12 个单位、在 y 轴方向平移 −10 个单位。注意沿负 z 轴方向看时，由于 z = 0，几何体基本是二维的。" />
+
+注：设 $\mathbf{T}$ 为某个变换矩阵，回顾我们通过计算乘积 $\mathbf{vT}=\mathbf{v}'$ 来变换一个点/向量。注意，如果先用 $\mathbf{T}$ 变换一个点/向量，再用其逆 $\mathbf{T}^{-1}$ 变换一次，我们最终会得到原来的向量：$\mathbf{vTT}^{-1}=\mathbf{vI}=\mathbf{v}$。换句话说，逆变换会撤销该变换。例如，如果把一个点沿 x 轴平移 5 个单位，再沿 x 轴用逆变换平移 $-5$ 个单位，就会回到起点。同理，如果把一个点绕 y 轴旋转 30°，再绕 y 轴用逆变换旋转 $-30°$，也会得到原来的点。总之，变换矩阵的逆所做的变换正好相反，使两个变换的复合作用后几何体保持不变。
+
+<h3>3.2.4 缩放与旋转的仿射矩阵</h3>
+
+注意，如果 $\mathbf{b}=0$，仿射变换就退化为线性变换。因此我们可以用 $\mathbf{b}=0$ 的仿射变换表示任何线性变换；这又意味着我们可以用 $4\times4$ 仿射矩阵表示任何线性变换。例如，用 $4\times4$ 矩阵写出的缩放矩阵和旋转矩阵如下：
+
+$$
+\mathbf{S}=\begin{bmatrix}s_x&0&0&0\\0&s_y&0&0\\0&0&s_z&0\\0&0&0&1\end{bmatrix}
+\qquad
+\mathbf{R}_{\mathbf{n}}=\begin{bmatrix}
+c+(1-c)x^2 & (1-c)xy+sz & (1-c)xz-sy & 0\\
+(1-c)xy-sz & c+(1-c)y^2 & (1-c)yz+sx & 0\\
+(1-c)xz+sy & (1-c)yz-sx & c+(1-c)z^2 & 0\\
+0&0&0&1
+\end{bmatrix}
+$$
+
+这样一来，我们就能一致地用 $4\times4$ 矩阵表示所有变换，并用 $1\times4$ 齐次行向量表示点和向量。
+
+<h3>3.2.5 仿射变换矩阵的几何解释</h3>
+
+本节要建立一些直觉，理解仿射变换矩阵中的数字在几何上意味着什么。首先考虑**刚体变换**，它本质上是一种保持形状的变换。刚体变换的现实例子可能是把一本书从书桌上拿起来放到书架上；在这个过程中，你既把书从书桌平移到书架，同时也很可能改变了书的方向（旋转）。设 $\tau$ 是描述我们希望如何旋转物体的旋转变换，$\mathbf{b}$ 是描述我们希望如何平移物体的位移向量。这个刚体变换可以由下列仿射变换描述：
+
+$$
+\alpha(x,y,z)=\tau(x,y,z)+\mathbf{b}=x\tau(\mathbf{i})+y\tau(\mathbf{j})+z\tau(\mathbf{k})+\mathbf{b}
+$$
+
+用齐次坐标的矩阵记法（点取 $w=1$，向量取 $w=0$，从而不对向量施加平移），写成：
+
+$$
+[x,\ y,\ z,\ w]\begin{bmatrix}\leftarrow\tau(\mathbf{i})\rightarrow\\\leftarrow\tau(\mathbf{j})\rightarrow\\\leftarrow\tau(\mathbf{k})\rightarrow\\\leftarrow\mathbf{b}\rightarrow\end{bmatrix}=[x',\ y',\ z',\ w]
+\tag{3.7}
+$$
+
+要看清这个式子在几何上做了什么，只需把矩阵中的各个行向量画出来（见图 3.7）。因为 $\tau$ 是旋转变换，它保持长度和角度；特别地，我们看到 $\tau$ 只是把标准基向量 $\mathbf{i}$、$\mathbf{j}$、$\mathbf{k}$ 旋转到一个新的方向 $\tau(\mathbf{i})$、$\tau(\mathbf{j})$、$\tau(\mathbf{k})$。而向量 $\mathbf{b}$ 是一个位置向量，表示从原点出发的位移。图 3.7 展示了当计算 $\alpha(x,y,z)=x\tau(\mathbf{i})+y\tau(\mathbf{j})+z\tau(\mathbf{k})+\mathbf{b}$ 时，变换后的点是如何在几何上得到的。
+
+<Figure src="images/Fig3-7A.jpg" alt="仿射变换矩阵各行向量的几何示意第一部分" figureNumber="图 3.7" caption="仿射变换矩阵各行的几何关系。变换后的点 α(p) 由变换后的基向量 τ(i)、τ(j)、τ(k) 与偏移量 b 的线性组合给出。" />
+<Figure src="images/Fig3-7B.jpg" alt="仿射变换矩阵各行向量的几何示意第二部分" caption="" />
+
+同样的思路也适用于缩放或错切（skew）变换。考虑图 3.8 中把一个正方形扭曲为平行四边形的线性变换 $\tau$。扭曲后的点就是扭曲后基向量的线性组合。
+
+<Figure src="images/Fig3-8.jpg" alt="线性变换把正方形扭曲为平行四边形，标出变换后的基向量与变换后的点" figureNumber="图 3.8" caption="对于把正方形扭曲为平行四边形的线性变换，变换后的点 τ(p) = (x, y) 由变换后的基向量 τ(i)、τ(j) 的线性组合给出。" />
+</section>
+
+<section className="lesson-section" id="s33">
+<h2>3.3 变换的组合</h2>
+
+设 $\mathbf{S}$ 是缩放矩阵，$\mathbf{R}$ 是旋转矩阵，$\mathbf{T}$ 是平移矩阵。假设我们有一个由八个顶点 $\mathbf{v}_i$（$i=0,1,\dots,7$）构成的立方体，并希望把这三个变换依次作用于每个顶点。显而易见的做法是分步进行：
+
+$$
+\big((\mathbf{v}_i\mathbf{S})\mathbf{R}\big)\mathbf{T}=(\mathbf{v}'_i\mathbf{R})\mathbf{T}=\mathbf{v}''_i\mathbf{T}=\mathbf{v}'''_i\qquad\text{对 }i=0,1,\dots,7
+$$
+
+但由于矩阵乘法满足结合律，我们也可以等价地写成：
+
+$$
+\mathbf{v}_i(\mathbf{SRT})=\mathbf{v}'''_i\qquad\text{对 }i=0,1,\dots,7
+$$
+
+我们可以把矩阵 $\mathbf{C}=\mathbf{SRT}$ 看作一个把这三个变换封装为一个总变换矩阵的矩阵。换句话说，矩阵与矩阵相乘让我们能够把变换串联起来。
+
+这带来性能上的影响。假设一个三维物体由 20,000 个点组成，我们希望对该物体施加这三个依次进行的几何变换。使用分步做法需要 20,000 × 3 次向量与矩阵的乘法；而使用合并矩阵的做法只需要 20,000 次向量与矩阵的乘法，外加 2 次矩阵与矩阵的乘法。显然，多做两次矩阵乘法，是换取大量向量矩阵乘法节省的廉价代价。
+
+注：再次指出矩阵乘法不可交换，这一点从几何上也能看出来。例如，先旋转后平移（可用矩阵乘积 $\mathbf{RT}$ 描述）与先做同样的平移再做同样的旋转（即 $\mathbf{TR}$）并不产生相同的变换。图 3.9 演示了这一点。
+
+<Figure src="images/Fig3-9.jpg" alt="(a) 先旋转后平移与 (b) 先平移后旋转的对比示意" figureNumber="图 3.9" caption="(a) 先旋转再平移。(b) 先平移再旋转。" />
+</section>
+
+<section className="lesson-section" id="s34">
+<h2>3.4 坐标系转换</h2>
+
+标量 100°C 表示相对于摄氏温标的水的沸点。那么，我们如何描述相对于华氏温标的*同一个*沸点温度？换句话说，相对于华氏温标，表示水沸点的标量是多少？为了完成这种转换（或坐标系转换），我们需要知道摄氏温标与华氏温标之间的关系。它们的关系是：
+
+$$
+T_F=\frac{9}{5}T_C+32°
+$$
+
+因此，沸点相对于华氏温标为：
+
+$$
+T_F=\frac{9}{5}(100)°+32°=212°F
+$$
+
+这个例子说明：只要知道坐标系 $A$ 与 $B$ 之间的关系，我们就可以把描述某个量相对于 $A$ 的标量 $k$ 转换为描述*同一个*量相对于另一个坐标系 $B$ 的新标量 $k'$。在下面的小节中，我们来看一个类似的问题，只不过关心的不是标量，而是如何把点/向量相对于一个坐标系的坐标转换为相对于另一个坐标系的坐标（见图 3.10）。我们把这种把坐标从一个坐标系转换为另一个坐标系的变换称为**坐标系转换变换**。
+
+<Figure src="images/Fig3-10.jpg" alt="同一向量 v 在坐标系 A 与坐标系 B 中具有不同坐标" figureNumber="图 3.10" caption="同一个向量 v 在相对于不同坐标系描述时坐标不同。相对于坐标系 A 它的坐标是 (x, y)，相对于坐标系 B 它的坐标是 (x', y')。" />
+
+值得强调的是，在坐标系转换变换中，我们并不认为几何体发生了变化；而是改变了参考坐标系，从而改变了该几何体的坐标表示。这与我们通常看待旋转、平移和缩放的方式不同——在那些情形中，我们认为几何体确实被物理地移动或变形了。
+
+在三维计算机图形中，我们会使用多个坐标系，因此需要知道如何从一个坐标系转换到另一个。由于位置是点的属性、却不是向量的属性，因此点与向量的坐标系转换是不同的。
+
+<h3>3.4.1 向量</h3>
+
+考虑图 3.11，其中有两个坐标系 $A$ 和 $B$ 以及一个向量 $\mathbf{p}$。假设我们已知 $\mathbf{p}$ 相对于坐标系 $A$ 的坐标 $\mathbf{p}_A=(x,y)$，并希望求出 $\mathbf{p}$ 相对于坐标系 $B$ 的坐标 $\mathbf{p}_B=(x',y')$。换句话说，给定一个向量相对于某个坐标系的坐标，我们如何求出同一个向量相对于另一个坐标系的坐标？
+
+<Figure src="images/Fig3-11.jpg" alt="坐标系 A 与 B 中的向量 p，标出 A 的 x、y 轴单位向量 u、v 与原点 Q" figureNumber="图 3.11" caption="求 p 相对于坐标系 B 的坐标的几何关系。" />
+
+由图 3.11 可以清楚地看到：
+
+$$
+\mathbf{p}=x\mathbf{u}+y\mathbf{v}
+$$
+
+其中 $\mathbf{u}$ 和 $\mathbf{v}$ 分别是沿坐标系 $A$ 的 x 轴和 y 轴方向的单位向量。把上式中的每个向量都用坐标系 $B$ 的坐标表示，得到：
+
+$$
+\mathbf{p}_B=x\mathbf{u}_B+y\mathbf{v}_B
+$$
+
+因此，如果我们已知 $\mathbf{p}_A=(x,y)$，并且知道向量 $\mathbf{u}$、$\mathbf{v}$ 相对于坐标系 $B$ 的坐标，即已知 $\mathbf{u}_B=(u_x,u_y)$ 和 $\mathbf{v}_B=(v_x,v_y)$，那么总能找到 $\mathbf{p}_B=(x',y')$。
+
+推广到三维，若 $\mathbf{p}_A=(x,y,z)$，则：
+
+$$
+\mathbf{p}_B=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B
+$$
+
+其中 $\mathbf{u}$、$\mathbf{v}$、$\mathbf{w}$ 分别是沿坐标系 $A$ 的 x、y、z 轴方向的单位向量。
+
+<h3>3.4.2 点</h3>
+
+点的坐标系转换与向量的略有不同；这是因为位置对点很重要，所以我们不能像图 3.11 中对向量那样直接平移点。
+
+<Figure src="images/Fig3-12.jpg" alt="坐标系 A 与 B 中的点 p，标出 A 的原点 Q 与 x、y 轴单位向量 u、v" figureNumber="图 3.12" caption="求 p 相对于坐标系 B 的坐标的几何关系。" />
+
+图 3.12 展示了这种情形，我们看到点 $\mathbf{p}$ 可以由下列方程表示：
+
+$$
+\mathbf{p}=x\mathbf{u}+y\mathbf{v}+\mathbf{Q}
+$$
+
+其中 $\mathbf{u}$ 和 $\mathbf{v}$ 分别是沿坐标系 $A$ 的 x 轴和 y 轴方向的单位向量，$\mathbf{Q}$ 是坐标系 $A$ 的原点。把上式中的每个向量/点都用坐标系 $B$ 的坐标表示，得到：
+
+$$
+\mathbf{p}_B=x\mathbf{u}_B+y\mathbf{v}_B+\mathbf{Q}_B
+$$
+
+因此，如果我们已知 $\mathbf{p}_A=(x,y)$，并且知道向量 $\mathbf{u}$、$\mathbf{v}$ 以及原点 $\mathbf{Q}$ 相对于坐标系 $B$ 的坐标，即已知 $\mathbf{u}_B=(u_x,u_y)$、$\mathbf{v}_B=(v_x,v_y)$ 和 $\mathbf{Q}_B=(Q_x,Q_y)$，那么总能找到 $\mathbf{p}_B=(x',y')$。
+
+推广到三维，若 $\mathbf{p}_A=(x,y,z)$，则：
+
+$$
+\mathbf{p}_B=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B+\mathbf{Q}_B
+$$
+
+其中 $\mathbf{u}$、$\mathbf{v}$、$\mathbf{w}$ 分别是沿坐标系 $A$ 的 x、y、z 轴方向的单位向量，$\mathbf{Q}$ 是坐标系 $A$ 的原点。
+
+<h3>3.4.3 矩阵表示</h3>
+
+回顾一下，到目前为止，向量与点的坐标系转换变换是：
+
+$(x',y',z')=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B$　　对于向量
+
+$(x',y',z')=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B+\mathbf{Q}_B$　　对于点
+
+如果使用齐次坐标，我们就能用一个方程同时处理向量和点：
+
+$$
+(x',\ y',\ z',\ w)=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B+w\mathbf{Q}_B
+\tag{3.8}
+$$
+
+若 $w=0$，该式退化为向量的坐标系转换变换；若 $w=1$，则退化为点的坐标系转换变换。式 3.8 的优点在于：只要正确设置 $w$ 坐标，它对向量和点都有效；我们不再需要两个公式（一个用于向量、一个用于点）。式 2.3 表明我们可以用矩阵的语言重写式 3.8：
+
+$$
+\begin{aligned}
+[x',\ y',\ z',\ w]
+&=[x,\ y,\ z,\ w]\begin{bmatrix}\leftarrow\mathbf{u}_B\rightarrow\\\leftarrow\mathbf{v}_B\rightarrow\\\leftarrow\mathbf{w}_B\rightarrow\\\leftarrow\mathbf{Q}_B\rightarrow\end{bmatrix}\\
+&=[x,\ y,\ z,\ w]\begin{bmatrix}u_x&u_y&u_z&0\\v_x&v_y&v_z&0\\w_x&w_y&w_z&0\\Q_x&Q_y&Q_z&1\end{bmatrix}\\
+&=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B+w\mathbf{Q}_B
+\end{aligned}
+\tag{3.9}
+$$
+
+其中 $\mathbf{Q}_B=(Q_x,Q_y,Q_z,1)$、$\mathbf{u}_B=(u_x,u_y,u_z,0)$、$\mathbf{v}_B=(v_x,v_y,v_z,0)$、$\mathbf{w}_B=(w_x,w_y,w_z,0)$ 用齐次坐标描述了坐标系 $A$ 的原点与各轴相对于坐标系 $B$ 的坐标。我们称式 3.9 中的这个 $4\times4$ 矩阵为**坐标系转换矩阵**或**坐标系变更矩阵**，并说它把坐标系 $A$ 的坐标转换（或映射）为坐标系 $B$ 的坐标。
+
+<h3>3.4.4 结合律与坐标系转换矩阵</h3>
+
+现在假设我们有三个坐标系 $F$、$G$、$H$。设 $\mathbf{A}$ 是从 $F$ 到 $G$ 的坐标系变更矩阵，$\mathbf{B}$ 是从 $G$ 到 $H$ 的坐标系变更矩阵。假设我们有一个向量相对于坐标系 $F$ 的坐标 $\mathbf{p}_F$，并希望得到同一个向量相对于坐标系 $H$ 的坐标，即 $\mathbf{p}_H$。一种做法是分步进行：
+
+$$
+(\mathbf{p}_F\mathbf{A})\mathbf{B}=\mathbf{p}_H
+$$
+
+$$
+(\mathbf{p}_G)\mathbf{B}=\mathbf{p}_H
+$$
+
+但由于矩阵乘法满足结合律，我们可以把 $(\mathbf{p}_F\mathbf{A})\mathbf{B}=\mathbf{p}_H$ 改写为：
+
+$$
+\mathbf{p}_F(\mathbf{AB})=\mathbf{p}_H
+$$
+
+在这个意义上，矩阵乘积 $\mathbf{C}=\mathbf{AB}$ 可以看作从 $F$ 直接到 $H$ 的坐标系变更矩阵；它把 $\mathbf{A}$ 和 $\mathbf{B}$ 的作用合并为一个总矩阵。（这个想法类似于函数的复合。）
+
+这带来性能上的影响。假设一个三维物体由 20,000 个点组成，我们希望对该物体施加两次依次进行的坐标系转换变换。使用分步做法需要 20,000 × 2 次向量与矩阵的乘法；而使用合并矩阵的做法只需要 20,000 次向量与矩阵的乘法，外加 1 次矩阵与矩阵的乘法来合并两个坐标系变更矩阵。显然，多做一次矩阵乘法，是换取大量向量矩阵乘法节省的廉价代价。
+
+注：矩阵乘法不可交换，因此我们期望 $\mathbf{AB}$ 与 $\mathbf{BA}$ 不表示相同的复合变换。更具体地说，矩阵相乘的顺序就是变换被应用的顺序，而一般来说这不是一个可交换的过程。
+
+<h3>3.4.5 逆与坐标系转换矩阵</h3>
+
+假设我们已知 $\mathbf{p}_B$（向量 $\mathbf{p}$ 相对于坐标系 $B$ 的坐标），并且已知从坐标系 $A$ 到坐标系 $B$ 的坐标系转换矩阵 $\mathbf{M}$，即 $\mathbf{p}_B=\mathbf{p}_A\mathbf{M}$。我们希望解出 $\mathbf{p}_A$。换句话说，我们不想从 $A$ 映射到 $B$，而是想要从 $B$ 映射到 $A$ 的坐标系转换矩阵。为找到这个矩阵，假设 $\mathbf{M}$ 可逆（即 $\mathbf{M}^{-1}$ 存在）。可以这样求解 $\mathbf{p}_A$：
+
+$$
+\begin{aligned}
+\mathbf{p}_B&=\mathbf{p}_A\mathbf{M}\\
+\mathbf{p}_B\mathbf{M}^{-1}&=\mathbf{p}_A\mathbf{M}\mathbf{M}^{-1} &&\text{方程两边同乘 }\mathbf{M}^{-1}\\
+\mathbf{p}_B\mathbf{M}^{-1}&=\mathbf{p}_A\mathbf{I} &&\mathbf{M}\mathbf{M}^{-1}=\mathbf{I}\text{，由逆的定义}\\
+\mathbf{p}_B\mathbf{M}^{-1}&=\mathbf{p}_A &&\mathbf{p}_A\mathbf{I}=\mathbf{p}_A\text{，由单位矩阵的定义}
+\end{aligned}
+$$
+
+因此矩阵 $\mathbf{M}^{-1}$ 就是从 $B$ 到 $A$ 的坐标系转换矩阵。
+
+图 3.13 展示了坐标系转换矩阵与其逆之间的关系。另外请注意，本书中所做的所有坐标系变更映射都是可逆的，因此我们不必担心逆是否存在。
+
+<Figure src="images/Fig3-13.jpg" alt="矩阵 M 把 A 映射为 B，M 的逆把 B 映射回 A" figureNumber="图 3.13" caption="M 把 A 映射为 B，而 M 的逆把 B 映射回 A。" />
+
+图 3.14 展示了如何用坐标系转换矩阵来解释矩阵逆性质 $(AB)^{-1}=B^{-1}A^{-1}$。
+
+<Figure src="images/Fig3-14.jpg" alt="A 把 F 映射为 G、B 把 G 映射为 H、AB 直接把 F 映射为 H；B 的逆、A 的逆与 B 的逆乘 A 的逆的反向映射" figureNumber="图 3.14" caption="A 把 F 映射为 G，B 把 G 映射为 H，而 AB 把 F 直接映射为 H。B 的逆把 H 映射为 G，A 的逆把 G 映射为 F，而 B 的逆乘 A 的逆把 H 直接映射为 F。" />
+</section>
+
+<section className="lesson-section" id="s35">
+<h2>3.5 变换矩阵与坐标系转换矩阵</h2>
+
+到目前为止，我们一直区分"主动"变换（缩放、旋转、平移）与坐标系转换变换。本节将看到，在数学上两者是等价的：主动变换可以解释为坐标系转换变换，反之亦然。
+
+图 3.15 展示了式 3.7（先旋转后平移的仿射变换矩阵）各行与式 3.9（坐标系转换矩阵）各行之间的几何相似性。
+
+<Figure src="images/Fig3-15a.jpg" alt="在单一坐标系 B 中对立方体施加仿射变换的示意" figureNumber="图 3.15" caption="我们看到 b = Q，τ(i) = u，τ(j) = v，τ(k) = w。(a) 我们使用一个坐标系（称为坐标系 B），并对立方体施加仿射变换，以改变它相对于坐标系 B 的位置和方向。(b) 我们有两个坐标系 A 和 B；立方体上各点相对于坐标系 A 的坐标可由公式转换为坐标系 B 的坐标。两种情况下我们都得到相同的数值，区别只在于对变换的解释方式。" />
+<Figure src="images/Fig3-15b.jpg" alt="在两个坐标系 A 与 B 之间转换立方体坐标的示意" caption="" />
+
+仔细想想，这是合理的。因为在坐标系转换变换中，两个坐标系的区别在于位置和方向。因此，从一个坐标系转换到另一个坐标系的数学公式就需要旋转和平移坐标，于是我们得到同样的数学形式。无论哪种情况，最终得到的数值都相同；区别在于我们解释该变换的方式。在某些情形下，使用多个坐标系并在物体保持不变、只是由于相对于不同参考坐标系描述而坐标表示发生变化时进行系统间转换，会更直观（对应图 3.15(b)）。而在另一些情形下，我们希望在不改变参考坐标系的前提下变换坐标系内的物体（对应图 3.15(a)）。
+
+注：特别地，这段讨论表明我们可以把主动变换（缩放、旋转、平移）的复合解释为坐标系转换变换。这一点很重要，因为后面我们经常会把世界空间（第 5 章）的坐标系转换矩阵定义为缩放、旋转和平移变换的复合。
+</section>
+
+<section className="lesson-section" id="s36">
+<h2>3.6 DirectXMath 变换函数</h2>
+
+下面汇总 DirectXMath 中与变换相关的函数以备查阅。
+
+```cpp
+// 构造缩放矩阵：
+XMMATRIX XM_CALLCONV XMMatrixScaling(
+float ScaleX, 
+float ScaleY, 
+float ScaleZ);          // 缩放因子
+
+// 用向量中的分量构造缩放矩阵：
+XMMATRIX XM_CALLCONV XMMatrixScalingFromVector(
+FXMVECTOR Scale);       // 缩放因子 (sx, sy, sz)
+
+// 构造绕 x 轴的旋转矩阵 Rx：
+XMMATRIX XM_CALLCONV XMMatrixRotationX(
+    float Angle);        // 顺时针旋转角 θ
+// 构造绕 y 轴的旋转矩阵 Ry：
+XMMATRIX XM_CALLCONV XMMatrixRotationY(
+    float Angle);        // 顺时针旋转角 θ
+// 构造绕 z 轴的旋转矩阵 Rz：
+XMMATRIX XM_CALLCONV XMMatrixRotationZ(
+    float Angle);        // 顺时针旋转角 θ
+
+// 构造任意轴旋转矩阵 Rn：
+XMMATRIX XM_CALLCONV XMMatrixRotationAxis(
+    FXMVECTOR Axis,      // 旋转轴 n
+    float Angle);        // 顺时针旋转角 θ
+
+// 构造平移矩阵：
+XMMATRIX XM_CALLCONV XMMatrixTranslation(
+float OffsetX, 
+float OffsetY, 
+float OffsetZ);         // 平移因子
+// 用向量中的分量构造平移矩阵：
+XMMATRIX XM_CALLCONV XMMatrixTranslationFromVector(
+FXMVECTOR Offset);      // 平移因子 (tx, ty, tz)
+
+// 计算向量-矩阵乘积 vM，其中 vw = 1，用于变换点：
+XMVECTOR XM_CALLCONV XMVector3TransformCoord(
+FXMVECTOR V,            // 输入 v
+CXMMATRIX M);           // 输入 M
+
+// 计算向量-矩阵乘积 vM，其中 vw = 0，用于变换向量：
+XMVECTOR XM_CALLCONV XMVector3TransformNormal(
+FXMVECTOR V,            // 输入 v
+CXMMATRIX M);           // 输入 M
+```
+
+对最后两个函数 `XMVector3TransformCoord` 和 `XMVector3TransformNormal`，你不需要显式设置 $w$ 坐标。这些函数总是分别对 `XMVector3TransformCoord` 使用 $v_w=1$、对 `XMVector3TransformNormal` 使用 $v_w=0$。
+</section>
+
+<section className="lesson-section" id="s37">
+<h2>3.7 本章小结</h2>
+
+1. 基本变换矩阵——缩放、旋转和平移——如下：
+
+   $$
+   \mathbf{S}=\begin{bmatrix}s_x&0&0&0\\0&s_y&0&0\\0&0&s_z&0\\0&0&0&1\end{bmatrix}
+   \qquad
+   \mathbf{T}=\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\b_x&b_y&b_z&1\end{bmatrix}
+   $$
+
+   $$
+   \mathbf{R}_{\mathbf{n}}=\begin{bmatrix}
+   c+(1-c)x^2 & (1-c)xy+sz & (1-c)xz-sy & 0\\
+   (1-c)xy-sz & c+(1-c)y^2 & (1-c)yz+sx & 0\\
+   (1-c)xz+sy & (1-c)yz-sx & c+(1-c)z^2 & 0\\
+   0&0&0&1
+   \end{bmatrix}
+   $$
+2. 我们用 $4\times4$ 矩阵表示变换，用 $1\times4$ 齐次坐标描述点和向量：点通过把第四个分量设为 $w=1$ 来表示，向量通过设 $w=0$ 表示。这样，平移会作用于点而不作用于向量。
+3. 如果一个矩阵的所有行向量都是单位长度且两两正交，则该矩阵是正交矩阵。正交矩阵有一个特殊性质：它的逆等于它的转置，因此求逆既容易又高效。所有旋转矩阵都是正交矩阵。
+4. 由矩阵乘法的结合律，我们可以把若干变换矩阵合并为一个变换矩阵，它表示依次应用各个矩阵的总体效果。
+5. 设 $\mathbf{Q}_B$、$\mathbf{u}_B$、$\mathbf{v}_B$ 和 $\mathbf{W}_B$ 分别用相对于坐标系 $B$ 的坐标描述了坐标系 $A$ 的原点以及 x、y、z 轴。若向量/点 $\mathbf{p}$ 相对于坐标系 $A$ 的坐标为 $\mathbf{p}_A=(x,y,z)$，则同一个向量/点相对于坐标系 $B$ 的坐标为：
+   1. $\mathbf{p}_B=(x',y',z')=x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B$　　对于向量（方向和大小）
+   2. $\mathbf{p}_B=(x',y',z')=\mathbf{Q}_B+x\mathbf{u}_B+y\mathbf{v}_B+z\mathbf{w}_B$　　对于位置向量（点）
+
+   使用齐次坐标，可以把这些坐标系转换变换写成矩阵形式。
+6. 假设我们有三个坐标系 $F$、$G$、$H$，$\mathbf{A}$ 是从 $F$ 到 $G$ 的坐标系变更矩阵，$\mathbf{B}$ 是从 $G$ 到 $H$ 的坐标系变更矩阵。利用矩阵与矩阵相乘，矩阵 $\mathbf{C}=\mathbf{AB}$ 可以看作从 $F$ 直接到 $H$ 的坐标系变更矩阵；也就是说，矩阵与矩阵相乘把 $\mathbf{A}$ 和 $\mathbf{B}$ 的作用合并为一个总矩阵，因此我们可以写成：$\mathbf{p}_F(\mathbf{AB})=\mathbf{p}_H$。
+7. 如果矩阵 $\mathbf{M}$ 把坐标系 $A$ 的坐标映射为坐标系 $B$ 的坐标，那么矩阵 $\mathbf{M}^{-1}$ 就把坐标系 $B$ 的坐标映射为坐标系 $A$ 的坐标。
+8. 主动变换可以解释为坐标系转换变换，反之亦然。在某些情形下，使用多个坐标系并在物体保持不变、只是由于相对于不同参考坐标系描述而坐标表示发生变化时进行系统间转换，会更直观。另一些时候，我们希望在不改变参考坐标系的前提下变换坐标系内的物体。
+</section>
+
+<section className="lesson-section" id="s38">
+<h2>3.8 习题</h2>
+
+1. 设 $\tau:\mathbf{R}^3\to\mathbf{R}^3$ 定义为 $\tau(x,y,z)=(x+y,\ x-3,\ z)$。$\tau$ 是线性变换吗？如果是，求它的标准矩阵表示。
+2. 设 $\tau:\mathbf{R}^3\to\mathbf{R}^3$ 定义为 $\tau(x,y,z)=(3x+4z,\ 2x-z,\ x+y+z)$。$\tau$ 是线性变换吗？如果是，求它的标准矩阵表示。
+3. 假设 $\tau:\mathbf{R}^3\to\mathbf{R}^3$ 是线性变换。再假设 $\tau(1,0,0)=(3,1,2)$、$\tau(0,1,0)=(2,-1,3)$、$\tau(0,0,1)=(4,0,2)$。求 $\tau(1,1,1)$。
+4. 构造一个缩放矩阵：在 x 轴方向缩放 2 个单位，在 y 轴方向缩放 $-3$ 个单位，z 维保持不变。
+5. 构造一个旋转矩阵：绕轴 $(1,1,1)$ 旋转 30°。
+6. 构造一个平移矩阵：沿 x 轴平移 4 个单位，沿 y 轴不平移，沿 z 轴平移 $-9$ 个单位。
+7. 构造一个单一的变换矩阵：先在 x 轴方向缩放 2 个单位、在 y 轴方向缩放 $-3$ 个单位、z 维保持不变，然后沿 x 轴平移 4 个单位、沿 y 轴不平移、沿 z 轴平移 $-9$ 个单位。
+8. 构造一个单一的变换矩阵：先绕 y 轴旋转 45°，然后沿 x 轴平移 $-2$ 个单位、沿 y 轴平移 5 个单位、沿 z 轴平移 1 个单位。
+9. 重做例 3.2，但这次把方形在 x 轴方向缩放 1.5 个单位、在 y 轴方向缩放 0.75 个单位，并不改变 z 轴。画出变换前后的几何图形以验证你的结果。
+10. 重做例 3.3，但这次把方形绕 y 轴顺时针旋转 $-45°$（即逆时针 45°）。画出变换前后的几何图形以验证你的结果。
+11. 重做例 3.4，但这次把方形沿 x 轴平移 $-5$ 个单位、沿 y 轴平移 $-3.0$ 个单位、沿 z 轴平移 4.0 个单位。画出变换前后的几何图形以验证你的结果。
+12. 证明 $R_{\mathbf{n}}(\mathbf{v})=\cos\theta\,\mathbf{v}+(1-\cos\theta)(\mathbf{n}\cdot\mathbf{v})\mathbf{n}+\sin\theta(\mathbf{n}\times\mathbf{v})$ 是线性变换，并求它的标准矩阵表示。
+13. 证明 $\mathbf{R}_y$ 的行向量是正交归一的。作为一道计算量更大的练习，读者也可以对一般旋转矩阵（绕任意轴的旋转矩阵）做同样的验证。
+14. 证明矩阵 $\mathbf{M}$ 正交当且仅当 $\mathbf{M}^T=\mathbf{M}^{-1}$。
+15. 计算：
+
+    $$
+    [x,y,z,1]\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\b_x&b_y&b_z&1\end{bmatrix}
+    \qquad\text{和}\qquad
+    [x,y,z,0]\begin{bmatrix}1&0&0&0\\0&1&0&0\\0&0&1&0\\b_x&b_y&b_z&1\end{bmatrix}
+    $$
+
+    该平移会平移点吗？该平移会平移向量吗？为什么平移处于标准位置的向量的坐标没有意义？
+16. 验证给出的缩放矩阵的逆确实是该缩放矩阵的逆；也就是说，通过直接做矩阵乘法证明 $\mathbf{S}\mathbf{S}^{-1}=\mathbf{S}^{-1}\mathbf{S}=\mathbf{I}$。同样地，验证给出的平移矩阵的逆确实是该平移矩阵的逆；也就是证明 $\mathbf{T}\mathbf{T}^{-1}=\mathbf{T}^{-1}\mathbf{T}=\mathbf{I}$。
+17. 假设我们有坐标系 $A$ 和 $B$。设 $\mathbf{p}_A=(1,-2,0)$ 和 $\mathbf{q}_A=(1,2,0)$ 分别表示相对于坐标系 $A$ 的一个点和一个力。此外，设
+
+    $$
+    \mathbf{Q}_B=(-6,2,0),\quad
+    \mathbf{u}_B=\left(\tfrac{1}{\sqrt{2}},\tfrac{1}{\sqrt{2}},0\right),\quad
+    \mathbf{v}_B=\left(-\tfrac{1}{\sqrt{2}},\tfrac{1}{\sqrt{2}},0\right),\quad
+    \mathbf{w}_B=(0,0,1)
+    $$
+
+    用相对于坐标系 $B$ 的坐标描述坐标系 $A$。构造把坐标系 $A$ 的坐标映射为坐标系 $B$ 坐标的坐标系转换矩阵，并求出 $\mathbf{p}_B=(x,y,z)$ 和 $\mathbf{q}_B=(x,y,z)$。在方格纸上作图以验证你的答案是否合理。
+18. 点相对于向量线性组合的对应概念是**仿射组合**：$\mathbf{p}=a_1\mathbf{p}_1+\dots+a_n\mathbf{p}_n$，其中 $a_1+\dots+a_n=1$，而 $\mathbf{p}_1,\dots,\mathbf{p}_n$ 是点。标量系数 $a_k$ 可以看作一个"点权重"，描述点 $\mathbf{p}_k$ 在确定 $\mathbf{p}$ 时的影响有多大；粗略地说，$a_k$ 越接近 1，$\mathbf{p}$ 就越接近 $\mathbf{p}_k$，而负的 $a_k$ 会把 $\mathbf{p}$ 从 $\mathbf{p}_k$ "排斥"开。（下一道题会帮助你对此建立一些直觉。）这些权重也称为**重心坐标**。证明仿射组合可以写成点加向量：
+
+    $$
+    \mathbf{p}=\mathbf{p}_1+a_2(\mathbf{p}_2-\mathbf{p}_1)+\dots+a_n(\mathbf{p}_n-\mathbf{p}_1)
+    $$
+19. 考虑由 $\mathbf{p}_1=(0,0,0)$、$\mathbf{p}_2=(0,1,0)$、$\mathbf{p}_3=(2,0,0)$ 定义的三角形。画出以下各点：
+    1. $\tfrac{1}{3}\mathbf{p}_1+\tfrac{1}{3}\mathbf{p}_2+\tfrac{1}{3}\mathbf{p}_3$
+    2. $0.7\mathbf{p}_1+0.2\mathbf{p}_2+0.1\mathbf{p}_3$
+    3. $0.0\mathbf{p}_1+0.5\mathbf{p}_2+0.5\mathbf{p}_3$
+    4. $-0.2\mathbf{p}_1+0.6\mathbf{p}_2+0.6\mathbf{p}_3$
+    5. $0.6\mathbf{p}_1+0.5\mathbf{p}_2-0.1\mathbf{p}_3$
+    6. $0.8\mathbf{p}_1-0.3\mathbf{p}_2+0.5\mathbf{p}_3$
+
+    (a) 中的点有什么特别之处？$\mathbf{p}_2$ 和点 $(1,0,0)$ 相对于 $\mathbf{p}_1$、$\mathbf{p}_2$、$\mathbf{p}_3$ 的重心坐标是什么？能否猜测：如果某个重心坐标为负，点 $\mathbf{p}$ 会位于三角形的什么位置？
+20. 仿射变换的定义性特征之一是它保持仿射组合。证明仿射变换 $\alpha$ 保持仿射组合；即
+
+    $$
+    \alpha\left(a_1\mathbf{p}_1+\dots+a_n\mathbf{p}_n\right)=a_1\alpha(\mathbf{p}_1)+\dots+a_n\alpha(\mathbf{p}_n)
+    $$
+
+    其中 $a_1+\dots+a_n=1$。
+21. 考虑图 3.16。计算机图形中一种常见的坐标系转换是把坐标从坐标系 $A$（正方形 $[-1,1]^2$）映射到坐标系 $B$（正方形 $[0,1]^2$，其 y 轴方向与坐标系 $A$ 中的 y 轴相反）。证明从坐标系 $A$ 到坐标系 $B$ 的坐标系转换变换由下式给出：
+
+    $$
+    [x,\ y,\ 0\ 1]\begin{bmatrix}0.5&0&0&0\\0&-0.5&0&0\\0&0&1&0\\0.5&0.5&0&1\end{bmatrix}=[x',\ y',\ 0\ 1]
+    $$
+
+    <Figure src="images/Fig3-16.jpg" alt="坐标系 A 的正方形 [-1,1]² 与坐标系 B 的正方形 [0,1]²，y 轴方向相反" figureNumber="图 3.16" caption="从坐标系 A（正方形 [−1, 1]²）到坐标系 B（正方形 [0, 1]²，y 轴方向与坐标系 A 中的 y 轴相反）的坐标转换。" />
+22. 上一章提到，行列式与线性变换下盒体体积的变化有关。求缩放矩阵的行列式，并用体积来解释结果。
+23. 考虑把正方形扭曲为平行四边形的变换 $\tau(x,y)=(3x+y,\ x+2y)$。求该变换的标准矩阵表示，并证明该变换矩阵的行列式等于 $\tau(\mathbf{i})$ 与 $\tau(\mathbf{j})$ 张成的平行四边形的面积。
+
+    <Figure src="images/Fig3-17.jpg" alt="把正方形映射为平行四边形的变换，标出变换后的基向量与平行四边形" figureNumber="图 3.17" caption="把正方形映射为平行四边形的变换。" />
+24. 证明 y 轴旋转矩阵的行列式为 1。基于上一题，解释为什么它等于 1 是合理的。作为一道计算量更大的练习，读者可以证明一般旋转矩阵（绕任意轴的旋转矩阵）的行列式为 1。
+25. 旋转矩阵可以用代数方式刻画为行列式等于 1 的正交矩阵。如果结合习题 24 重新审视图 3.7，这就说得通了：旋转后的基向量 $\tau(\mathbf{i})$、$\tau(\mathbf{j})$、$\tau(\mathbf{k})$ 都是单位长度且两两正交的；此外，旋转不改变物体的大小，因此行列式应为 1。证明两个旋转矩阵的乘积 $\mathbf{R}_1\mathbf{R}_2=\mathbf{R}$ 仍是旋转矩阵。也就是说，证明 $\mathbf{R}\mathbf{R}^T=\mathbf{R}^T\mathbf{R}=\mathbf{I}$（以说明 $\mathbf{R}$ 是正交的），并证明 $\det\mathbf{R}=1$。
+26. 证明旋转矩阵 $\mathbf{R}$ 满足下列性质：
+
+    $$
+    \begin{aligned}
+    \text{(a)}\quad(\mathbf{uR})\cdot(\mathbf{vR})&=\mathbf{u}\cdot\mathbf{v} &&\text{保持点积}\\
+    \text{(b)}\quad\|\mathbf{uR}\|&=\|\mathbf{u}\| &&\text{保持长度}\\
+    \text{(c)}\quad\theta(\mathbf{uR},\mathbf{vR})&=\theta(\mathbf{u},\mathbf{v}) &&\text{保持角度}
+    \end{aligned}
+    $$
+
+    其中 $\theta(x,y)=\cos^{-1}\dfrac{\mathbf{x}\cdot\mathbf{y}}{\lVert\mathbf{x}\rVert\,\lVert\mathbf{y}\rVert}$ 表示 $\mathbf{x}$ 与 $\mathbf{y}$ 之间的夹角。解释为什么所有这些性质对旋转变换来说都是合理的。
+27. 求一个缩放、旋转和平移矩阵，其乘积把起点为 $\mathbf{p}=(0,0,0)$、终点为 $\mathbf{q}=(0,0,1)$ 的线段变换为长度为 2、平行于向量 $(1,1,1)$、起点为 $(3,1,2)$ 的线段。
+28. 假设有一个位于 $(x,y,z)$ 的盒子。我们定义的缩放变换以原点作为缩放的参考点，因此缩放这个盒子（其中心不在原点）会产生平移盒子的副作用（图 3.18）；这在某些情形下可能并不理想。求一个相对于盒子中心点进行缩放的变换。
+
+    提示：把坐标转换到以盒子中心为原点的盒子坐标系，缩放盒子，再转换回原来的坐标系。
+
+    <Figure src="images/Fig3-18.jpg" alt="(a) 相对原点缩放会使矩形发生平移；(b) 相对矩形中心缩放则不会平移" figureNumber="图 3.18" caption="(a) 相对原点在 x 轴方向缩放 2 个单位会导致矩形被平移。(b) 相对矩形中心在 x 轴方向缩放 2 个单位不会导致平移（矩形保持原有的中心点）。" />
+</section>

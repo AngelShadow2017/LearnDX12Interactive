@@ -1,6 +1,6 @@
 import DirectXChapterRemainder from './translation-parts/ch01-remainder.mdx';
 
-<div className="translation-progress"><b>本章译文进度</b><span>1.1–1.8 的正文已录入第一轮；1.6 示例程序的完整代码、原文公式逐式校对仍在进行。</span></div>
+<div className="translation-progress"><b>本章译文进度</b><span>1.1–1.8 已按 EPUB 逐段核对；1.6 的全部原书程序代码已补入，公式已逐张识图校验为 LaTeX。</span></div>
 
 本章介绍向量。向量在计算机图形学、碰撞检测和物理模拟中都很重要；这些内容也是现代电子游戏的常见组成部分。本书采用非正式、偏实践的讲解方式。若要系统学习三维游戏或图形学数学，作者推荐参考文献 [Verth04]。向量的重要性还体现在：本书几乎每个示例程序都会用到它。
 
@@ -63,31 +63,11 @@ Direct3D 使用左手坐标系。伸出左手，让手指沿 x 轴正方向，�
 
 第三项中出现了一个特殊向量，称为零向量；它的所有分量都为零，记作 0。
 
-**例 1.2**　为了让图更简单，下面用二维向量说明；这些概念同样适用于三维，只是少一个分量。
+**例 1.2**　本例用二维向量说明，便于作图；其思想与三维相同，只是少处理一个分量。
 
-取 v = (2, 1)。与 v 相比，−½v 的几何变化是什么？逐分量计算可得：
-
-$$
--\frac{1}{2}\mathbf{v} = -\frac{1}{2}(2,1)=(-1,-\frac{1}{2}).
-$$
-
-如图 1.6(a)，−½v 与 v 方向相反，长度是 v 的一半。因此，向量取负可以理解为“翻转”方向，而数乘可以理解为缩放向量长度。
-
-再取 u = (2, ½)、v = (1, 2)，则：
-
-$$
-\mathbf{u}+\mathbf{v}=(3,\frac{5}{2}).
-$$
-
-图 1.6(b) 展示了向量加法的几何含义：把 u 平行移动，使它的尾端与 v 的头端重合；从 v 的尾端指向平移后 u 的头端，就是和向量。也可以固定 u，把 v 平移到 u 的头端，此时 u + v 从 u 的尾端指向平移后 v 的头端。向量加法也符合力的物理直觉：两个力（向量）同向相加，会得到方向相同、强度更大的合力（更长的向量）；方向相反的力相加，则会得到较弱的合力（更短的向量）。图 1.7 展示了这一点。
-
-使用同一组向量，减法的分量结果为：
-
-$$
-\mathbf{v}-\mathbf{u}=(1-2,\;2-\frac12)=(-1,\frac32).
-$$
-
-图 1.6(c) 展示了向量减法的几何意义：v − u 是一支从 u 的头端指向 v 的头端的向量。如果把 u、v 看成点，那么 v − u 就是从点 u 指向点 v 的向量。我们经常需要计算从一个点指向另一个点的向量，因此这种解释很重要。此时 v − u 的长度也就是两点 u、v 之间的距离。
+1. 取 v = (2, 1)。v 与 $-\frac{1}{2}\mathbf{v}$ 在几何上如何比较？我们计算 $-\frac{1}{2}\mathbf{v} = -\frac{1}{2}(2,1)=(-1,-\frac{1}{2})$。把 v 与 $-\frac{1}{2}\mathbf{v}$ 画在一起（图 1.6(a)），可以看到 $-\frac{1}{2}\mathbf{v}$ 的方向恰与 v 相反，长度是 v 的一半。因此从几何上看，向量取负可以理解为“翻转”方向，而数乘可以理解为缩放向量长度。
+2. 取 u = (2, ½)、v = (1, 2)，则 $\mathbf{u}+\mathbf{v}=(3,\frac{5}{2})$。图 1.6(b) 展示了向量加法的几何含义：把 u 平行移动，使它的**尾端**与 v 的**头端**重合；和向量从 v 的尾端指向平移后 u 的头端。（若固定 u，把 v 平移到 u 的头端，也会得到相同结果：此时 u + v 从 u 的尾端指向平移后 v 的头端。）向量加法还与我们对力的物理直觉一致：同方向的两个力（向量）相加，得到同方向更强的合力（更长的向量）；方向相反的两个力相加，得到较弱的合力（更短的向量）。图 1.7 展示了这些想法。
+3. 取 u = (2, ½)、v = (1, 2)，则 $\mathbf{v}-\mathbf{u}=(-1,\frac{3}{2})$。图 1.6(c) 展示了向量减法的几何意义：差 v − u 给出的是一支从 u 的头端指向 v 的头端的向量。如果把 u、v 解释为两个点，那么 v − u 就是从点 u 指向点 v 的向量；这种解释很重要，因为我们经常需要从一个点指向另一个点的向量。另外，把 u、v 看作点时，v − u 的长度也就是点 u 到点 v 的距离。
 
 <div className="figure-pair">
   <Figure src="images/Fig1-6.jpg" alt="数乘、向量加法与减法的几何解释" figureNumber="图 1.6" caption="(a) 数乘。(b) 向量加法。(c) 向量减法。" />
@@ -100,7 +80,7 @@ $$
 
 从几何上看，向量的大小就是有向线段的长度。向量大小用双竖线表示，例如 ‖u‖ 表示 u 的大小。给定向量 u = (x, y, z)，我们希望用代数方式计算其大小。三维向量的大小可以通过两次应用勾股定理求得（见图 1.8）。
 
-首先考虑 xz 平面上的三角形，其两条直角边为 x、z，斜边为 a。根据勾股定理，a² = x² + z²。再看直角边为 a、y，斜边为 ‖u‖ 的三角形。再次应用勾股定理，就得到向量大小公式：
+首先考虑 xz 平面上的三角形，其两条直角边为 x、z，斜边为 a。根据勾股定理，$a=\sqrt{x^2+z^2}$。再看直角边为 a、y，斜边为 ‖u‖ 的三角形。再次应用勾股定理，就得到向量大小公式：
 
 $$
 \begin{aligned}
@@ -108,19 +88,31 @@ a^2 &= x^2+z^2,\\
 \lVert\mathbf{u}\rVert^2 &= a^2+y^2=x^2+y^2+z^2,\\
 \lVert\mathbf{u}\rVert &= \sqrt{x^2+y^2+z^2}.
 \end{aligned}
+\tag{1.1}
 $$
 
 有些应用并不关心向量的长度，只需要它表示纯粹的方向。此时希望向量长度恰好为 1。把向量长度变为 1 的过程称为归一化（normalizing）。把向量的每个分量除以它的大小即可完成归一化：
 
 $$
-\hat{\mathbf{u}}=\frac{\mathbf{u}}{\lVert\mathbf{u}\rVert}.
+\hat{\mathbf{u}}=\frac{\mathbf{u}}{\lVert\mathbf{u}\rVert}
+=\left(\frac{x}{\lVert\mathbf{u}\rVert},\frac{y}{\lVert\mathbf{u}\rVert},\frac{z}{\lVert\mathbf{u}\rVert}\right).
+\tag{1.2}
 $$
 
 <Figure src="images/Fig1-8.jpg" alt="用两次勾股定理计算三维向量的长度" figureNumber="图 1.8" caption="通过两次应用勾股定理计算三维向量的长度。" />
 
-可以通过计算 û 的长度来验证上述公式确实有效；计算结果为 1，因此 û 确实是单位向量。
+可以通过计算 û 的长度来验证上述公式确实正确：
 
-**例 1.3**　将向量 v = (−1, 3, 4) 归一化。它的长度为 √26，因此：
+$$
+\lVert\hat{\mathbf{u}}\rVert
+=\sqrt{\left(\frac{x}{\lVert\mathbf{u}\rVert}\right)^2+\left(\frac{y}{\lVert\mathbf{u}\rVert}\right)^2+\left(\frac{z}{\lVert\mathbf{u}\rVert}\right)^2}
+=\frac{\sqrt{x^2+y^2+z^2}}{\sqrt{\lVert\mathbf{u}\rVert^2}}
+=\frac{\lVert\mathbf{u}\rVert}{\lVert\mathbf{u}\rVert}=1.
+$$
+
+所以 û 确实是单位向量。
+
+**例 1.3**　将向量 v = (−1, 3, 4) 归一化。首先有 $\lVert\mathbf{v}\rVert=\sqrt{(-1)^2+3^2+4^2}=\sqrt{26}$，因此：
 
 $$
 \hat{\mathbf{v}}=\left(-\frac{1}{\sqrt{26}},\frac{3}{\sqrt{26}},\frac{4}{\sqrt{26}}\right).
@@ -130,7 +122,8 @@ $$
 
 $$
 \lVert\hat{\mathbf{v}}\rVert
-=\sqrt{\frac{1}{26}+\frac{9}{26}+\frac{16}{26}}=1.
+=\sqrt{\left(-\frac{1}{\sqrt{26}}\right)^2+\left(\frac{3}{\sqrt{26}}\right)^2+\left(\frac{4}{\sqrt{26}}\right)^2}
+=\sqrt{\frac{1}{26}+\frac{9}{26}+\frac{16}{26}}=\sqrt{1}=1.
 $$
 </section>
 
@@ -141,6 +134,7 @@ $$
 
 $$
 \mathbf{u}\cdot\mathbf{v}=u_xv_x+u_yv_y+u_zv_z.
+\tag{1.3}
 $$
 
 换句话说，点积是对应分量的乘积之和。
@@ -149,6 +143,7 @@ $$
 
 $$
 \mathbf{u}\cdot\mathbf{v}=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta.
+\tag{1.4}
 $$
 
 <Figure src="images/Fig1-9.jpg" alt="锐角与钝角情况下两个向量之间的角度" figureNumber="图 1.9" caption="左图中 u 与 v 的夹角 θ 为锐角，右图中为钝角。两个向量之间的角始终指较小的角，即 0 ≤ θ ≤ π。" />
@@ -166,15 +161,20 @@ $$
 **例 1.4**　设 u = (1, 2, 3)、v = (−4, 0, −1)，求 u 与 v 之间的角。首先计算：
 
 $$
-\mathbf{u}\cdot\mathbf{v}=-7,\qquad
-\lVert\mathbf{u}\rVert=\sqrt{14},\qquad
-\lVert\mathbf{v}\rVert=\sqrt{17}.
+\mathbf{u}\cdot\mathbf{v}=(1,2,3)\cdot(-4,0,-1)=-4-3=-7,
+$$
+
+$$
+\lVert\mathbf{u}\rVert=\sqrt{1^2+2^2+3^2}=\sqrt{14},\qquad
+\lVert\mathbf{v}\rVert=\sqrt{(-4)^2+0^2+(-1)^2}=\sqrt{17}.
 $$
 
 然后应用式 1.4 并解出 θ：
 
 $$
-\theta=\cos^{-1}\!\left(\frac{-7}{\sqrt{14}\sqrt{17}}\right)\approx117^\circ.
+\cos\theta=\frac{\mathbf{u}\cdot\mathbf{v}}{\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert}=\frac{-7}{\sqrt{14}\sqrt{17}},
+\qquad
+\theta=\cos^{-1}\frac{-7}{\sqrt{14}\sqrt{17}}\approx117^\circ.
 $$
 
 **例 1.5**　考虑图 1.10。已知 v 和单位向量 n，用点积写出 p 关于 v、n 的公式。
@@ -182,16 +182,33 @@ $$
 从图中可以看出，存在一个标量 k，使得 p = kn。又因为 ‖n‖ = 1，所以 ‖p‖ = ‖kn‖ = |k|‖n‖ = |k|。（当且仅当 p、n 方向相反时，k 可能为负。）利用三角函数可知 k = ‖v‖ cos θ，因此 p = kn = (‖v‖ cos θ)n。由于 n 是单位向量，还可以改写为：
 
 $$
-\mathbf{p}=(\mathbf{v}\cdot\mathbf{n})\mathbf{n}.
+\mathbf{p}=(\lVert\mathbf{v}\rVert\cos\theta)\mathbf{n}
+=(\lVert\mathbf{v}\rVert\cdot 1\cos\theta)\mathbf{n}
+=(\lVert\mathbf{v}\rVert\lVert\mathbf{n}\rVert\cos\theta)\mathbf{n}
+=(\mathbf{v}\cdot\mathbf{n})\mathbf{n}.
 $$
 
-这说明 k = v · n，也体现了 n 为单位向量时 v · n 的几何含义。我们把 p 称为 v 在 n 上的正交投影，通常记作 projₙ(v)。如果把 v 看作一个力，p 就是沿 n 方向作用的那部分力。相应地，w = perpₙ(v) = v − p 表示沿垂直于 n 的方向作用的那部分力。由于 v = p + w 且 p、w 正交，v 就被分解成了两个互相垂直的向量之和。
-
-如果 n 的长度不是 1，可以先把它归一化。用单位向量 n/‖n‖ 代替 n，就能得到更一般的投影公式：
+特别地，这说明 k = v · n，也体现了 n 为单位向量时 v · n 的几何含义。我们把 p 称为 v 在 n 上的正交投影，通常记作
 
 $$
-\operatorname{proj}_{\mathbf{n}}(\mathbf{v})
-=\frac{\mathbf{v}\cdot\mathbf{n}}{\lVert\mathbf{n}\rVert^2}\,\mathbf{n}.
+\mathbf{p}=\operatorname{proj}_{\mathbf{n}}(\mathbf{v}).
+$$
+
+如果把 v 看作一个力，p 就是沿 n 方向作用的那部分力。相应地，w = perpₙ(v) = v − p 表示沿垂直于 n 的方向作用的那部分力（这正是把它记作 perpₙ(v) 的原因，perp 即 perpendicular，垂直）。注意
+
+$$
+\mathbf{v}=\mathbf{p}+\mathbf{w}
+=\operatorname{proj}_{\mathbf{n}}(\mathbf{v})+\operatorname{perp}_{\mathbf{n}}(\mathbf{v}),
+$$
+
+也就是说，我们把向量 v 分解成了两个互相正交的向量 p 与 w 之和。
+
+如果 n 的长度不是 1，可以先把它归一化，使它成为单位长度。用单位向量 n/‖n‖ 代替 n，就能得到更一般的投影公式：
+
+$$
+\mathbf{p}=\operatorname{proj}_{\mathbf{n}}(\mathbf{v})
+=\left(\mathbf{v}\cdot\frac{\mathbf{n}}{\lVert\mathbf{n}\rVert}\right)\frac{\mathbf{n}}{\lVert\mathbf{n}\rVert}
+=\frac{(\mathbf{v}\cdot\mathbf{n})}{\lVert\mathbf{n}\rVert^2}\,\mathbf{n}.
 $$
 
 <Figure src="images/Fig1-10.jpg" alt="向量 v 在 n 上的正交投影" figureNumber="图 1.10" caption="v 在 n 上的正交投影。" />
@@ -226,15 +243,11 @@ $$
 
 现在 w₀、w₁、w₂ 两两正交。最后分别将三者归一化，得到正交归一组。
 
-对于一般的 n 个向量 `{v₀, …, vₙ₋₁}`，可以用同一过程构造正交归一组 `{w₀, …, wₙ₋₁}`。这个过程通常称为 Gram–Schmidt 正交化过程：先令 w₀ = v₀；对于 1 ≤ i ≤ n − 1，令 wᵢ = vᵢ − ∑ⱼ₌₀ⁱ⁻¹ proj_wⱼ(vᵢ)；最后将每个 wᵢ 除以自身长度，完成归一化。
+对于一般的 n 个向量 `{v₀, …, vₙ₋₁}`，可以用同一过程构造正交归一组 `{w₀, …, wₙ₋₁}`。这个过程通常称为 Gram–Schmidt 正交化过程：
 
-$$
-\begin{aligned}
-\mathbf{w}_0&=\mathbf{v}_0,\\
-\mathbf{w}_i&=\mathbf{v}_i-\sum_{j=0}^{i-1}\operatorname{proj}_{\mathbf{w}_j}(\mathbf{v}_i),\qquad 1\le i\le n-1,\\
-\mathbf{w}_i&\leftarrow \frac{\mathbf{w}_i}{\lVert\mathbf{w}_i\rVert}.
-\end{aligned}
-$$
+- 基础步骤：令 $\mathbf{w}_0=\mathbf{v}_0$；
+- 对 $1\le i\le n-1$，令 $\mathbf{w}_i=\mathbf{v}_i-\sum_{j=0}^{i-1}\operatorname{proj}_{\mathbf{w}_j}(\mathbf{v}_i)$；
+- 归一化步骤：令 $\mathbf{w}_i=\dfrac{\mathbf{w}_i}{\lVert\mathbf{w}_i\rVert}$。
 
 直观地说，每次从输入向量中选取 vᵢ 并把它加入正交归一组时，都要减去它在已加入向量 w₀、w₁、…、wᵢ₋₁ 方向上的分量，确保新向量与组内已有向量正交。
 </section>
@@ -247,6 +260,7 @@ $$
 $$
 \mathbf{u}\times\mathbf{v}=
 (u_yv_z-u_zv_y,\;u_zv_x-u_xv_z,\;u_xv_y-u_yv_x).
+\tag{1.5}
 $$
 
 如果使用右手坐标系，应采用右手拇指法则：伸出右手，让手指朝向第一个向量 u，再沿最小夹角（0 ≤ θ ≤ π）朝 v 弯曲手指，拇指大致指向 w = u × v。
@@ -286,7 +300,7 @@ $$
 叉积可以求出同时垂直于两个给定三维向量的向量。二维中没有完全相同的情况，但给定二维向量 u = (uₓ, uᵧ)，有时也需要求与它垂直的向量 v。图 1.14 所示的几何关系提示我们取 v = (−uᵧ, uₓ)。证明很直接：
 
 $$
-\mathbf{u}\cdot\mathbf{v}=u_x(-u_y)+u_yu_x=0,
+\mathbf{u}\cdot\mathbf{v}=(u_x,u_y)\cdot(-u_y,u_x)=-u_xu_y+u_yu_x=0,
 \qquad\text{因此 }\mathbf{u}\perp\mathbf{v}.
 $$
 

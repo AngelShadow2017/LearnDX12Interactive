@@ -149,6 +149,24 @@ export function OriginalBookText({ chapterId }: { chapterId: string }) {
 
 function OebpsBookText({ html, chapterId }: { html: string; chapterId: string }) {
   const renderedHtml = useMemo(() => prepareOebpsHtml(html, chapterId), [html, chapterId]);
+
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+
+    let id = hash;
+    try {
+      id = decodeURIComponent(hash);
+    } catch {
+      // Keep the literal fragment when the URL contains malformed escaping.
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [renderedHtml]);
+
   return <div className="original-text oebps-text">
     <div className="source-edition-note"><b>English 原文</b><span>直接采用 EPUB 的段落、代码、公式和插图结构；插图可放大查看。</span></div>
     <div
@@ -209,19 +227,22 @@ function prepareOebpsHtml(source: string, chapterId: string): string {
       const isMajor = paragraph.classList.contains('h1');
       const heading = document.createElement(isMajor ? 'h2' : 'h3');
       const originalId = paragraph.id;
-      if (originalId) heading.id = originalId;
       while (paragraph.firstChild) heading.append(paragraph.firstChild);
       heading.className = isMajor ? 'source-heading source-heading--major' : 'source-heading source-heading--minor';
       paragraph.replaceWith(heading);
 
       const tocHref = heading.querySelector('a[href*="toc.html#"]')?.getAttribute('href');
       const tocAlias = tocHref?.split('#')[1];
-      if (tocAlias) insertSourceAnchor(document, body, heading, tocAlias);
+      if (tocAlias) insertHeadingAnchor(document, heading, tocAlias);
       if (isMajor && /^ch\d{2}$/.test(chapterId)) {
         const section = heading.textContent?.match(/^(\d+)\.(\d+)\b/);
-        if (section) insertSourceAnchor(document, body, heading, `s${section[1]}${section[2]}`);
+        if (section) {
+          const sectionId = `s${section[1]}${section[2]}`;
+          if (!document.getElementById(sectionId)) heading.id = sectionId;
+        }
       }
-      if (heading.id) insertSourceAnchor(document, body, heading, originalId);
+      if (originalId && originalId !== heading.id) insertHeadingAnchor(document, heading, originalId);
+      if (!heading.id && originalId) heading.id = originalId;
       continue;
     }
     if (!paragraph.textContent?.replace(/\u00a0/g, ' ').trim() && !paragraph.querySelector('img, a[id]')) paragraph.remove();
@@ -295,6 +316,15 @@ function insertSourceAnchor(document: Document, parent: Element, before: Node, i
   anchor.className = 'source-anchor-alias';
   anchor.setAttribute('aria-hidden', 'true');
   parent.insertBefore(anchor, before);
+}
+
+function insertHeadingAnchor(document: Document, heading: Element, id: string): void {
+  if (!/^[\w:.-]+$/.test(id) || document.getElementById(id)) return;
+  const anchor = document.createElement('span');
+  anchor.id = id;
+  anchor.className = 'source-anchor-alias source-anchor-alias--heading';
+  anchor.setAttribute('aria-hidden', 'true');
+  heading.prepend(anchor);
 }
 
 function resolveBookHref(href: string, chapterId: string): string | undefined {
@@ -411,8 +441,10 @@ function convertBookImages(document: Document, body: Element): void {
     button.dataset.alt = accessibleAlt;
     button.dataset.caption = caption;
     button.setAttribute('aria-label', `Enlarge image: ${caption}`);
-    button.append(image);
+    // Replace first, then move the image inside the replacement. Appending it
+    // first would make button an ancestor of image and make replaceWith throw.
     image.replaceWith(button);
+    button.append(image);
   }
 }
 

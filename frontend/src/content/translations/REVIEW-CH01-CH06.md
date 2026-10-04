@@ -51,17 +51,18 @@
 
 ### 第 6 章
 
-- **译稿尚未完成。**当前 `ch06.mdx` 只有 §6.1 的开头，到 `AlignedByteOffset` 解释为止。源文的 `InputSlotClass`、`InstanceDataStepRate`、示例顶点偏移以及其后全部章节均未录入。
+- §6.1 已完整录入：7 项成员说明（含 `AlignedByteOffset` 内嵌的 `Vertex2` 偏移代码块）、`InputSlotClass`、`InstanceDataStepRate` 与 `desc1`/`desc2` 输入布局描述示例均已对照源文录入；本节仅引用图 6.1，无公式图。6.2 及其后全部章节仍未录入。
+- 原书 §6.1 `desc2` 中 `TEXCOORD` 0 元素末尾缺少逗号（EPUB `ch06.html` 第 113–116 行，`..., 0}` 之后直接开始下一元素）。译文按原文照录并加“译者注”说明；后续审校时不要把它当成录入错误改掉，也不要悄悄补上逗号。
 - 必须继续录入 §6.1 剩余正文，再按原书顺序完成：6.2 Vertex Buffers；6.3 Indices and Index Buffers；6.4 Example Vertex Shader（含 6.4.1 Input Layout Description and Input Signature Linking）；6.5 Example Pixel Shader；6.6 Constant Buffers（含 6.6.1–6.6.5）；6.7 Compiling Shaders（含 6.7.1–6.7.3）；6.8 Rasterizer State；6.9 Pipeline State Object；6.10 Geometry Helper Structure；6.11 Box Demo；6.12 Summary；6.13 Exercises。
 - EPUB 图片资源至少包括 `Fig6-1.jpg` 至 `Fig6-8.jpg`、`tbl272.jpg`、`tbl273.jpg` 和多个 `note.jpg` 引用。当前目标只引用 `Fig6-1.jpg`，故后续章节的图片、表格、提示说明都没有进入译稿。录入时要根据每次源文出现的位置安排图片，不能把它们统一挪到章节末尾。
 - 第 6 章源文代码密集。按段保留 C++/HLSL/编译命令和代码解释，核对变量名、结构字段、根签名/描述符槽、着色器语义和示例执行顺序；不要用摘要替代 Box 演示。
 - 末尾习题必须录入全部题干和小题。完成后删除/更新首页“待录入”进度，并确认它和真实文件一致。
-- 当前 `npm.cmd run build` 已能解析第 1–5 章，但因 §6.1 的 `<section>` 未结束而失败；这是未完成章节的直接后果。不要只在文件末尾加闭合标签来伪装译文完整，录完 6.1–6.13 后再构建验收。
+- §6.1 的 `<section>` 已闭合，构建在用户侧（launch.json → `npm run preview:build`）已跑通；在 6.2–6.13 录入完成前不得把第 6 章标为章节完成。复制模型命令行环境的构建/测试报错原因见 `SESSION-STATE.md`“最近验证结果”，属于执行环境假象。
 
 ## 续传执行顺序
 
 1. 新会话先读 `SESSION-STATE.md`、`TERMINOLOGY.md`、`README.md` 和本文；按状态文件指定的精确源文游标恢复。再次报告是否能直接读取 EPUB 内图片、是否能看清公式，再依能力执行；不要等待用户重复说明。
-2. 当前第一个续录游标是第 6 章 §6.1 `AlignedByteOffset` 后的 `InputSlotClass` 列表项，细节见 `SESSION-STATE.md`。先完成当前断稿；随后按状态文件队列审校已有第 1–6 章，按章节顺序处理。审校与录入分开标记，不能将其中一类的“完成”误报为另一类完成。
+2. 当前第一个续录游标是第 6 章 §6.2 的首段（`ch06.html` 第 110 行，印刷页 207，"In order for the GPU to access an array of vertices…"），细节见 `SESSION-STATE.md`。§6.1 已完成录入，随后按状态文件队列完成 6.3–6.13，再按章节顺序审校已有第 1–6 章。审校与录入分开标记，不能将其中一类的“完成”误报为另一类完成。
 3. 每个新会话只处理一个连续工作单元，通常一个小节；超长小节拆成连续 2–4 个 EPUB 页或约 20 个源内容单元。必须在完整段落/代码/列表项之后停下，更新精确续传指针，再开下一个会话。不要跨章跳做或合并不相邻原文。
 4. 从源 XHTML 建立该工作单元清单：标题、段落、公式、例题、列表和子项、代码和说明、表格、图像/图注、note/hint、总结、习题。按源顺序逐项记录完成和待办；字数、标题存在或图片数量不能代替内容核对。
 5. 译名查 `TERMINOLOGY.md`。每轮遇到的新固定术语都记录；要改现有译名时先说明语义理由、旧/新译法和影响章节，再同步回改受影响文本，不做未经核语境的全局替换。

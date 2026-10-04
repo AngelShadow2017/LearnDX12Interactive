@@ -54,6 +54,16 @@ mCommandList->DrawIndexedInstanced(mIndexCount, mInstanceCount, 0, 0, 0);`}
 </div>
 <Figure src="images/Fig16-5.jpg" alt="包围盒与旋转后的 XY 坐标系轴对齐" figureNumber="图 16.5" caption="包围盒与旋转后的 XY 坐标系轴对齐（相对性）。" />
 
+<p>若已知 AABB 的最小角 <code>vmin</code> 与最大角 <code>vmax</code>，可直接转成中心和半边长；用同一个中心还能构造包围球：</p>
+
+$$
+\mathbf{c}=\frac{\mathbf{v}_{min}+\mathbf{v}_{max}}{2},\qquad
+\mathbf{e}=\frac{\mathbf{v}_{max}-\mathbf{v}_{min}}{2},\qquad
+r=\max_{\mathbf{p}\in mesh}\lVert\mathbf{p}-\mathbf{c}\rVert.
+$$
+
+<p>第一组结果让 AABB 可用“中心 ± 半边长”做测试；最后一项确保球至少包住网格的每个顶点。若物体做非均匀缩放，球半径乘最大缩放分量仍是保守的包围半径。</p>
+
 <Callout tone="note">
   <b>「轴对齐」是相对的</b>
   <p>AABB 与<b>当前坐标系</b>的轴对齐。物体旋转后，世界的 AABB 会变大（图 16.4、16.5）。所以用 AABB 剔除时，旋转的物体更容易「被留下」——这是保守近似的正常代价。</p>
@@ -72,6 +82,25 @@ mCommandList->DrawIndexedInstanced(mIndexCount, mInstanceCount, 0, 0, 0);`}
   <Figure src="images/Fig16-8.jpg" alt="AABB 与平面相交测试" figureNumber="图 16.8" caption="AABB/平面相交测试：取沿法线方向「最远」的对角点。" />
   <Figure src="images/Fig16-9.jpg" alt="法线在第 i 轴分量为正时选 Pi=vMin[i]、Qi=vMax[i]" figureNumber="图 16.9" caption="法线在第 i 轴分量为正时选 Pi=vMin[i]、Qi=vMax[i]（反之亦然）。" />
 </div>
+
+<h3>把“完全在外面”写成判定式</h3>
+
+<p>把视锥某个平面写成 <code>n·x+d=0</code>，并让法线 <code>n</code> 指向视锥内部，这样内部点满足 <code>n·x+d≥0</code>。球心为 <code>c</code>、半径为 <code>r</code> 时，球沿平面法线方向最多伸出 <code>r‖n‖</code>；因此球完全落在外侧的条件是：</p>
+
+$$
+s=\mathbf{n}\cdot\mathbf{c}+d,\qquad s+r\lVert\mathbf{n}\rVert<0.
+$$
+
+<p>若先把法线归一化，<code>‖n‖=1</code>，就简化成图 16.7 的比较：<code>s&lt;−r</code> 时剔除；<code>−r≤s</code> 时不能据此剔除。注意，直接把 <code>s</code> 当作距离之前必须先归一化平面法线；从矩阵提取出的视锥平面通常并非单位法线。</p>
+
+<p>AABB 用中心 <code>c</code> 与半边长（extents）<code>e=(eₓ,eᵧ,e_z)</code> 表示。它沿平面法线方向的投影半径是 <code>rₐ=|nₓ|eₓ+|nᵧ|eᵧ+|n_z|e_z</code>，所以同样可用一个数判断：</p>
+
+$$
+r_A=|n_x|e_x+|n_y|e_y+|n_z|e_z,\qquad
+\mathbf{n}\cdot\mathbf{c}+d+r_A<0\;\Longrightarrow\;\text{整盒在平面外，可剔除}.
+$$
+
+<p>这等价于书中“选沿法线最远的角点 Q，再检查它是否仍在外侧”的方法；投影半径公式不要求法线单位长，因为它和中心值使用同一尺度。例如平面 <code>x=0</code>、内侧为 <code>x≥0</code>，若盒心 <code>(−2,0,0)</code>、半边长 <code>(0.5,0.5,0.5)</code>，则 <code>s+rₐ=−1.5&lt;0</code>，整盒在外侧，可以安全跳过。</p>
 </section>
 
 <section className="lesson-section" id="s163">

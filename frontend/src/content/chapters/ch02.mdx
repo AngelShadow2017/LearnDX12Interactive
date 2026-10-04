@@ -31,16 +31,21 @@ $$
 
 <Callout tone="note">
   <b>算一格，再看维数</b>
-  <p>取 A 为 2×3、B 为 3×2，乘积 C 必为 2×2。要算右上角 $C_{12}$，拿 A 第一行与 B 第二列逐项相乘再相加：</p>
+  <p>沿用原书的例子，A 是 2×3，B 是 3×3，所以 AB 是 2×3。要算右上角 C<sub>12</sub>，拿 A 第一行与 B 第二列逐项相乘再相加：</p>
   $$
-  C_{12}=1\cdot 8+2\cdot 10+3\cdot 12=64
+  A=\begin{bmatrix}-1&5&-4\\3&2&1\end{bmatrix},\qquad
+  B=\begin{bmatrix}2&1&0\\0&-2&1\\-1&2&3\end{bmatrix},\qquad
+  C_{12}=(-1)(1)+5(-2)+(-4)(2)=-19
   $$
-  <p>如果把顺序交换成 BA，结果会是 3×3；元素和形状都变了。这就是矩阵乘法不能像普通数字那样随手交换的具体原因。</p>
+  $$
+  AB=\begin{bmatrix}2&-19&-7\\5&1&5\end{bmatrix}
+  $$
+  <p>反过来 BA 根本没有定义：B 有 3 列，而 A 有 2 行，内侧维数对不上。这里不是「算出另一个形状」，而是矩阵乘法规则不允许相乘。</p>
 </Callout>
 
 <Callout tone="warning">
   <b>矩阵乘法不满足交换律</b>
-  <p>一般 AB ≠ BA。而且 BA 甚至可能根本没有定义：书上举的例子里 AB 是 2 × 3，BA 因为「B 的列数不等于 A 的行数」而无定义。这一条在图形编程里天天会踩到。</p>
+  <p>即使 AB 和 BA 都有定义，结果也通常不同；有时像上面的例子，只有一个顺序有定义。看到矩阵相乘时先检查内侧维数，再按行乘列计算，不能像普通数字那样换顺序。</p>
 </Callout>
 
 <h3>向量与矩阵相乘</h3>
@@ -109,6 +114,14 @@ $$
 
 <p className="math-note">$\bar{A}_{1j}$ 是删去 A 的第 1 行与第 j 列后得到的子矩阵；每一项都带有交替正负号。</p>
 
+<p>2×2 是最好手算的情形。正负号来自按第一行展开时的棋盘格符号；对角线乘积相减：</p>
+
+$$
+\det\begin{bmatrix}a&b\\c&d\end{bmatrix}=ad-bc
+$$
+
+<p>例如 $\begin{bmatrix}2&1\\5&3\end{bmatrix}$ 的行列式是 $2\cdot3-1\cdot5=1$。这个值非零，因此它有逆矩阵；若把第二行改成第一行的倍数，行列式会变成 0，两个行方向塌到同一条线上，无法还原。</p>
+
 <p>几何上，行列式的绝对值表示「体积缩放倍数」，符号表示是否发生了镜像翻转。缩放 (2, 3, 4) 的行列式是 24，意味着体积被放大 24 倍。</p>
 
 <MiniQuiz
@@ -124,7 +137,25 @@ $$
 <section className="lesson-section" id="s26">
 <h2>2.6 伴随矩阵</h2>
 
-<p>伴随矩阵 A<sup>*</sup> 是「余子式行列式矩阵的转置」。它本身不太直观，价值在于给出了逆矩阵的<b>闭式解</b>。</p>
+<p>伴随矩阵 A<sup>*</sup> 是「余子式行列式矩阵的转置」。2×2 情形能直接看出它怎么构成：交换主对角线的两个元素，再把另外两个元素变号。</p>
+
+$$
+\begin{aligned}
+A&=\begin{bmatrix}a&b\\c&d\end{bmatrix},\qquad
+A^*=\begin{bmatrix}d&-b\\-c&a\end{bmatrix}\\
+AA^*&=(ad-bc)I
+\end{aligned}
+$$
+
+<p>上面 $AA^*=(\det A)I$ 解释了逆矩阵公式为什么要除以行列式。沿用刚才的数值例子：</p>
+
+$$
+\begin{bmatrix}2&1\\5&3\end{bmatrix}^{-1}
+=\frac{1}{1}\begin{bmatrix}3&-1\\-5&2\end{bmatrix}
+=\begin{bmatrix}3&-1\\-5&2\end{bmatrix}
+$$
+
+<p>相乘可验得单位矩阵。若 $\det A=0$，逆矩阵公式无法除以行列式；几何上则有一个方向被压扁，原来的信息已经丢失。</p>
 </section>
 
 <section className="lesson-section" id="s27">

@@ -35,9 +35,25 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 
 <p>网格里每个顶点通常被多个多边形共享，用<b>相邻面法线的平均值</b>近似它的顶点法线（图 8.6）。</p>
 
+$$
+\mathbf{n}_v=\operatorname{normalize}\!\left(\sum_{f\in\mathcal{F}(v)}\mathbf{n}_f\right)
+$$
+
+<p className="math-note">$\mathcal{F}(v)$ 是共享顶点 $v$ 的面集合。归一化前可以除以面数，但归一化会消掉这个共同的正比例因子；更精确的网格法线也可按面面积加权。</p>
+
 <Figure src="images/Fig8-6.jpg" alt="中间顶点被四个相邻多边形共享，用平均面法线近似" figureNumber="图 8.6" caption="中间顶点被四个相邻多边形共享，用平均面法线近似其顶点法线。" />
 
 <h3>变换法向量</h3>
+
+<p>若表面切线 <code>t</code> 与法线 <code>n</code> 垂直，变换后仍应保持垂直。按本书的行向量约定，切线变成 <code>t′=tA</code>；要求 <code>n′·t′=0</code> 对所有切线都成立，可推出：</p>
+
+$$
+\mathbf{n}'=\mathbf{n}(A^{-1})^T.
+$$
+
+<p>这里 <code>A</code> 是世界变换的 3×3 线性部分，平移不作用于法线。这个式子不是为了“多做一次矩阵运算”：它正是保证变换后法线仍垂直于表面的办法。以 <code>A=diag(2,1,1)</code> 为例，原法线 <code>n=(1,1,0)/√2</code> 与切线 <code>t=(1,−1,0)/√2</code> 垂直。变换后切线是 <code>(2,−1,0)/√2</code>；逆转置给出的法线方向是 <code>(1/2,1,0)</code>，两者点积为 0。若把法线直接乘 <code>A</code>，得到方向 <code>(2,1,0)</code>，点积就不再为 0。</p>
+
+<p>实际计算后还要把法线归一化。若要把法线变换与视图矩阵等继续合并，最好对 3×3 线性部分单独处理：直接取含平移的 4×4 逆转置再拼矩阵，会把转置后跑到第四列的平移项带进后续变换。</p>
 
 <Figure src="images/Fig8-7a.jpg" alt="(a) 变换前的表面法线；(b) 沿 x 轴缩放 2 倍后法线不再垂直表面" figureNumber="图 8.7" caption="(a) 变换前的表面法线；(b) 沿 x 轴缩放 2 倍后法线不再垂直表面——所以要用逆转置矩阵。" />
 
@@ -111,6 +127,12 @@ $$
 
 <p>光线在介质交界处会分成反射与折射两部分（图 8.13），比例随入射角变化：掠射时反射更强。图 8.15 给出了水、红宝石、铁的 Schlick 近似曲线。</p>
 
+$$
+\mathbf{F}(\theta)=\mathbf{F}_0+(\mathbf{1}-\mathbf{F}_0)(1-\cos\theta)^5
+$$
+
+<p className="math-note">$\mathbf{F}_0$ 是正对表面时的 RGB 反射率；角度越掠，$(1-\cos\theta)^5$ 越接近 1，反射就越接近完全反射。书中光照代码把 $\theta$ 取为光线方向 $\mathbf{L}$ 与半程向量 $\mathbf{h}$ 的夹角。</p>
+
 <div className="figure-pair">
   <Figure src="images/Fig8-13.jpg" alt="完全平面镜的菲涅尔效应" figureNumber="图 8.13" caption="(a) 完全平面镜的菲涅尔效应：入射光 I 被分为反射与折射两部分。" />
   <Figure src="images/Fig8-15.jpg" alt="水、红宝石、铁的 Schlick 菲涅尔近似曲线" figureNumber="图 8.15" caption="不同材质（水、红宝石、铁）的 Schlick 菲涅尔近似曲线。" />
@@ -134,6 +156,20 @@ $$
   <Figure src="images/Fig8-18.jpg" alt="法线恰为半程向量 h 的微面元把 L 反射进视线 v" figureNumber="图 8.18" caption="法线恰为半程向量 h 的微面元把 L 反射进视线 v。" />
   <Figure src="images/Fig8-20.jpg" alt="用函数建模粗糙度对镜面反射的削弱" figureNumber="图 8.20" caption="用函数建模粗糙度对镜面反射的削弱。" />
 </div>
+
+<p>书中的简化镜面分布把“法线有多接近半程向量”变成一个幂函数。令 <code>m</code> 为高光指数，<code>m</code> 越大，高光越窄：</p>
+
+$$
+S(\mathbf{n},\mathbf{h})=\frac{m+8}{8}\,\max(\mathbf{n}\cdot\mathbf{h},0)^m.
+$$
+
+<p>把入射光强、朗伯余弦项、菲涅尔比例与粗糙度分布连起来，书中的镜面反射项为：</p>
+
+$$
+\mathbf{C}_s=\max(\mathbf{L}\cdot\mathbf{n},0)\,\mathbf{B}_L\odot\mathbf{F}(\mathbf{L},\mathbf{h})\,S(\mathbf{n},\mathbf{h}).
+$$
+
+<p className="math-note">这解释了代码里的 <code>roughnessFactor × fresnel × lightStrength</code>：入射光被表面接收到（$\max(\mathbf{L}\cdot\mathbf{n},0)$），再按视角反射率与高光宽度分配。它是本书的实时局部光照近似，并非完整的现代微表面 BRDF。</p>
 </section>
 
 <section className="lesson-section" id="s89">
@@ -160,6 +196,13 @@ $$
 
 <p>点光源从一个位置向所有方向辐射（图 8.25）。它需要<b>衰减</b>：图 8.26 展示了示例用的线性衰减——在 falloffStart 内保持 1.0，之后线性降到 falloffEnd 处归零。</p>
 
+$$
+\operatorname{att}(d)=\operatorname{saturate}\!\left(\frac{d_{\mathrm{end}}-d}{d_{\mathrm{end}}-d_{\mathrm{start}}}\right),\qquad
+\operatorname{saturate}(x)=\min(\max(x,0),1).
+$$
+
+<p>例如 <code>dstart=5</code>、<code>dend=15</code>：距离 3 或 5 时衰减为 1；距离 10 时为 0.5；距离 15 或更远时为 0。原书也指出，物理上的平方反比是 <code>I(d)=I₀/d²</code>，但示例选择线性范围便于直接控制亮度截止距离。</p>
+
 <div className="figure-pair">
   <Figure src="images/Fig8-25.jpg" alt="点光源向所有方向辐射" figureNumber="图 8.25" caption="点光源向所有方向辐射；任意点 P 都存在一条来自光源的入射线。" />
   <Figure src="images/Fig8-26.jpg" alt="衰减因子在 falloffStart 内保持 1.0，之后线性衰减" figureNumber="图 8.26" caption="衰减因子在 falloffStart 内保持 1.0，之后线性衰减到 falloffEnd 归零。" />
@@ -168,6 +211,13 @@ $$
 <h3>聚光灯</h3>
 
 <p>聚光灯有位置 Q、朝向 d 和半角 φ<sub>max</sub>（图 8.27）。常用一个平滑因子控制锥体内外的过渡。</p>
+
+$$
+\mathbf{L}=\frac{\mathbf{Q}-\mathbf{P}}{\lVert\mathbf{Q}-\mathbf{P}\rVert},\qquad
+k_{\mathrm{spot}}=\max(\mathbf{d}\cdot(-\mathbf{L}),0)^s.
+$$
+
+<p className="math-note">$\mathbf{P}$ 是受光点，$\mathbf{Q}$ 是灯的位置；$-\mathbf{L}$ 从灯指向受光点。点积小于等于 0 时不在灯前方；指数 $s$ 越大，锥体中心越亮、边缘衰减越快。实际实现还会乘点光源距离衰减。</p>
 
 <Figure src="images/Fig8-27.jpg" alt="聚光灯：位置 Q、朝向 d，通过半角 φmax 的圆锥辐射光线" figureNumber="图 8.27" caption="聚光灯：位置 Q、朝向 d，通过半角 φmax 的圆锥辐射光线。" />
 </section>

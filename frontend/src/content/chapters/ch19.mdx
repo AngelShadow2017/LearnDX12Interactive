@@ -62,11 +62,32 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <section className="lesson-section" id="s195">
 <h2>19.5 切线空间与物体空间</h2>
 
-<p>贴图法线 (x, y, z) 还原到世界空间就是一次线性组合：<b>n = T·x + B·y + N·z</b>。原书先把 T 对 N 正交化，再构造 TBN 基；法线贴图样本经线性转换后用于后续光照和环境反射。</p>
+<p>贴图法线 $(x,y,z)$ 的三个分量分别表示沿切线 $T$、双切线 $B$、几何法线 $N$ 的偏移。把它还原到世界空间，就是按这三个方向做线性组合：</p>
+
+$$
+\mathbf{n}_W=
+\begin{bmatrix}x&y&z\end{bmatrix}
+\begin{bmatrix}
+T_x&T_y&T_z\\
+B_x&B_y&B_z\\
+N_x&N_y&N_z
+\end{bmatrix}
+=x\mathbf{T}+y\mathbf{B}+z\mathbf{N}.
+$$
+
+<p>行向量约定下，矩阵的三行就是世界空间的 T、B、N；因此样本的 x 分量沿 T 走，y 分量沿 B 走，z 分量沿 N 走。原书先把 T 对 N 正交化，再构造 TBN 基。</p>
 
 <p>图 19.6 说明 T 里平行于 N 的分量必须先减掉（正交化），否则组合出来的法线不严格垂直于表面。</p>
 
 <Figure src="images/Fig19-6.jpg" alt="由 ‖N‖=1 得 projN(T)=(T·N)N，正交化示意" figureNumber="图 19.6" caption="由 ‖N‖=1 得 projN(T)=(T·N)N；T−projN(T) 是 T 中垂直于 N 的分量（正交化）。" />
+
+$$
+\mathbf{T}_{\perp}=\mathbf{T}-(\mathbf{T}\cdot\mathbf{N})\mathbf{N},\qquad
+\mathbf{T}'=\operatorname{normalize}(\mathbf{T}_{\perp}),\qquad
+\mathbf{B}=\mathbf{N}\times\mathbf{T}'.
+$$
+
+<p>这里假设 <code>N</code> 已归一化；若它不是单位向量，投影系数还要除以 <code>N·N</code>。正交化后 T 与 N 垂直，叉积得到同时垂直于两者的 B，于是三条互相垂直的基轴完整确定。</p>
 
 <TangentSpaceActivity />
 </section>
@@ -74,8 +95,10 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <section className="lesson-section" id="s196">
 <h2>19.6 法线贴图着色器代码</h2>
 
+<p>下面保留原书的解包、正交化和 TBN 变换流程，并显式归一化插值后的几何法线与输出法线：纹理过滤会把多个 texel 混在一起，插值向量的长度可能不再是 1。</p>
+
 <CodeSample
-  title="原书的法线贴图变换（省略常规 VS/PS 输入输出）"
+  title="法线贴图变换（原书流程，显式归一化输出）"
   language="hlsl"
   code={`struct VertexOut
 {
@@ -88,11 +111,11 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 float3 NormalSampleToWorldSpace(float3 sample, float3 normalW, float3 tangentW)
 {
     float3 normalT = 2.0f * sample - 1.0f;
-    float3 N = normalW;
+    float3 N = normalize(normalW);
     float3 T = normalize(tangentW - dot(tangentW, N) * N);
     float3 B = cross(N, T);
     float3x3 TBN = float3x3(T, B, N);
-    return mul(normalT, TBN);
+    return normalize(mul(normalT, TBN));
 }
 
 float4 PS(VertexOut pin) : SV_Target
@@ -105,8 +128,9 @@ float4 PS(VertexOut pin) : SV_Target
   input={<>一张切线空间法线贴图，以及逐顶点的 N / T。</>}
   keyLines={[
     { code: 'float3 normalT = 2.0f * sample - 1.0f', note: '解包：[0,1] → [−1,1]。漏掉这步，法线全都偏向 (0,0,1)。' },
+    { code: 'N = normalize(normalW)', note: '像素着色器插值会让顶点单位法线长度偏离 1，因此先归一化再构造切线基。' },
     { code: 'T = normalize(tangentW - dot(tangentW, N) * N)', note: 'Gram–Schmidt 正交化，去掉 T 沿 N 的分量。' },
-    { code: 'mul(normalT, TBN)', note: '按行向量约定，用 TBN 基把切线空间法线变换到世界空间。' },
+    { code: 'normalize(mul(normalT, TBN))', note: '按行向量约定把切线空间法线变换到世界空间；归一化也补偿纹理过滤造成的长度变化。' },
   ]}
   output={<>几何完全没变，但表面出现凹凸细节，高光也随之碎裂。</>}
   pitfalls={[

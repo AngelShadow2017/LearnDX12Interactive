@@ -49,6 +49,17 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
   <li><b>减法 u − v：</b>等价于 u + (−v)。</li>
 </ul>
 
+<p>例如取 <b>u = (2, ½)</b>、<b>v = (1, 2)</b>，加减法都只是对应分量运算：</p>
+
+$$
+\begin{aligned}
+\mathbf{u}+\mathbf{v} &= (2+1,\;\tfrac12+2)=(3,\tfrac52) \\
+\mathbf{v}-\mathbf{u} &= (1-2,\;2-\tfrac12)=(-1,\tfrac32)
+\end{aligned}
+$$
+
+<p>把 u、v 看作点时，v−u 正是从 u 指向 v 的位移；因此减法的结果长度也是两点之间的距离。</p>
+
 <Callout tone="tip">
   <b>把负的标量乘法算成坐标</b>
   <p>原书用 <b>v = (2, 1)</b> 比较 v 与负标量倍数。图片中的 <b>−½v</b> 可以直接逐分量计算：负号反转方向，½ 把长度缩短一半。</p>
@@ -79,10 +90,14 @@ $$
 <section className="lesson-section" id="s12">
 <h2>1.2 长度与单位向量</h2>
 
-<p>向量的长度（模，magnitude）记作 ‖u‖。对 3D 向量，用两次勾股定理就能推出来：</p>
+<p>向量的长度（模，magnitude）记作 ‖u‖。设 u=(x,y,z)，先在 xz 平面用勾股定理得到直角边长度 a，再把 y 和 a 当作另一个直角三角形的两条直角边：</p>
 
 $$
-\lVert \mathbf{u}\rVert = \sqrt{x^2+y^2+z^2}
+\begin{aligned}
+a^2 &= x^2+z^2 \\
+\lVert\mathbf{u}\rVert^2 &= a^2+y^2=x^2+y^2+z^2 \\
+\therefore\quad \lVert \mathbf{u}\rVert &= \sqrt{x^2+y^2+z^2}
+\end{aligned}
 $$
 
 <Figure src="images/Fig1-8.jpg" alt="用两次勾股定理计算 3D 向量长度" figureNumber="图 1.8" caption="用两次勾股定理计算 3D 向量的长度。" />
@@ -91,6 +106,16 @@ $$
 
 $$
 \hat{\mathbf{u}} = \frac{\mathbf{u}}{\lVert \mathbf{u}\rVert}
+$$
+
+<p>拿原书的向量 v=(-1,3,4) 验算：它的长度是 √26，所以把<b>每个分量</b>都除以 √26。平方后，三个分量的平方和为 1，证明结果确实是单位向量：</p>
+
+$$
+\begin{aligned}
+\lVert\mathbf{v}\rVert &= \sqrt{(-1)^2+3^2+4^2}=\sqrt{26} \\
+\hat{\mathbf{v}} &= \left(-\frac{1}{\sqrt{26}},\frac{3}{\sqrt{26}},\frac{4}{\sqrt{26}}\right) \\
+\lVert\hat{\mathbf{v}}\rVert^2 &= \frac{1+9+16}{26}=1
+\end{aligned}
 $$
 
 <p>归一化之后只保留「方向」信息。很多计算（光照里的法线、视线方向、反射向量）必须先归一化，否则结果会错。<b>零向量无法归一化</b>（除以 0），代码里要防。</p>
@@ -122,6 +147,18 @@ $$
 
 <p className="math-note">θ 是两个向量之间最小的夹角，0 ≤ θ ≤ π。</p>
 
+<p>公式可以直接算出夹角。原书的例子取 u=(1,2,3)、v=(-4,0,-1)：点积为 −7，两个长度分别是 √14 和 √17，因此 cos θ 为负、夹角是钝角；反余弦给出约 117°。</p>
+
+$$
+\begin{aligned}
+\mathbf{u}\cdot\mathbf{v} &= 1(-4)+2(0)+3(-1)=-7 \\
+\lVert\mathbf{u}\rVert &= \sqrt{14},\qquad \lVert\mathbf{v}\rVert=\sqrt{17} \\
+\theta &= \cos^{-1}\!\left(\frac{\mathbf{u}\cdot\mathbf{v}}
+ {\lVert\mathbf{u}\rVert\lVert\mathbf{v}\rVert}\right)
+ =\cos^{-1}\!\left(-\frac{7}{\sqrt{14}\sqrt{17}}\right)\approx117^\circ
+\end{aligned}
+$$
+
 <Figure src="images/Fig1-9.jpg" alt="左图为锐角夹角，右图为钝角夹角" figureNumber="图 1.9" caption="左：u 与 v 的夹角 θ 为锐角；右：θ 为钝角。" />
 
 <p>因为 ‖u‖‖v‖ 恒为正，点积的符号完全由 cos θ 决定。游戏里天天在用的判断就来自这里：</p>
@@ -139,7 +176,21 @@ $$
 
 <h3>正交投影</h3>
 
-<p>点积还给出投影长度：v 在单位向量 n 上的正交投影是 proj<sub>n</sub>(v) = (v · n) n。</p>
+<p>投影可以拆成两步理解：v·n 给出 v 沿 n 方向的<b>带正负号长度</b>，再乘单位向量 n，就把这个长度变成沿该方向的向量：</p>
+
+$$
+\operatorname{proj}_{\mathbf n}(\mathbf v)=(\mathbf v\cdot\mathbf n)\mathbf n,
+\qquad \lVert\mathbf n\rVert=1
+$$
+
+<p>若 n 不是单位向量，就要先除以它的长度来求单位方向，再乘回 n。合并后分母是 ‖n‖²；少了这个分母，投影会被 n 自己的长度放大。</p>
+
+$$
+\operatorname{proj}_{\mathbf n}(\mathbf v)=
+\frac{\mathbf v\cdot\mathbf n}{\lVert\mathbf n\rVert^2}\,\mathbf n
+$$
+
+<p>例如 v=(3,2)、n=(2,0) 都指向 x 轴，但 n 的长度是 2。于是投影系数是 (v·n)/‖n‖²=6/4，投影向量为 (6/4)(2,0)=(3,0)。剩余部分 (0,2) 与 n 垂直。</p>
 
 <Figure src="images/Fig1-10.jpg" alt="向量 v 在 n 上的正交投影" figureNumber="图 1.10" caption="向量 v 在 n 上的正交投影。" />
 
@@ -153,6 +204,8 @@ $$
 &= \mathbf{w}_1 - \frac{\mathbf{w}_1\cdot\mathbf{w}_0}{\lVert\mathbf{w}_0\rVert^2}\,\mathbf{w}_0
 \end{aligned}
 $$
+
+<p>例如 w₀=(1,0)、w₁=(1,2)：w₁ 在 w₀ 方向上的投影是 (1,0)，减掉后得到 (0,2)。这一步先保证<b>垂直</b>；如果还要正交归一，就再除以长度 2，得到单位向量 (0,1)。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig1-11.jpg" alt="2D 平面上的正交化" figureNumber="图 1.11" caption="2D 平面上的正交化（Gram-Schmidt）。" />

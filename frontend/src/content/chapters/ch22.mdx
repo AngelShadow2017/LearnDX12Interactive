@@ -31,7 +31,15 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 
 <p>四元数 <b>q = (x, y, z, w)</b> 定义在四维空间上，单位四元数有 3 个自由度，正好够描述 3D 旋转。</p>
 
-<p>其中 i² = j² = k² = ijk = −1，乘法规则可以在图 22.5 那样的示意里建立直觉：<b>虚数部分之间的乘法等价于叉积</b>，实数部分与虚数部分相乘等价于点积。</p>
+<p>四元数乘法遵循 Hamilton 规则。把每个四元数拆成向量部和标量部，规则就能压缩成一条式子：</p>
+
+$$
+(\mathbf{p},p_w)\otimes(\mathbf{q},q_w)=
+\bigl(p_w\mathbf{q}+q_w\mathbf{p}+\mathbf{p}\times\mathbf{q},\;
+p_wq_w-\mathbf{p}\cdot\mathbf{q}\bigr).
+$$
+
+<p>向量部里出现叉积，标量部里出现负点积。交换两个因子的顺序时，叉积会反号，所以一般有 <code>p⊗q ≠ q⊗p</code>；这正对应“先做哪个旋转”会改变最终朝向。</p>
 
 <p>四元数范数满足乘法性质：</p>
 
@@ -72,6 +80,16 @@ $$
   <li><b>LERP + 归一化</b>：最简单，但球面上并非匀速（图 22.8）。</li>
   <li><b>SLERP</b>：沿单位球面的大圆匀速走，是标准做法（图 22.6）。</li>
 </ul>
+
+<p>若单位端点四元数为 <code>a</code>、<code>b</code>，夹角为 <code>θ=acos(a·b)</code>，球面线性插值的公式是：</p>
+
+$$
+\operatorname{slerp}(a,b,t)=
+\frac{\sin((1-t)\theta)}{\sin\theta}a+
+\frac{\sin(t\theta)}{\sin\theta}b,\qquad 0\le t\le1.
+$$
+
+<p>两个正弦系数会沿单位球面的大圆移动，而且随 <code>t</code> 匀速变化。端点很接近时 <code>sin θ</code> 很小，直接算会损失精度；实现通常改用“线性插值后归一化”。正式插值前仍要先做短弧检查，必要时把 <code>b</code> 和它的权重一起取反。</p>
 
 <Callout tone="note">
   <b>延伸：SQUAD</b>

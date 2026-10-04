@@ -103,6 +103,38 @@ PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_Primitive
 
 <Figure src="images/Fig14-6.jpg" alt="三次贝塞尔曲线的 De Casteljau 递归插值" figureNumber="图 14.6" caption="三次贝塞尔曲线的 De Casteljau 递归插值（t=0.5）。" />
 
+<p>参数 <code>t</code> 从 0 走到 1，控制点按 Bernstein 权重混合：</p>
+
+$$
+\begin{aligned}
+B_0^3(t)&=(1-t)^3,&B_1^3(t)&=3t(1-t)^2,\\
+B_2^3(t)&=3t^2(1-t),&B_3^3(t)&=t^3,\\
+\mathbf{p}(t)&=\sum_{j=0}^{3}B_j^3(t)\mathbf{p}_j
+\end{aligned}
+$$
+
+<p>四个权重非负且总和为 1，所以曲线点是控制点的加权平均；在 <code>t=0</code> 时只剩 <code>p₀</code>，在 <code>t=1</code> 时只剩 <code>p₃</code>。首末切线分别沿 <code>p₁−p₀</code> 与 <code>p₃−p₂</code>，因此中间两个控制点像把手一样改变曲线的出发与到达方向，但曲线通常不会经过它们。</p>
+
+<p>同一条曲线也能通过反复线性插值（De Casteljau 算法）求出。这种算法适合直接写进域着色器，也能让“控制点如何影响曲线”变得可见：</p>
+
+$$
+\begin{aligned}
+\mathbf{p}_i^{(1)}&=(1-t)\mathbf{p}_i+t\mathbf{p}_{i+1},\quad i=0,1,2,\\
+\mathbf{p}_i^{(2)}&=(1-t)\mathbf{p}_i^{(1)}+t\mathbf{p}_{i+1}^{(1)},\quad i=0,1,\\
+\mathbf{p}(t)&=(1-t)\mathbf{p}_0^{(2)}+t\mathbf{p}_1^{(2)}.
+\end{aligned}
+$$
+
+<p>例如令二维控制点依次为 <code>(0,0)、(1,2)、(3,2)、(4,0)</code>，取 <code>t=0.5</code>：第一轮得到 <code>(0.5,1)、(2,2)、(3.5,1)</code>，第二轮得到 <code>(1.25,1.5)、(2.75,1.5)</code>，最后得到曲线点 <code>(2,1.5)</code>。每一轮都只是同一参数位置上的线性插值。</p>
+
+<p>四边形 patch 把这套权重沿两个方向各用一次。若控制点为 <code>pᵢ,ⱼ</code>，则域着色器收到的 <code>(u,v)</code> 就是曲面参数坐标：</p>
+
+$$
+\mathbf{p}(u,v)=\sum_{i=0}^{3}\sum_{j=0}^{3}B_i^3(v)B_j^3(u)\mathbf{p}_{i,j},\qquad 0\le u,v\le1.
+$$
+
+<p>可以先固定 <code>u</code>，分别沿每一行求四条曲线，再用 <code>v</code> 把四个结果混合；也可以先沿另一方向做，结果相同。于是 DS 不必从 16 个控制点“猜”顶点位置，只需对每个细分位置直接代入 <code>(u,v)</code>。</p>
+
 <BezierPatchActivity />
 
 <div className="figure-pair">

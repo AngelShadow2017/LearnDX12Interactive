@@ -19,6 +19,19 @@ $$
   <p>RGB 和 alpha 可以各用一套因子与运算（<code>SrcBlendAlpha</code> / <code>DestBlendAlpha</code> / <code>BlendOpAlpha</code>）。大多数情况下两者设成一样即可。</p>
 </Callout>
 
+<p>标准透明混合把源 alpha 当作“不透明比例” $a_s$，而不是透明比例：</p>
+
+$$
+\mathbf{C}_{out}=a_s\mathbf{C}_{src}+(1-a_s)\mathbf{C}_{dst}.
+$$
+
+<p>例如源色为 <code>(1, 0.2, 0)</code>、背景色为 <code>(0.1, 0.4, 0.8)</code>，源 alpha 为 <code>0.25</code>，则输出 RGB 是 <code>(0.325, 0.35, 0.6)</code>。源色贡献 25%，背景贡献 75%，所以 alpha=0 表示全透明、alpha=1 表示全不透明。输出 alpha 通道由独立的混合状态决定，不一定等于这个源 alpha。</p>
+
+<Callout tone="tip">
+  <b>为什么绘制顺序会影响结果</b>
+  <p>混合公式中的目标色是“已经写进缓冲的背景”。若先画半透明物体再画背景，背景会覆盖它；多个透明层也要从后往前画，才能让每一层都混到它后面已经完成的颜色上。</p>
+</Callout>
+
 <BlendEquationActivity />
 </section>
 

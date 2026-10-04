@@ -140,9 +140,63 @@ import { WindingCullActivity } from '@/activities/WindingCullActivity';
   <Figure src="images/Fig5-24.jpg" alt="相似三角形——透视投影矩阵推导的几何基础" figureNumber="图 5.24" caption="相似三角形——透视投影矩阵推导的几何基础。" />
 </div>
 
+<p>先把相机的垂直视场角记作 α，宽高比记作 r=width/height。屏幕越宽，水平视场角 β 就越大：</p>
+
+$$
+\beta=2\tan^{-1}\!\left(r\tan\frac{\alpha}{2}\right)
+$$
+
+<p>相似三角形给出透视除法前的横纵坐标：离相机越远（z 越大），同样的 x、y 投影得越靠近屏幕中心。乘上视场角和宽高比的缩放，就得到 NDC 的 x、y：</p>
+
+$$
+\begin{aligned}
+x_{ndc}&=\frac{x}{r z\tan(\alpha/2)}\\
+y_{ndc}&=\frac{y}{z\tan(\alpha/2)}
+\end{aligned}
+$$
+
+<p>这也说明为什么要保留齐次坐标：投影矩阵先输出 $w=z$，随后光栅化前除以 w，透视的「近大远小」就自然出现。令 $s_x=1/(r\tan(\alpha/2))$、$s_y=1/\tan(\alpha/2)$，近、远平面分别为 n、f，则行向量约定下：</p>
+
+$$
+P=\begin{bmatrix}
+s_x&0&0&0\\
+0&s_y&0&0\\
+0&0&\frac{f}{f-n}&1\\
+0&0&-\frac{nf}{f-n}&0
+\end{bmatrix},\qquad
+[x\;y\;z\;1]P=[s_xx\;s_yy\;Az+B\;z]
+$$
+
+<p>其中 $A=f/(f-n)$、$B=-nf/(f-n)$。矩阵乘完还在齐次裁剪空间，尚未成为最终屏幕坐标。D3D12 的裁剪条件是 $-w\le x,y\le w$ 且 $0\le z\le w$；通过裁剪后再逐分量除以 w 得到 NDC。</p>
+
 <h3>归一化深度值</h3>
 
+<p>深度也在透视除法后归一化。把上面矩阵的第三个输出除以 w=z：</p>
+
+$$
+z_{ndc}=\frac{Az+B}{z}
+=\frac{f}{f-n}-\frac{nf}{(f-n)z}
+$$
+
+<p>当 z=n 时结果为 0，当 z=f 时结果为 1。它不是线性的：近处深度值分得较开，远处大量压在一起，所以 z-fighting 通常更容易发生在远处；把近平面设得更远一些常能改善深度精度。</p>
+
+<Callout tone="tip">
+  <b>算一个点，串起投影步骤</b>
+  <p>设垂直视场角 90°、宽高比 16/9、近平面 1、远平面 100，视空间点 p=(2,1,4)。投影后 $w=4$，NDC 坐标是 $(9/32,1/4,25/33)$，都落在裁剪范围内。x、y 除以 4 是透视缩小；z 值约 0.758 则是供深度缓冲比较的归一化深度。</p>
+</Callout>
+
 <Figure src="images/Fig5-25.jpg" alt="不同近平面取值下 g(z) 的曲线" figureNumber="图 5.25" caption="不同近平面取值下 g(z) 的曲线。" />
+
+<p>最后由视口变换把 NDC 映射到像素。D3D 的屏幕原点在左上角，因此 y 轴方向要翻转：</p>
+
+$$
+\begin{aligned}
+x_{screen}&=x_0+\frac{x_{ndc}+1}{2}\,W\\
+y_{screen}&=y_0+\frac{1-y_{ndc}}{2}\,H
+\end{aligned}
+$$
+
+<p>这里 (x₀,y₀) 是视口左上角，W、H 是视口宽高。NDC 的中心 (0,0) 映到视口中心；漏掉 y 轴反转时，画面会上下颠倒。</p>
 
 <PerspectiveClipActivity />
 </section>

@@ -108,6 +108,30 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
 
 <p>模糊就是把每个像素换成邻域加权平均（图 13.5），权重用高斯函数（图 13.6，σ 越大权重越散）。示例先把场景渲染到离屏纹理（图 13.7），再用两趟一维计算着色器做横向与纵向模糊。</p>
 
+<p>对中心像素 $P_{ij}$，在半径 a、b 的邻域里取颜色加权和。权重总和必须是 1，否则整张图会被无故变亮或变暗：</p>
+
+$$
+\operatorname{Blur}(P_{ij})=
+\sum_{r=-a}^{a}\sum_{c=-b}^{b}w_{rc}P_{i+r,j+c},
+\qquad \sum_{r=-a}^{a}\sum_{c=-b}^{b}w_{rc}=1
+$$
+
+<p>高斯函数让距离中心越远的像素权重越小。实际卷积只取有限半径 R，再除以权重总和做归一化：</p>
+
+$$
+G(x)=\exp\!\left(-\frac{x^2}{2\sigma^2}\right),\qquad
+w_k=\frac{G(k)}{\sum_{j=-R}^{R}G(j)}
+$$
+
+<p>例如 σ=1、R=2 时，五个权重约为 (0.0545, 0.2442, 0.4026, 0.2442, 0.0545)。中心像素占比最大，左右对称，而且总和为 1；σ 越大，外围权重越高，模糊范围也越宽。</p>
+
+<p>二维高斯核可以拆成横、纵两个一维核的乘积，因此先横向、再纵向计算，效果等价，但每个像素的读取次数从约 $m\times n$ 降到 $m+n$：</p>
+
+$$
+G(x,y)=G(x)G(y),\qquad
+\operatorname{Blur}(I)=\operatorname{Blur}_{V}\!\left(\operatorname{Blur}_{H}(I)\right)
+$$
+
 <div className="figure-pair">
   <Figure src="images/Fig13-5.jpg" alt="模糊像素 Pij：以它为中心的 m×n 像素矩阵的加权平均" figureNumber="图 13.5" caption="模糊像素 Pij：以它为中心的 m×n 像素矩阵的加权平均。" />
   <Figure src="images/Fig13-6.jpg" alt="σ=1,2,3 的高斯函数 G(x) 曲线" figureNumber="图 13.6" caption="σ=1,2,3 的高斯函数 G(x) 曲线：σ 越大曲线越平、权重越散。" />

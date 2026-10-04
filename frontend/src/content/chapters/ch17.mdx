@@ -95,7 +95,26 @@ XMVECTOR rayDirL = XMVector3Normalize(
 
 <p>有了射线，接下来遍历网格求交。原书调用 DirectX Collision 的 <code>TriangleTests::Intersects</code>；这一相交问题可写成射线参数 t 与三角形重心坐标 (u, v) 的方程组（图 17.5）。判定点是否落在三角形内，并得到沿射线的距离 t。</p>
 
-<p>命中条件有三个：<code>u ≥ 0</code>、<code>v ≥ 0</code>、<code>u + v ≤ 1</code>，以及 <code>t &gt; 0</code>（交点必须在射线前方）。</p>
+<p>命中条件是 <code>α ≥ 0</code>、<code>β ≥ 0</code>、<code>α + β ≤ 1</code>，且 <code>t &gt; 0</code>（交点必须在射线前方）。这三个重心坐标条件保证点位于三角形三个顶点围出的区域内。</p>
+
+<p>把射线写成 <code>o+t d</code>，三角形用顶点 <code>v₀</code> 和两条边 <code>e₁=v₁−v₀</code>、<code>e₂=v₂−v₀</code> 表示。三角形内的点是 <code>v₀+αe₁+βe₂</code>。令 <code>m=o−v₀</code>，让两个表达式相等，就得到三个未知数 <code>t, α, β</code> 的线性方程：</p>
+
+$$
+-t\mathbf{d}+\alpha\mathbf{e}_1+\beta\mathbf{e}_2=\mathbf{m}.
+$$
+
+<p>用克莱姆法则解这个 3×3 系统，三项都共用同一个标量三重积分母：</p>
+
+$$
+\begin{aligned}
+\Delta&=\mathbf{d}\cdot(\mathbf{e}_1\times\mathbf{e}_2),\\
+t&=-\frac{\mathbf{m}\cdot(\mathbf{e}_1\times\mathbf{e}_2)}{\Delta},\\
+\alpha&=\frac{\mathbf{d}\cdot(\mathbf{m}\times\mathbf{e}_2)}{\Delta},\qquad
+\beta=\frac{\mathbf{d}\cdot(\mathbf{e}_1\times\mathbf{m})}{\Delta}.
+\end{aligned}
+$$
+
+<p>若 <code>Δ=0</code>，射线与三角形平面平行，或三角形退化，不能按普通相交情况求解。举个可手算的例子：三角形顶点为 <code>(0,0,0)、(1,0,0)、(0,1,0)</code>；射线从 <code>o=(0.25,0.25,1)</code> 沿 <code>d=(0,0,−1)</code> 发出。代入上式得到 <code>t=1、α=0.25、β=0.25</code>，所以交点为 <code>(0.25,0.25,0)</code>，且 <code>α+β=0.5≤1</code>，确实落在三角形内部。</p>
 
 <Figure src="images/Fig17-5.jpg" alt="三角形平面内的点 p 相对斜坐标系的 u、v 坐标" figureNumber="图 17.5" caption="三角形平面内的点 p 相对以 v0 为原点的斜坐标系的 (u,v) 坐标（重心坐标）。" />
 

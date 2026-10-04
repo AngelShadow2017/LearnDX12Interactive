@@ -112,6 +112,26 @@
 | attenuation | 衰减 | §8.11.1；`falloffStart`/`falloffEnd` 为代码标识符，保持原样不译。 |
 | toon shading | 卡通着色 | §8.16 习题 6；也可称“卡通风格光照”。 |
 | pixel lighting / phong lighting | 像素光照 / Phong 光照 | §8.2.1 提示框；per-vertex lighting 译“逐顶点光照”。 |
+| texture mapping | 纹理映射 | §9 章首；不译“贴图”（贴图作普通动词/口语时可保留，但概念名用“纹理映射”）。 |
+| texture coordinate | 纹理坐标 | §9.2；代码 `TexC`。 |
+| texture space | 纹理空间 | §9.2；图 9.2。 |
+| texel | 纹素 | §9.2；纹理元素，不译“纹理像素”。 |
+| texture atlas | 纹理图集 | §9.2；把多张子纹理合并到一张大纹理。 |
+| render-to-texture | 渲染到纹理 | §9.1；保留破折号连接的原词形式。 |
+| typeless format | 无类型格式 | §9.1；对应 `DXGI_FORMAT_..._TYPELESS`。 |
+| magnification | 放大 | §9.5.1；纹理放大，不译“放大倍数”。 |
+| minification | 缩小 | §9.5.2；与 magnification 对照。 |
+| point filtering / linear filtering | 点过滤 / 线性过滤 | §9.5.1；对应常值/线性插值，Direct3D 术语。 |
+| bilinear interpolation | 双线性插值 | §9.5.1；图 9.6。 |
+| trilinear filtering | 三线性过滤 | §9.7.1；`D3D12_FILTER_MIN_MAG_MIP_LINEAR`。 |
+| anisotropic filtering | 各向异性过滤 | §9.5.3、§9.7.1。 |
+| mipmap / mipmapping | mipmap / mipmapping | §9.5.2；保留英文，mipmap chain 译“mipmap 链”，mipmap level 译“mipmap 层级”。 |
+| address mode | 寻址模式 | §9.6；具体模式 wrap/border color/clamp/mirror 保留英文或按叙述括注。 |
+| sampler object | 采样器对象 | §9.7；不译“取样器”。 |
+| static sampler | 静态采样器 | §9.7.2；`D3D12_STATIC_SAMPLER_DESC`。 |
+| sampler heap | 采样器堆 | §9.7.1；`D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER`。 |
+| shader resource view (SRV) | 着色器资源视图（SRV） | §9.4；首次给出全称，后文保留 SRV。 |
+| DDS (DirectDraw Surface format) | DDS（DirectDraw Surface 格式） | §9.3；保留 DDS 缩写。 |
 
 ## 术语一致性检查
 

@@ -1,0 +1,1183 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：9.1–9.13 全部小节（含 DDS 加载、SRV 描述符、采样器与静态采样器、Crate 演示与 Textured Land/Waves 的 HLSL 全文、习题 1–6），依据 EPUB ch09.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
+
+<a id="page359"/>
+
+我们的演示越来越有意思了，但真实世界的物体通常比逐对象材质所能表达的细节更多。*纹理映射*（texture mapping）是一种把图像数据映射到三角形上的技术，借此可以显著提升场景的细节与真实感。例如，我们可以先建一个立方体，再在每一面映射一张板条箱（crate）纹理，把它变成一个板条箱（见图 9.1）。
+
+**本章目标：**
+
+1. 学会如何指定纹理中要映射到三角形上的那一部分。
+2. 弄清如何创建并启用纹理。
+3. 学会如何对纹理做过滤，以获得更平滑的图像。
+4. 弄清如何用寻址模式把纹理平铺<a id="page360"/>多次。
+5. 弄清如何组合多张纹理来生成新的纹理和特殊效果。
+6. 学会如何通过纹理动画制作一些基本效果。
+
+<Figure src="images/Fig9-1.jpg" alt="Crate 演示在一个立方体上映射了板条箱纹理" figureNumber="图 9.1" caption="Crate 演示创建了一个贴有板条箱纹理的立方体。" />
+
+<section className="lesson-section lesson-section--intro" id="s91">
+<h2>9.1 纹理与资源回顾</h2>
+
+回忆一下，从第 4 章起我们就已经在使用纹理了；尤其是深度缓冲和后台缓冲，它们就是用 `ID3D12Resource` 接口表示的二维纹理对象，其 `D3D12_RESOURCE_DESC::Dimension` 为 `D3D12_RESOURCE_DIMENSION_TEXTURE2D`。为便于查阅，这一节我们先回顾第 4 章已经讲过的大量关于纹理的内容。
+
+二维纹理是一个数据元素矩阵。二维纹理的一种用途是存储二维图像数据，其中纹理里的每个元素存储一个像素的颜色。不过这并不是它唯一的用途；例如，在一种称为法线贴图的高级技术中，纹理里的每个元素存储的是一个三维向量而不是颜色。因此，虽然人们通常把纹理想成存储图像数据，但它实际上比这更通用。一维纹理（`D3D12_RESOURCE_DIMENSION_TEXTURE1D`）像一个一维数据元素数组，三维纹理（`D3D12_RESOURCE_DIMENSION_TEXTURE3D`）则像一个三维数据元素数组。一维、二维和三维纹理接口都用通用的 `ID3D12Resource` 表示。
+
+纹理和缓冲资源不同，后者只存储数据数组；纹理可以带有 mipmap 层级，而且 GPU 能对它们做特殊操作，例如应用过滤器和多重采样。由于纹理资源支持这些特殊操作，它们被限制为某些特定种类的数据格式，而缓冲资源则可以存储任意数据。纹理所支持的数据格式由 `DXGI_FORMAT` 枚举类型描述。一些示例格式如下：
+
+1. `DXGI_FORMAT_R32G32B32_FLOAT`：每个元素有三个 32 位浮点分量。
+2. `DXGI_FORMAT_R16G16B16A16_UNORM`：每个元素有四个 16 位分量，映射到 [0, 1] 范围。
+3. `DXGI_FORMAT_R32G32_UINT`：每个元素有两个 32 位无符号整数分量。
+4. `DXGI_FORMAT_R8G8B8A8_UNORM`：每个元素有四个 8 位<a id="page361"/>无符号分量，映射到 [0, 1] 范围。
+5. `DXGI_FORMAT_R8G8B8A8_SNORM`：每个元素有四个 8 位有符号分量，映射到 [-1, 1] 范围。
+6. `DXGI_FORMAT_R8G8B8A8_SINT`：每个元素有四个 8 位有符号整数分量，映射到 [−128, 127] 范围。
+7. `DXGI_FORMAT_R8G8B8A8_UINT`：每个元素有四个 8 位无符号整数分量，映射到 [0, 255] 范围。
+
+注意，R、G、B、A 这几个字母分别代表红、绿、蓝和 alpha。不过正如前面所说，纹理不必存储颜色信息；例如，格式
+
+```cpp
+DXGI_FORMAT_R32G32B32_FLOAT 
+```
+
+有三个浮点分量，因此可以存储一个坐标为浮点数的三维向量（不一定是颜色向量）。此外还有*无类型*（typeless）格式：我们只预留内存，等纹理绑定到渲染管线时再指定如何重新解释这些数据（有点类似类型转换）；例如，下面这个无类型格式预留了带四个 8 位分量的元素，但没有指定数据类型（比如整数、浮点数、无符号整数）：
+
+```cpp
+DXGI_FORMAT_R8G8B8A8_TYPELESS
+```
+
+**注意**：DirectX 11 SDK 文档说："创建一个完全有类型的资源，会把该资源限制为它被创建时使用的格式。这使运行时能够优化访问 […]。"因此，只有在你确实需要时，才应创建无类型资源；否则请创建完全有类型的资源。
+
+一张纹理可以绑定到渲染管线的不同阶段；一个常见例子是把纹理用作渲染目标（即 Direct3D 绘制到该纹理中），同时用作着色器资源（即该纹理会在着色器中被采样）。一张纹理也可以同时用作渲染目标和着色器资源，但不能在同一时间。先渲染到纹理、再把它当作着色器资源使用，这种称为*渲染到纹理*（render-to-texture）的方法可以实现一些有趣的特殊效果，本书后面会用到。要让一张纹理同时用作渲染目标和着色器资源，我们需要为该纹理资源创建两个描述符：1) 一个位于渲染目标堆中（即 `D3D12_DESCRIPTOR_HEAP_TYPE_RTV`），2) 一个位于着色器资源堆中（即 `D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV`）。（注意，着色器资源堆也可以存储常量缓冲视图描述符和无序访问视图描述符。）随后该资源既可以绑定为渲染目标，也可以作为着色器输入绑定到根签名中的某个根参数（但绝不同时）：
+
+```cpp
+// Bind as render target.
+CD3DX12_CPU_DESCRIPTOR_HANDLE rtv = …;
+CD3DX12_CPU_DESCRIPTOR_HANDLE dsv = …;
+cmdList->OMSetRenderTargets(1, &rtv, true, &dsv);
+     
+// Bind as shader input to root parameter.
+CD3DX12_GPU_DESCRIPTOR_HANDLE tex = …;
+cmdList->SetGraphicsRootDescriptorTable(rootParamIndex, tex);
+```
+
+资源描述符本质上<a id="page362"/>做两件事：它们告诉 Direct3D 该资源将如何使用（即你会把它绑定到管线的哪个阶段），以及如果资源格式在创建时被指定为无类型，那么现在创建视图时我们就必须说明类型。因此，对无类型格式来说，一张纹理的元素可以在一个管线阶段被看作浮点值，而在另一个阶段被看作整数；这本质上相当于对数据做了一次重新解释转换（reinterpret cast）。
+
+在本章中，我们只关心把纹理绑定为着色器资源，好让像素着色器能够采样纹理并用它来给像素着色。
+</section>
+
+<section className="lesson-section" id="s92">
+<h2>9.2 纹理坐标</h2>
+
+Direct3D 使用一个纹理坐标系，它由一条沿图像水平方向延伸的 *u* 轴和一条沿图像垂直方向延伸的 *v* 轴组成。满足 0 ≤ *u*, *v* ≤ 1 的坐标 (*u*, *v*) 标识纹理上的一个元素，称为*纹素*（texel）。注意 *v* 轴的正方向是"向下"的（见图 9.2）。还要注意归一化的坐标区间 [0, 1]，之所以使用它，是因为它给 Direct3D 提供了一个与尺寸无关的范围来处理问题；例如，无论纹理实际尺寸是 256 × 256、512 × 1024 还是 2048 × 2048 像素，(0.5, 0.5) 总是指中间那个纹素。同样，(0.25, 0.75) 标识的纹素位于水平方向总宽度的四分之一处、垂直方向总高度的四分之三处。目前纹理坐标总是处于 [0, 1] 范围内，但稍后我们会解释当超出这个范围时会发生什么。
+
+<Figure src="images/Fig9-2.jpg" alt="纹理坐标系：u 轴沿图像水平向右，v 轴沿图像垂直向下" figureNumber="图 9.2" caption="纹理坐标系，有时称为纹理空间。" />
+
+<Figure src="images/Fig9-3.jpg" alt="左边是三维空间中的一个三角形，右边在纹理上定义一个将被映射到该三维三角形上的二维三角形" figureNumber="图 9.3" caption="左边是三维空间中的一个三角形，右边我们在纹理上定义一个将被映射到该三维三角形上的二维三角形。" />
+
+对于每个三维三角形，我们<a id="page363"/>都希望在纹理上定义一个与之对应的三角形，并映射到这个三维三角形上（见图 9.3）。设 **p**₀、**p**₁ 和 **p**₂ 是某个三维三角形的顶点，它们各自的纹理坐标为 **q**₀、**q**₁ 和 **q**₂。对于该三维三角形上的任意一点 (*x*, *y*, *z*)，它的纹理坐标 (*u*, *v*) 可以用同样的 *s*、*t* 参数在三维三角形上对顶点纹理坐标做线性插值得到；也就是说，若
+
+$$(x,y,z)=\mathbf{p}=\mathbf{p}_0+s(\mathbf{p}_1-\mathbf{p}_0)+t(\mathbf{p}_2-\mathbf{p}_0)$$
+
+对 $s\ge 0,\ t\ge 0,\ s+t\le 1$，则
+
+$$(u,v)=\mathbf{q}=\mathbf{q}_0+s(\mathbf{q}_1-\mathbf{q}_0)+t(\mathbf{q}_2-\mathbf{q}_0)$$
+
+这样，三角形上的每一点就都有一个对应的纹理坐标。
+
+为了实现这一点，我们再一次修改顶点结构，添加一对用于标识纹理上某点的纹理坐标。现在每个三维顶点都有一个对应的二维纹理顶点。于是，由三个顶点定义的每个三维三角形也定义了纹理空间中的一个二维三角形（即我们为每个三维三角形关联了一个二维纹理三角形）。
+
+```cpp
+struct Vertex
+{
+  DirectX::XMFLOAT3 Pos;
+  DirectX::XMFLOAT3 Normal;
+  DirectX::XMFLOAT2 TexC;
+};
+```
+
+**译者注**：源文件该代码块结尾的 `};` 之后还紧跟着一串 `>>>>>>>>>>>>>>>>>>>>` 字符。它们不属于代码内容，判断为 EPUB 转换产生的噪声，故未录入。
+
+```cpp
+std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout =
+{
+  { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+  { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, 
+   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+  { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, 
+   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+};
+```
+
+**注意**：你可以创建"怪异"的纹理映射，使<a id="page364"/>二维纹理三角形与三维三角形差别很大。这样，当二维纹理被映射到三维三角形上时，会发生大量拉伸和扭曲，使结果看起来不好。例如，把一个锐角三角形映射到一个直角三角形上就需要拉伸。一般来说，除非纹理美术师有意要那种扭曲效果，否则应尽量减少纹理扭曲。
+
+注意，在图 9.3 中，我们把整张纹理图像映射到立方体的每一面上。这绝不是必须的。我们可以只把纹理的一个子集映射到几何体上。事实上，我们可以把若干张互不相关的图像放在一张大纹理图上（这称为*纹理图集*，texture atlas），再把它用于多个不同的物体（图 9.4）。正是纹理坐标决定了纹理的哪一部分会被映射到三角形上。
+
+<Figure src="images/Fig9-4.jpg" alt="一张纹理图集把四张子纹理存放在一张大纹理上；每个顶点的纹理坐标被设置为让纹理中想要的部分映射到几何体上" figureNumber="图 9.4" caption="一张纹理图集把四张子纹理存放在一张大纹理上。每个顶点的纹理坐标被设置为让纹理中想要的部分映射到几何体上。" />
+</section>
+
+<section className="lesson-section" id="s93">
+<h2>9.3 纹理数据来源</h2>
+
+游戏中最常见的创建纹理的方式，是让美术师在 Photoshop 或其他图像编辑器中制作，然后保存为 BMP、DDS、TGA 或 PNG 之类的图像文件。随后，游戏程序在加载时会把这些图像数据加载到一个 `ID3D12Resource` 对象中。对于实时图形应用，首选 DDS（DirectDraw Surface 格式）<a id="page365"/>图像文件格式，因为它支持各种各样 GPU 能原生理解的图像格式；尤其是它支持可由 GPU 原生解压的压缩图像格式。
+
+**注意**：美术师不应把 DDS 格式当作工作用的图像格式。他们应当用自己喜欢的格式来保存工作文件。等纹理完成后，再导出为 DDS 供游戏程序使用。
+
+<h3 id="s931">9.3.1 DDS 概览</h3>
+
+DDS 格式非常适合三维图形，因为它支持专门用于三维图形的特殊格式和纹理类型。它本质上是一种为 GPU 打造的图像格式。例如，DDS 纹理支持三维图形开发中用到（但尚未讨论）的以下特性：
+
+1. mipmap
+2. GPU 能原生解压的压缩格式
+3. 纹理数组
+4. 立方体贴图
+5. 体积纹理
+
+DDS 格式可以支持不同的像素格式。像素格式由 `DXGI_FORMAT` 枚举类型的一个成员描述；不过，并非所有格式都适用于 DDS 纹理。通常，对于未压缩的图像数据，你会使用以下格式：
+
+1. `DXGI_FORMAT_B8G8R8A8_UNORM` 或 `DXGI_FORMAT_B8G8R8X8_UNORM`：用于低动态范围图像。
+2. `DXGI_FORMAT_R16G16B16A16_FLOAT`：用于高动态范围图像。
+
+随着你的虚拟世界增长到包含数百张纹理（记住，我们需要把所有这些纹理都保存在 GPU 内存中以快速应用它们），纹理对 GPU 内存的需求会迅速累积。为帮助缓解这些内存需求，Direct3D 支持压缩纹理格式：BC1、BC2、BC3、BC4、BC5、BC6 和 BC7：
+
+1. BC1（`DXGI_FORMAT_BC1_UNORM`）：如果你需要压缩的格式支持三个颜色通道，且只有 1 位（开/关）alpha 分量，就用这个格式。<a id="page366"/>
+2. BC2（`DXGI_FORMAT_BC2_UNORM`）：如果你需要压缩的格式支持三个颜色通道，且只有 4 位 alpha 分量，就用这个格式。
+3. BC3（`DXGI_FORMAT_BC3_UNORM`）：如果你需要压缩的格式支持三个颜色通道和一个 8 位 alpha 分量，就用这个格式。
+4. BC4（`DXGI_FORMAT_BC4_UNORM`）：如果你需要压缩的格式只包含一个颜色通道（例如灰度图像），就用这个格式。
+5. BC5（`DXGI_FORMAT_BC5_UNORM`）：如果你需要压缩的格式支持两个颜色通道，就用这个格式。
+6. BC6（`DXGI_FORMAT_BC6_UF16`）：用于压缩 HDR（高动态范围）图像数据。
+7. BC7（`DXGI_FORMAT_BC7_UNORM`）：用于高质量的 RGBA 压缩。尤其是，这个格式能显著减少压缩法线贴图所导致的误差。
+
+**注意**：压缩纹理只能作为渲染管线着色器阶段的输入使用，不能用作渲染目标。
+
+**注意**：由于块压缩算法以 4 × 4 像素块为单位工作，纹理的尺寸必须是 4 的倍数。
+
+再说一次，这些格式的优点是：它们能以压缩形式存储在 GPU 内存中，然后在需要时由 GPU 即时解压。把纹理以压缩形式存储在 DDS 文件中还有一个额外好处：它们占用的硬盘空间也更少。
+
+<h3 id="s932">9.3.2 创建 DDS 文件</h3>
+
+如果你是图形编程新手，你大概对 DDS 不熟悉，而更习惯使用 BMP、TGA 或 PNG 之类的格式。下面是把传统图像格式转换为 DDS 格式的两种方法：
+
+1. NVIDIA 为 Adobe Photoshop 提供了一个插件，可以把图像导出为 DDS 格式。该插件可从 <i><a href="https://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop">https://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop</a></i> 获取。除其他选项外，它还允许你指定 DDS 文件的 `DXGI_FORMAT`，并生成 mipmap。
+2. Microsoft 提供了一个名为 *texconv* 的命令行工具，可用于把传统图像格式转换为 DDS。此外，*texconv* 程序还可用于更多用途，比如调整图像尺寸、更改像素格式、生成 mipmap 等等。你可以在下面这个网站上找到文档和下载链接：<i><a href="https://directxtex.codeplex.com/wikipage?title=Texconv&amp;referringTitle=Documentation">https://directxtex.codeplex.com/wikipage?title=Texconv&amp;referringTitle=Documentation</a></i>。
+
+下面的例子输入一个 BMP 文件 *bricks.bmp*，输出一个格式为 BC3_UNORM 的 DDS 文件 *bricks.dds*，并生成一条包含 10 个 mipmap 的 mipmap 链。
+
+**译者注**：原文此处把 outputs 误拼为 "outpts"；且正文说的是 *bricks.bmp*/*bricks.dds*，而紧随其后的示例命令用的是 *treeArray.dds*，二者不一致。译文按原文照录，仅在此说明。
+
+```cpp
+texconv -m 10 -f BC3_UNORM treeArray.dds
+```
+
+**注意**：Microsoft 还提供了另一个<a id="page367"/>名为 texassemble 的命令行工具，用于创建存储纹理数组、体积贴图和立方体贴图的 DDS 文件。本书后面会用到这个工具。它的文档和下载链接可在 <a href="https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Documentation">https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Documentation</a> 找到。
+
+**注意**：Visual Studio 2015 内置了一个图像编辑器，除其他常见格式外还支持 DDS。你可以把一张图像拖入 Visual Studio 2015，它应当会在图像编辑器中打开。对于 DDS 文件，你可以查看 mipmap 层级、更改 DDS 格式，并查看各个颜色通道。
+</section>
+
+<section className="lesson-section" id="s94">
+<h2>9.4 创建并启用纹理</h2>
+
+<h3 id="s941">9.4.1 加载 DDS 文件</h3>
+
+Microsoft 提供了轻量级的源代码用于加载 DDS 文件，见：
+
+<i><a href="https://github.com/Microsoft/DirectXTK/wiki/DDSTextureLoader">https://github.com/Microsoft/DirectXTK/wiki/DDSTextureLoader</a></i>
+
+不过，在撰写本书时，这些代码只支持 DirectX 11。我们修改了 *DDSTextureLoader.h/.cpp* 文件，并为 DirectX 12 额外提供了一个方法（这些修改过的文件可在 DVD 或可下载源码的 *Common* 文件夹中找到）：
+
+```cpp
+HRESULT DirectX::CreateDDSTextureFromFile12(
+  _In_ ID3D12Device* device,
+  _In_ ID3D12GraphicsCommandList* cmdList,
+  _In_z_ const wchar_t* szFileName,
+  _Out_ Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
+  _Out_ Microsoft::WRL::ComPtr<ID3D12Resource>& textureUploadHeap);
+```
+
+1. `device`：指向 D3D 设备的指针，用来创建纹理资源。
+2. `cmdList`：用于提交 GPU 命令的命令列表（例如把纹理数据从一个上传堆复制到默认堆）。
+3. `szFileName`：要加载的图像文件名。
+4. `texture`：返回带有已加载图像数据的纹理资源。
+5. `textureUploadHeap`：返回那个被用作上传堆、用来把图像数据复制到默认堆纹理资源中的纹理资源。在 GPU 完成复制命令之前，这个资源不能被销毁。
+
+要从一张名为 *WoodCreate01.dds* 的图像创建纹理，我们会这样写：<a id="page368"/>
+
+**译者注**：原文正文写的是 *WoodCreate01.dds*，而下方代码用的是 `L"Textures/WoodCrate01.dds"`，二者不一致。译文按原文照录。
+
+```cpp
+struct Texture
+{
+  // Unique material name for lookup.
+  std::string Name;
+
+  std::wstring Filename;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> Resource = nullptr;
+  Microsoft::WRL::ComPtr<ID3D12Resource> UploadHeap = nullptr;
+};
+
+auto woodCrateTex = std::make_unique<Texture>();
+woodCrateTex->Name = "woodCrateTex";
+woodCrateTex->Filename = L"Textures/WoodCrate01.dds";
+ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(
+  md3dDevice.Get(), mCommandList.Get(), 
+  woodCrateTex->Filename.c_str(),
+  woodCrateTex->Resource, woodCrateTex->UploadHeap));   
+```
+
+<h3 id="s942">9.4.2 SRV 堆</h3>
+
+一旦纹理资源创建好，我们就需要为它创建一个 SRV 描述符，以便把它设置到根签名的某个参数槽中供着色器程序使用。为此，我们首先需要用 `ID3D12Device::CreateDescriptorHeap` 创建一个描述符堆来存储 SRV 描述符。下面的代码构建了一个包含三个描述符的堆，这些描述符可以存储 CBV、SRV 或 UAV 描述符，并且对着色器可见：
+
+```cpp
+D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+srvHeapDesc.NumDescriptors = 3;
+srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+ThrowIfFailed(md3dDevice->CreateDescriptorHeap(
+  &srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
+```
+
+<h3 id="s943">9.4.3 创建 SRV 描述符</h3>
+
+有了 SRV 堆之后，我们就需要创建实际的描述符。SRV 描述符通过填写一个 `D3D12_SHADER_RESOURCE_VIEW_DESC` 对象来描述，它说明资源如何使用以及其他信息——它的格式、维度、mipmap 数量等等。
+
+```cpp
+typedef struct D3D12_SHADER_RESOURCE_VIEW_DESC
+{
+  DXGI_FORMAT Format;
+  D3D12_SRV_DIMENSION ViewDimension;
+  UINT Shader4ComponentMapping;
+  union 
+  {
+    D3D12_BUFFER_SRV Buffer;
+    D3D12_TEX1D_SRV Texture1D;
+    D3D12_TEX1D_ARRAY_SRV Texture1DArray;
+    D3D12_TEX2D_SRV Texture2D;
+    D3D12_TEX2D_ARRAY_SRV Texture2DArray;
+    D3D12_TEX2DMS_SRV Texture2DMS;
+    D3D12_TEX2DMS_ARRAY_SRV Texture2DMSArray;
+    D3D12_TEX3D_SRV Texture3D;
+    D3D12_TEXCUBE_SRV TextureCube;
+    D3D12_TEXCUBE_ARRAY_SRV TextureCubeArray;
+  };
+} D3D12_SHADER_RESOURCE_VIEW_DESC;
+
+typedef struct D3D12_TEX2D_SRV
+{
+  UINT MostDetailedMip;
+  UINT MipLevels;
+  UINT PlaneSlice;
+  FLOAT ResourceMinLODClamp;
+} D3D12_TEX2D_SRV;
+```
+
+对于二维纹理，我们只<a id="page369"/>关心这个 union 中的 `D3D12_TEX2D_SRV` 部分。
+
+1. `Format`：资源的格式。如果资源在创建时使用的格式不是无类型，就把它设为该资源的 `DXGI_FORMAT`。如果你在创建资源时为其指定了无类型的 `DXGI_FORMAT`，那么你必须在这里为视图指定一个非无类型的格式，好让 GPU 知道如何解释这些数据。**译者注**：源文件此条末尾还多出一句孤立的残片 "typeless format when creating"，应为 EPUB 转换噪声，译文未录入。
+2. `ViewDimension`：资源的维度；目前我们使用二维纹理，所以指定 `D3D12_SRV_DIMENSION_TEXTURE2D`。其他常见的纹理维度有：
+   1. `D3D12_SRV_DIMENSION_TEXTURE1D`：该资源是一维纹理。
+   2. `D3D12_SRV_DIMENSION_TEXTURE3D`：该资源是三维纹理。
+   3. `D3D12_SRV_DIMENSION_TEXTURECUBE`：该资源是立方体贴图。
+3. `Shader4ComponentMapping`：在着色器中采样一张纹理时，它会返回指定纹理坐标处纹理数据的一个向量。这个字段提供了一种在采样纹理时重新排列返回向量各分量的方式。例如，你可以用它交换红色和绿色分量。这会被用在一些特殊场景中，本书用不到。所以我们只需指定 `D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING`，它不会重排分量，只按数据存储在纹理资源中的顺序返回。
+4. `MostDetailedMip`：指定要查看的最精细 mipmap 层级的索引。这是一个介于 0 与 *MipCount*−1 之间的数。
+5. `MipLevels`：从 `MostDetailedMip` 开始要查看的 mipmap 层级数量。这个字段与 `MostDetailedMip` 一起，让我们能够指定要查看的 mipmap 层级子范围。你可以<a id="page370"/>指定 −1，表示查看从 `MostDetailedMip` 一直到最后一个 mipmap 层级的所有 mipmap。
+6. `PlaneSlice`：平面索引。
+7. `ResourceMinLODClamp`：指定可以访问的最小 mipmap 层级。0.0 表示所有 mipmap 层级都可访问。指定 3.0 表示从 mipmap 层级 3.0 到 *MipCount*−1 都可以访问。
+
+下面的代码用指向三个资源的实际描述符填充我们在上一节创建的那个堆：
+
+```cpp
+// Suppose the following texture resources are already created.
+// ID3D12Resource* bricksTex;
+// ID3D12Resource* stoneTex;
+// ID3D12Resource* tileTex;
+
+// Get pointer to the start of the heap.
+CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(
+  mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+srvDesc.Format = bricksTex->GetDesc().Format;
+srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+srvDesc.Texture2D.MostDetailedMip = 0;
+srvDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
+srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+md3dDevice->CreateShaderResourceView(bricksTex.Get(), &srvDesc, hDescriptor);
+
+// offset to next descriptor in heap
+hDescriptor.Offset(1, mCbvSrvDescriptorSize);
+
+srvDesc.Format = stoneTex->GetDesc().Format;
+srvDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
+md3dDevice->CreateShaderResourceView(stoneTex.Get(), &srvDesc, hDescriptor);
+
+// offset to next descriptor in heap
+hDescriptor.Offset(1, mCbvSrvDescriptorSize);
+
+srvDesc.Format = tileTex->GetDesc().Format;
+srvDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
+md3dDevice->CreateShaderResourceView(tileTex.Get(), &srvDesc, hDescriptor);
+```
+
+<h3 id="s944">9.4.4 将纹理绑定到管线</h3>
+
+目前我们是通过修改材质常量缓冲来逐绘制调用指定材质的。这意味着一次绘制调用中的所有几何体都会有相同的材质取值。这相当受限，因为我们无法指定逐像素的材质变化，所以场景缺乏细节。纹理映射的思路就是从纹理贴图而不是材质常量缓冲中获取材质数据。这允许逐像素变化，从而提升场景的细节<a id="page371"/>和真实感，正如 图 9.1 所示。
+
+在本章中，我们添加一张漫反射反照率纹理贴图，用来指定材质的漫反射反照率分量。`FresnelR0` 和 `Roughness` 材质取值仍将按逐绘制调用的频率通过材质常量缓冲指定；不过在"法线贴图"那一章中，我们会介绍如何用纹理在逐像素级别指定粗糙度。注意，使用纹理后我们仍会在材质常量缓冲中保留 `DiffuseAlbedo` 分量。事实上，我们会按下面的方式在像素着色器中把它与纹理的漫反射反照率值组合起来：
+
+```cpp
+// Get diffuse albedo at this pixel from texture.
+float4 texDiffuseAlbedo = gDiffuseMap.Sample(
+  gsamAnisotropicWrap, pin.TexC);
+
+// Multiple texture sample with constant buffer albedo.
+float4 diffuseAlbedo = texDiffuseAlbedo * gDiffuseAlbedo;
+```
+
+通常，我们会把 `DiffuseAlbedo=(1,1,1,1)`，这样它就不会修改 `texDiffuseAlbedo`。不过，有时在不重新制作一张纹理的情况下对漫反射反照率稍作调整是很有用的。例如，假设我们有一张砖墙纹理，某位美术师想把它稍微染蓝一点。这可以通过降低红色和绿色分量、设 `DiffuseAlbedo=(0.9,0.9,1,1)` 来实现。
+
+**译者注**：原文此句写作 "so that to does not modify texDiffuseAlbedo"，其中 "to" 应为 "it"。译文按通顺译出并在此说明。
+
+我们在材质定义中添加一个索引，它引用描述符堆中指定该材质所关联纹理的一个 SRV：
+
+```cpp
+struct Material
+{
+  …
+
+  // Index into SRV heap for diffuse texture.
+  int DiffuseSrvHeapIndex = -1;
+
+  …
+};
+```
+
+然后，假设根签名已被定义为期望把一个着色器资源视图表绑定到第 0 个槽参数，我们就可以用下面的代码带纹理地绘制渲染项：
+
+```cpp
+void CrateApp::DrawRenderItems(
+  ID3D12GraphicsCommandList* cmdList, 
+  const std::vector<RenderItem*>& ritems)
+{
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+  UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
+  
+  auto objectCB = mCurrFrameResource->ObjectCB->Resource();
+  auto matCB = mCurrFrameResource->MaterialCB->Resource();
+
+  // For each render item…
+  for(size_t i = 0; i < ritems.size(); ++i)
+  {
+    auto ri = ritems[i];
+
+    cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+    cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE tex(
+      mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    tex.Offset(ri->Mat->DiffuseSrvHeapIndex, mCbvSrvDescriptorSize);
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = 
+      objectCB->GetGPUVirtualAddress() + 
+      ri->ObjCBIndex*objCBByteSize;
+    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = 
+      matCB->GetGPUVirtualAddress() + 
+      ri->Mat->MatCBIndex*matCBByteSize;
+
+    cmdList->SetGraphicsRootDescriptorTable(0, tex);
+    cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
+    cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
+
+    cmdList->DrawIndexedInstanced(ri->IndexCount, 
+      1, ri->StartIndexLocation, 
+      ri->BaseVertexLocation, 0);
+  }
+}
+```
+
+**注意**：一张纹理资源实际上可以被任意着色器（顶点、几何或像素着色器）<a id="page372"/>使用。目前我们只在像素着色器中使用它们。正如我们所说，纹理本质上是支持 GPU 特殊操作的特殊数组，所以不难想象它们在其他着色器程序中也会有用。
+
+**注意**：纹理图集可以提升性能，因为它可以让人用一次绘制调用绘制更多几何体。例如，假设我们像 图 9.4 那样使用一张包含板条箱、草地和砖墙纹理的纹理图集。那么，通过把每个对象的纹理坐标调整到它对应的子纹理，我们就可以把所有几何体放进一个渲染项（假设没有其他参数需要逐对象改变）。绘制调用是有开销的，所以用这类技术尽量少做绘制调用是可取的，尽管我们要指出，与早期版本的 Direct3D 相比，Direct3D 12 已经显著降低了这种开销。<a id="page373"/>
+</section>
+
+<section className="lesson-section" id="s95">
+<h2>9.5 过滤器</h2>
+
+<h3 id="s951">9.5.1 放大</h3>
+
+应该把纹理贴图的元素想成从连续图像中离散采样得到的颜色样本，而不应把它们想成有面积的矩形。那么问题来了：如果纹理坐标 (*u*, *v*) 不与任何一个纹素点重合，会发生什么？这会在下列情形中发生。假设玩家放大场景中的一面墙，使那面墙覆盖整个屏幕。为便于举例，设显示器分辨率是 1024 × 1024，而墙的纹理分辨率是 256 × 256。这就说明了纹理*放大*（magnification）——我们在试图用少量纹素覆盖很多像素。在我们的例子里，每个纹素点之间都隔着四个像素。当顶点纹理坐标在三角形上插值时，每个像素都会被赋予一对唯一的纹理坐标。因此就会出现纹理坐标不与任何纹素点重合的像素。给定纹素处的颜色，我们可以用插值来近似纹素之间的颜色。图形硬件支持两种插值方法：常值插值和线性插值。在实践中几乎总是使用线性插值。
+
+图 9.5 在一维情形下演示了这些方法：假设我们有一张含 256 个样本的一维纹理，以及一个插值得到的纹理坐标 *u* = 0.126484375。这个归一化纹理坐标指的是第 0.126484375 × 256 = 32.38 个纹素。当然，这个值落在两个纹素样本之间，所以我们必须用插值来近似它。
+
+<Figure src="images/Fig9-5a.jpg" alt="(a) 给定纹素点，构造分段常值函数来近似纹素点之间的取值，即最近邻点采样" figureNumber="图 9.5" caption="(a) 在给定纹素点的情况下，构造一个分段常值函数来近似纹素点之间的取值；这有时称为最近邻点采样（nearest neighbor point sampling），因为它使用最近纹素点的值。(b) 在给定纹素点的情况下，构造一个分段线性函数来近似纹素点之间的取值。" />
+
+<Figure src="images/Fig9-5b.jpg" alt="(b) 给定纹素点，构造分段线性函数来近似纹素点之间的取值" caption="图 9.5（续）：(b) 在给定纹素点的情况下，构造一个分段线性函数来近似纹素点之间的取值。" />
+
+二维线性插值称为双线性插值，如图 9.6 所示。给定落在四个纹素之间的一个纹理坐标对，我们沿 *u* 方向做两次一维线性插值，再沿 *v* 方向做一次一维插值。
+
+<Figure src="images/Fig9-6.jpg" alt="双线性插值：在四个纹素点 c_ij、c_i,j+1、c_i+1,j、c_i+1,j+1 之间近似颜色 c" figureNumber="图 9.6" caption="这里有四个纹素点：cᵢⱼ、cᵢ,ⱼ₊₁、cᵢ₊₁,ⱼ 和 cᵢ₊₁,ⱼ₊₁。我们想用插值来近似位于这四个纹素点之间的 c 的颜色；在这个例子中，c 位于 cᵢⱼ 右侧 0.75 个单位、下方 0.38 个单位处。我们先在顶部两种颜色之间做一次一维线性插值，得到 cᵀ。同样，我们在底部两种颜色之间做一次一维线性插值，得到 cᴮ。最后，我们在 cᵀ 与 cᴮ 之间做一次一维线性插值，得到 c。" />
+
+图 9.7 展示了常值插值与线性插值的差别。如你所见，常值插值的特点是会产生块状外观的图像。线性<a id="page374"/>插值更平滑，但仍不如使用真实数据（例如一张更高分辨率的纹理）而不使用插值得到的派生数据那样好看。
+
+<Figure src="images/Fig9-7.jpg" alt="放大一个贴有板条箱纹理的立方体时的效果；左边用常值插值呈块状，右边用线性过滤更平滑" figureNumber="图 9.7" caption="我们放大一个贴有板条箱纹理的立方体，从而发生放大。左边我们使用常值插值，结果呈块状外观；这合乎情理，因为插值函数存在不连续点（图 9.5a），使变化突兀而非平滑。右边我们使用线性过滤，由于插值函数连续，得到的图像更平滑。" />
+
+关于这段讨论要注意一点：在一个虚拟眼睛可以自由移动探索的交互式三维程序中，放大是没办法真正避免的。在某些距离上纹理看起来很棒，但当眼睛靠得太近时就开始退化。有些游戏会限制虚拟眼睛能靠近表面到多近，以避免过度放大。使用更高分辨率的纹理也会有帮助。
+
+**注意**：在纹理的语境下，用常值插值为落在纹素之间的纹理坐标求取纹理值，也称为*点过滤*（point filtering）。而用线性插值为落在纹素之间的纹理坐标求取纹理值，也称为线性过滤。点过滤和线性过滤是 Direct3D 使用的术语。<a id="page375"/>
+
+<h3 id="s952">9.5.2 缩小</h3>
+
+*缩小*（minification）与放大相反。在缩小中，太多纹素被映射到太少像素上。例如，考虑下面这种情况：我们有一面墙，上面映射了一张 256 × 256 的纹理。看着这面墙的眼睛不断后退，使墙越来越小，直到它在屏幕上只覆盖 64 × 64 个像素。于是现在我们有 256 × 256 个纹素被映射到 64 × 64 个屏幕像素上。在这种情况下，像素的纹理坐标仍然一般不会与纹理贴图的任何纹素重合，所以常值插值和线性插值过滤器仍然适用于缩小情形。不过，缩小还能做得更多。直观地说，应当对 256 × 256 个纹素做某种平均降采样，把它降到 64 × 64。mipmapping 技术以额外占用一些内存为代价，为这件事提供了一个高效的近似。在初始化时（或资产创建时），通过对图像降采样生成更小版本的纹理，从而创建一条 mipmap 链（见图 9.8）。这样，平均的工作就针对各个 mipmap 尺寸预先算好了。在运行时，图形硬件会根据程序员指定的 mipmap 设置做两件不同的事：
+
+1. 挑选并使用与用于纹理化的投影屏幕几何分辨率最匹配的那一级 mipmap，按需施加常值或线性插值。这称为 mipmap 的*点过滤*，因为它类似常值插值——你只要选最近的那一级 mipmap 并用它来纹理化。
+2. 挑选与用于纹理化的投影屏幕几何分辨率最匹配的两级相邻 mipmap（一个比屏幕几何分辨率大，一个比它小）。接下来，对这两级 mipmap 都施加常值或线性过滤，各自产生一个纹理颜色。最后，在这两个纹理颜色结果之间做插值。这称为 mipmap 的*线性过滤*，因为它类似线性插值——你在两级最近的 mipmap 之间做线性插值。
+
+通过从 mipmap 链中挑选出最佳细节层级，缩小的程度被大大降低了。
+
+<Figure src="images/Fig9-8.jpg" alt="一条 mipmap 链；每一级后继 mipmap 在每个维度上都是前一级的一半，直至 1 × 1" figureNumber="图 9.8" caption="一条 mipmap 链；每一级后继 mipmap 在每个维度上的尺寸都是前一级细节层级的一半，直至 1 × 1。" />
+
+**注意**：正如 §9.3.2 中提到的，可以用 Photoshop 的 DDS 导出插件或 texconv 程序生成 mipmap。<a id="page376"/>这些程序用一种降采样算法从基础图像数据生成较低的 mipmap 层级。有时这些算法不能保留我们想要的细节，美术师就得手动创建/编辑较低的 mipmap 层级，以保留重要的细节。
+
+<h3 id="s953">9.5.3 各向异性过滤</h3>
+
+还可以使用另一种过滤器，称为*各向异性过滤*（anisotropic filtering）。当多边形的法向量与摄像机的视线向量之间夹角很大（例如多边形与视窗正交）时会发生扭曲，这种过滤器有助于减轻这种扭曲。这种过滤器开销最大，但为修正扭曲瑕疵，它的代价可能是值得的。图 9.9 展示了一张截图，比较各向异性过滤与线性过滤。
+
+<Figure src="images/Fig9-9.jpg" alt="板条箱顶面几乎与视窗正交；左图用线性过滤，顶部严重模糊，右图用各向异性过滤效果更好" figureNumber="图 9.9" caption="板条箱的顶面几乎与视窗正交。（左）使用线性过滤时，板条箱顶面严重模糊。（右）从这个角度看，各向异性过滤渲染板条箱顶面效果更好。" />
+</section>
+
+<section className="lesson-section" id="s96">
+<h2>9.6 寻址模式</h2>
+
+一张纹理与常值或线性插值相结合，定义了一个向量值函数 *T*(*u*, *v*) = (*r*, *g*, *b*, *a*)。也就是说，给定纹理坐标 (*u*, *v*) ∈ [0, 1]²，纹理函数 *T* 返回一个颜色 (*r*, *g*, *b*, *a*)。Direct3D 允许我们用四种不同的方式扩展这个函数的定义域（称为*寻址模式*，address mode）：*wrap*（重复）、*border color*（边界颜色）、*clamp*（钳制）和 *mirror*（镜像）。
+
+1. *wrap* 通过在每个整数分界处重复图像来扩展纹理函数（见图 9.10）。
+   <Figure src="images/Fig9-10.jpg" alt="wrap 寻址模式" figureNumber="图 9.10" caption="wrap 寻址模式。" />
+2. *border color* 通过把每个不在 [0, 1]² 中的 (*u*, *v*) 映射到程序员指定的某个颜色来扩展纹理函数（见图 9.11）。
+   <Figure src="images/Fig9-11.jpg" alt="border color 寻址模式" figureNumber="图 9.11" caption="边界颜色寻址模式。" />
+3. clamp 通过把每个不在 [0, 1]² 中的 (*u*, *v*) 映射到颜色 *T*(*u*₀, *v*₀) 来扩展纹理函数，其中 (*u*₀, *v*₀) 是 [0, 1]² 中距 (*u*, *v*) 最近的点（见图 9.12）。
+   <Figure src="images/Fig9-12.jpg" alt="clamp 寻址模式" figureNumber="图 9.12" caption="clamp 寻址模式。" />
+4. *mirror* 通过在每个<a id="page377"/>整数分界处镜像图像来扩展纹理函数（见图 9.13）。
+   <Figure src="images/Fig9-13.jpg" alt="mirror 寻址模式" figureNumber="图 9.13" caption="镜像寻址模式。" />
+
+寻址模式总是<a id="page378"/>会被指定（wrap 模式是默认值），因此，[0, 1] 范围之外的纹理坐标总是有定义的。
+
+wrap 寻址模式大概是最常用的；它让我们能够在一张表面上重复平铺纹理。这实际上让我们无需提供额外数据就能提高纹理分辨率（虽然多出来的分辨率是重复的）。平铺时，通常重要的是纹理要无缝。例如，板条箱纹理就是无缝的，如你所见，它的重复很明显。不过，图 9.14 展示了一张无缝砖墙纹理重复 2 × 3 次的效果。
+
+<Figure src="images/Fig9-14.jpg" alt="一张砖墙纹理平铺 2 × 3 次；由于纹理无缝，重复图案不那么明显" figureNumber="图 9.14" caption="一张砖墙纹理平铺 2 × 3 次。由于纹理无缝，重复图案不那么容易被注意到。" />
+
+寻址模式在 Direct3D 中由 `D3D12_TEXTURE_ADDRESS_MODE` 枚举类型描述：
+
+```cpp
+typedef enum D3D12_TEXTURE_ADDRESS_MODE
+{
+  D3D12_TEXTURE_ADDRESS_MODE_WRAP        = 1,
+  D3D12_TEXTURE_ADDRESS_MODE_MIRROR      = 2,
+  D3D12_TEXTURE_ADDRESS_MODE_CLAMP        = 3,
+  D3D12_TEXTURE_ADDRESS_MODE_BORDER      = 4,
+  D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE = 5
+} D3D12_TEXTURE_ADDRESS_MODE;
+```
+</section>
+
+<section className="lesson-section" id="s97">
+<h2>9.7 采样器对象</h2>
+
+从前两节我们看到，除了纹理数据之外，使用纹理还涉及另外两个关键概念：纹理过滤和寻址模式。采样纹理资源时使用哪种过滤器和寻址模式<a id="page379"/>，是由*采样器对象*（sampler object）定义的。一个应用通常需要好几个采样器对象，以不同的方式采样纹理。
+
+<h3 id="s971">9.7.1 创建采样器</h3>
+
+正如我们在下一节会看到的，采样器在着色器中使用。为了把采样器绑定到着色器供其使用，我们需要把描述符绑定到采样器对象。下面的代码展示了一个根签名示例，它让第二个槽接收一个采样器描述符表，绑定到采样器寄存器槽 0。
+
+```cpp
+CD3DX12_DESCRIPTOR_RANGE descRange[3];
+descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
+descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+
+CD3DX12_ROOT_PARAMETER rootParameters[3];
+rootParameters[0].InitAsDescriptorTable(1, &descRange[0], D3D12_SHADER_VISIBILITY_PIXEL);
+rootParameters[1].InitAsDescriptorTable(1, &descRange[1], D3D12_SHADER_VISIBILITY_PIXEL);
+rootParameters[2].InitAsDescriptorTable(1, &descRange[2], D3D12_SHADER_VISIBILITY_ALL);
+
+CD3DX12_ROOT_SIGNATURE_DESC descRootSignature;
+descRootSignature.Init(3, rootParameters, 0, nullptr,
+  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+```
+
+如果我们要设置采样器描述符，就需要一个采样器堆。采样器堆通过填写一个 `D3D12_DESCRIPTOR_HEAP_DESC` 实例并指定堆类型 `D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER` 来创建：
+
+```cpp
+D3D12_DESCRIPTOR_HEAP_DESC descHeapSampler = {};
+descHeapSampler.NumDescriptors = 1;
+descHeapSampler.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+descHeapSampler.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+ComPtr<ID3D12DescriptorHeap> mSamplerDescriptorHeap;
+ThrowIfFailed(mDevice->CreateDescriptorHeap(&descHeapSampler,
+  __uuidof(ID3D12DescriptorHeap), 
+  (void**)&mSamplerDescriptorHeap));
+```
+
+有了采样器堆之后，我们就可以创建采样器描述符了。正是在这里，我们通过填写一个 `D3D12_SAMPLER_DESC` 对象来指定寻址模式和过滤类型，以及其他参数：
+
+```cpp
+typedef struct D3D12_SAMPLER_DESC
+{
+  D3D12_FILTER Filter;
+  D3D12_TEXTURE_ADDRESS_MODE AddressU;
+  D3D12_TEXTURE_ADDRESS_MODE AddressV;
+  D3D12_TEXTURE_ADDRESS_MODE AddressW;
+  FLOAT MipLODBias;
+  UINT MaxAnisotropy;
+  D3D12_COMPARISON_FUNC ComparisonFunc;
+  FLOAT BorderColor[ 4 ];
+  FLOAT MinLOD;
+  FLOAT MaxLOD;
+} D3D12_SAMPLER_DESC;
+```
+
+1. `Filter`：`D3D12_FILTER` 枚举类型的一个成员，用来指定<a id="page380"/>要使用哪种过滤。
+2. `AddressU`：纹理水平 *u* 轴方向的寻址模式。
+3. `AddressV`：纹理垂直 *v* 轴方向的寻址模式。
+4. `AddressW`：纹理深度 *w* 轴方向的寻址模式（仅适用于三维纹理）。
+5. `MipLODBias`：用于偏移所选 mipmap 层级的值。指定 0.0 表示不偏移。
+6. `MaxAnisotropy`：最大各向异性值，必须介于 1–16（含两端）。这仅适用于 `D3D12_FILTER_ANISOTROPIC` 或 `D3D12_FILTER_COMPARISON_ANISOTROPIC`。值越大开销越大，但能给出更好的结果。
+7. `ComparisonFunc`：用于某些专门应用（如阴影贴图）的高级选项。目前只需设为 `D3D12_COMPARISON_FUNC_ALWAYS`，直到讲阴影贴图那一章。
+8. `BorderColor`：用于指定寻址模式 `D3D12_TEXTURE_ADDRESS_MODE_BORDER` 的边界颜色。
+9. `MinLOD`：可以被选中的最小 mipmap 层级。
+10. `MaxLOD`：可以被选中的最大 mipmap 层级。
+
+下面是一些常用 `D3D12_FILTER` 类型的例子：
+
+1. `D3D12_FILTER_MIN_MAG_MIP_POINT`：对纹理贴图做点过滤，跨 mipmap 层级也做点过滤（即使用最近的那一级 mipmap）。
+2. `D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT`：对纹理贴图做双线性过滤，跨 mipmap 层级做点过滤（即使用最近的那一级 mipmap）。
+3. `D3D12_FILTER_MIN_MAG_MIP_LINEAR`：对纹理贴图做双线性过滤，并在两级最近的较低和较高 mipmap 层级之间做线性过滤。这通常称为三线性过滤（trilinear filtering）。
+4. `D3D12_FILTER_ANISOTROPIC`：对缩小、放大和 mipmapping 都使用各向异性过滤。
+
+你可以从这些例子推断出其他<a id="page381"/>可能的排列组合，也可以在 SDK 文档中查阅 `D3D12_FILTER` 枚举类型。
+
+下面的例子展示如何在堆中创建一个指向采样器的描述符，它使用线性过滤、wrap 寻址模式，其他参数使用典型的默认值：
+
+```cpp
+D3D12_SAMPLER_DESC samplerDesc = {};
+samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+samplerDesc.MinLOD = 0;
+samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;
+samplerDesc.MipLODBias = 0.0f;
+samplerDesc.MaxAnisotropy = 1;
+samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+md3dDevice->CreateSampler(&samplerDesc, 
+  mSamplerDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+```
+
+下面的代码展示如何把一个采样器描述符绑定到根签名参数槽，供着色器程序使用：
+
+```cpp
+commandList->SetGraphicsRootDescriptorTable(1, 
+  samplerDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+```
+
+<h3 id="s972">9.7.2 静态采样器</h3>
+
+其实，图形应用通常只会用到少数几个采样器。因此，Direct3D 提供了一条特殊的捷径，可以定义一个采样器数组并把它们设置好，而不必走创建采样器堆的流程。`CD3DX12_ROOT_SIGNATURE_DESC` 类的 `Init` 函数有两个参数，让你可以定义一个所谓静态采样器数组供应用使用。静态采样器由 `D3D12_STATIC_SAMPLER_DESC` 结构描述。这个结构与 `D3D12_SAMPLER_DESC` 非常相似，但有以下例外：
+
+1. 对边界颜色可以取什么值有一些限制。具体来说，静态采样器的边界颜色必须是下列之一：
+
+   ```cpp
+   enum D3D12_STATIC_BORDER_COLOR
+   {
+     D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK   = 0,
+     D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK   = ( 
+       D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK + 1 ) ,
+     D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE   = ( 
+       D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK + 1 ) 
+   }D3D12_STATIC_BORDER_COLOR;
+   ```
+
+2. 它含有额外的字段来指定着色器寄存器、寄存器空间和着色器可见性，这些通常是在采样器堆中指定的。
+
+此外，你最多只能定义<a id="page382"/> 2032 个静态采样器，这对大多数应用来说绰绰有余。不过，如果你确实需要更多，就只需使用非静态采样器并走采样器堆即可。
+
+**译者注**：原文此句写作 "you can only define 2032 number of static samplers"，其中 "2032 number of" 写法不规范。译文按通顺译出并在此说明。
+
+我们在演示中使用静态采样器。下面的代码展示了我们如何定义静态采样器。注意，我们的演示并不需要所有这些静态采样器，但我们还是把它们都定义出来，以便需要时它们就在那里。反正只是少数几个，多定义几个可能用到也可能用不到的采样器并无坏处。
+
+```cpp
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6>     TexColumnsApp::GetStaticSamplers()
+{
+  // Applications usually only need a handful of samplers. So just define them 
+  // all up front and keep them available as part of the root signature. 
+
+  const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
+    0, // shaderRegister
+    D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+  const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+    1, // shaderRegister
+    D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+  const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
+    2, // shaderRegister
+    D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+  const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+    3, // shaderRegister
+    D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+  const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
+    4, // shaderRegister
+    D3D12_FILTER_ANISOTROPIC, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressW
+    0.0f,               // mipLODBias
+    8);                // maxAnisotropy
+
+  const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
+    5, // shaderRegister
+    D3D12_FILTER_ANISOTROPIC, // filter
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressW
+    0.0f,               // mipLODBias
+    8);                // maxAnisotropy
+
+  return { 
+    pointWrap, pointClamp,
+    linearWrap, linearClamp, 
+    anisotropicWrap, anisotropicClamp };
+}
+
+void TexColumnsApp::BuildRootSignature()
+{
+  CD3DX12_DESCRIPTOR_RANGE texTable;
+  texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+  // Root parameter can be a table, root descriptor or root constants.
+  CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+
+  slotRootParameter[0].InitAsDescriptorTable(1, 
+    &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+  slotRootParameter[1].InitAsConstantBufferView(0);
+  slotRootParameter[2].InitAsConstantBufferView(1);
+  slotRootParameter[3].InitAsConstantBufferView(2);
+
+  auto staticSamplers = GetStaticSamplers();
+
+  // A root signature is an array of root parameters.
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,
+    (UINT)staticSamplers.size(), staticSamplers.data(),
+    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+  // create a root signature with a single slot which points to a
+  // descriptor range consisting of a single constant buffer
+  ComPtr<ID3DBlob> serializedRootSig = nullptr;
+  ComPtr<ID3DBlob> errorBlob = nullptr;
+  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+    serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+  if(errorBlob != nullptr)
+  {
+    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+  }
+  ThrowIfFailed(hr);
+
+  ThrowIfFailed(md3dDevice->CreateRootSignature(
+    0,
+    serializedRootSig->GetBufferPointer(),
+    serializedRootSig->GetBufferSize(),
+    IID_PPV_ARGS(mRootSignature.GetAddressOf())));
+}
+```
+<a id="page384"/>
+</section>
+
+<section className="lesson-section" id="s98">
+<h2>9.8 在着色器中采样纹理</h2>
+
+纹理对象在 HLSL 中用如下语法定义，并赋给一个纹理寄存器：
+
+```hlsl
+Texture2D gDiffuseMap : register(t0);
+```
+
+注意，纹理寄存器由 tn 指定，其中 n 是标识纹理寄存器槽的整数。根签名定义指定了从槽参数到着色器寄存器的映射；应用代码正是借此把某个 SRV 绑定到着色器中的特定 `Texture2D` 对象上。
+
+**译者注**：原文此句写作 "texture registers use specified by tn"，其中 "use" 应为 "are"。译文按通顺译出并在此说明。
+
+同样，采样器对象也在 HLSL 中定义，并赋给一个采样器寄存器，语法如下：
+
+```hlsl
+SamplerState gsamPointWrap     : register(s0);
+SamplerState gsamPointClamp    : register(s1);
+SamplerState gsamLinearWrap    : register(s2);
+SamplerState gsamLinearClamp    : register(s3);
+SamplerState gsamAnisotropicWrap : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+```
+
+这些采样器对应于我们在上一节设置的静态采样器数组。注意，采样器寄存器由 sn 指定，其中 n 是标识采样器寄存器槽的整数。
+
+**译者注**：原文此句写作 "texture registers use specified by sn"，其中 "texture" 应为 "sampler"、"use" 应为 "are"，且上文已用 "texture registers" 指纹理寄存器。译文按通顺译出并在此说明。
+
+现在，给定像素着色器中某个像素的一对纹理坐标 (u, v)，我们实际上用 `Texture2D::Sample` 方法来采样一张纹理：
+
+```hlsl
+Texture2D gDiffuseMap : register(t0);
+
+SamplerState gsamPointWrap     : register(s0);
+SamplerState gsamPointClamp    : register(s1);
+SamplerState gsamLinearWrap    : register(s2);
+SamplerState gsamLinearClamp    : register(s3);
+SamplerState gsamAnisotropicWrap : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+
+struct VertexOut
+{
+  float4 PosH  : SV_POSITION;
+  float3 PosW  : POSITION;
+  float3 NormalW : NORMAL;
+  float2 TexC  : TEXCOORD;
+};
+
+float4 PS(VertexOut pin) : SV_Target
+{
+  float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+  …
+```
+
+我们为第一个参数传入一个 `SamplerState` 对象，表示<a id="page385"/>纹理数据将如何被采样；为第二个参数传入该像素的 (*u*, *v*) 纹理坐标。这个方法用 `SamplerState` 对象指定的过滤方法，返回纹理贴图在指定 (*u*, *v*) 点处插值得到的颜色。
+</section>
+
+<section className="lesson-section" id="s99">
+<h2>9.9 Crate 演示</h2>
+
+我们现在回顾一下给立方体添加板条箱纹理（如 图 9.1 所示）的关键要点。
+
+<h3 id="s991">9.9.1 指定纹理坐标</h3>
+
+`GeometryGenerator::CreateBox` 为盒子生成纹理坐标，使整张纹理图像映射到盒子的每一面上。为简洁起见，我们只展示前面、后面和顶面的顶点定义。还要注意，我们在 `Vertex` 构造函数中省略了法向量和切向量的坐标（纹理坐标以粗体标出）。
+
+```cpp
+GeometryGenerator::MeshData GeometryGenerator::CreateBox(
+  float width, float height, float depth, 
+  uint32 numSubdivisions)
+{
+  MeshData meshData;
+
+  Vertex v[24];
+
+  float w2 = 0.5f*width;
+  float h2 = 0.5f*height;
+  float d2 = 0.5f*depth;
+  
+  // Fill in the front face vertex data.
+  v[0] = Vertex(-w2, -h2, -d2, …, 0.0f, 1.0f);
+  v[1] = Vertex(-w2, +h2, -d2, …, 0.0f, 0.0f);
+  v[2] = Vertex(+w2, +h2, -d2, …, 1.0f, 0.0f);
+  v[3] = Vertex(+w2, -h2, -d2, …, 1.0f, 1.0f);
+
+  // Fill in the back face vertex data.
+  v[4] = Vertex(-w2, -h2, +d2, …, 1.0f, 1.0f);
+  v[5] = Vertex(+w2, -h2, +d2, …, 0.0f, 1.0f);
+  v[6] = Vertex(+w2, +h2, +d2, …, 0.0f, 0.0f);
+  v[7] = Vertex(-w2, +h2, +d2, …, 1.0f, 0.0f);
+
+  // Fill in the top face vertex data.
+  v[8] = Vertex(-w2, +h2, -d2, …, 0.0f, 1.0f);
+  v[9] = Vertex(-w2, +h2, +d2, …, 0.0f, 0.0f);
+  v[10] = Vertex(+w2, +h2, +d2, …, 1.0f, 0.0f);
+  v[11] = Vertex(+w2, +h2, -d2, …, 1.0f, 1.0f);
+```
+
+如果你需要帮助理解这些纹理<a id="page386"/>坐标为何这样指定，请回看 图 9.3。
+
+<h3 id="s992">9.9.2 创建纹理</h3>
+
+我们在初始化时从文件创建纹理，如下：
+
+```cpp
+// Helper structure to group data related to the texture.
+struct Texture
+{
+  // Unique material name for lookup.
+  std::string Name;
+
+  std::wstring Filename;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> Resource = nullptr;
+  Microsoft::WRL::ComPtr<ID3D12Resource> UploadHeap = nullptr;
+};
+
+std::unordered_map<std::string, std::unique_ptr<Texture>> mTextures;
+
+void CrateApp::LoadTextures()
+{
+  auto woodCrateTex = std::make_unique<Texture>();
+  woodCrateTex->Name = "woodCrateTex";
+  woodCrateTex->Filename = L"Textures/WoodCrate01.dds";
+  ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
+    mCommandList.Get(), woodCrateTex->Filename.c_str(),
+    woodCrateTex->Resource, woodCrateTex->UploadHeap));
+  
+  mTextures[woodCrateTex->Name] = std::move(woodCrateTex);
+}
+```
+
+我们所有唯一的纹理都存放在一个无序映射（unordered map）中，以便按名字查找。在生产代码中，加载纹理之前你应当先检查该纹理数据是否已经加载过（即它是否已经存在于这个无序映射中），以免被重复加载。
+
+<h3 id="s993">9.9.3 设置纹理</h3>
+
+一旦纹理已经创建、并且已为它在描述符堆中创建了 SRV，要把纹理绑定到管线供着色器程序使用，只需把它设置到根签名中期望该纹理的参数上：<a id="page387"/>
+
+```cpp
+// Get SRV to texture we want to bind.
+CD3DX12_GPU_DESCRIPTOR_HANDLE tex(
+mSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+tex.Offset(ri->Mat->DiffuseSrvHeapIndex, mCbvSrvDescriptorSize);
+
+…
+
+// Bind to root parameter 0. The root parameter description specifies which 
+// shader register slot this corresponds to.
+cmdList->SetGraphicsRootDescriptorTable(0, tex);
+```
+
+<h3 id="s994">9.9.4 更新后的 HLSL</h3>
+
+下面是修改后的 *Default.hlsl* 文件，它现在支持纹理（纹理相关代码以粗体标出）：
+
+```hlsl
+// Defaults for number of lights.
+#ifndef NUM_DIR_LIGHTS
+  #define NUM_DIR_LIGHTS 3
+#endif
+
+#ifndef NUM_POINT_LIGHTS
+  #define NUM_POINT_LIGHTS 0
+#endif
+
+#ifndef NUM_SPOT_LIGHTS
+  #define NUM_SPOT_LIGHTS 0
+#endif
+
+// Include structures and functions for lighting.
+#include "LightingUtil.hlsl"
+
+Texture2D  gDiffuseMap : register(t0);
+
+
+SamplerState gsamPointWrap        : register(s0);
+SamplerState gsamPointClamp       : register(s1);
+SamplerState gsamLinearWrap       : register(s2);
+SamplerState gsamLinearClamp      : register(s3);
+SamplerState gsamAnisotropicWrap  : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+
+// Constant data that varies per frame.
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+  float4x4 gTexTransform;
+};
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerObjectPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+  float4 gAmbientLight;
+
+  // Indices [0, NUM_DIR_LIGHTS) are directional lights;
+  // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
+  // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,
+  //     NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
+  // are spot lights for a maximum of MaxLights per object.
+  Light gLights[MaxLights];
+};
+
+cbuffer cbMaterial : register(b2)
+{
+  float4  gDiffuseAlbedo;
+  float3  gFresnelR0;
+  float  gRoughness;
+  float4x4 gMatTransform;
+};
+
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  float3 NormalL : NORMAL;
+  float2 TexC  : TEXCOORD;
+};
+
+struct VertexOut
+{
+  float4 PosH  : SV_POSITION;
+  float3 PosW  : POSITION;
+  float3 NormalW : NORMAL;
+  float2 TexC  : TEXCOORD;
+};
+
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout = (VertexOut)0.0f;
+   
+  // Transform to world space.
+  float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+  vout.PosW = posW.xyz;
+
+  // Assumes nonuniform scaling; otherwise, need to use 
+  // inverse-transpose of world matrix.
+  vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+
+  // Transform to homogeneous clip space.
+  vout.PosH = mul(posW, gViewProj);
+   
+  // Output vertex attributes for interpolation across triangle.
+  float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
+  vout.TexC = mul(texC, gMatTransform).xy;
+   
+  return vout;
+}
+
+float4 PS(VertexOut pin) : SV_Target
+{
+  float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+   
+  // Interpolating normal can unnormalize it, so renormalize it.
+  pin.NormalW = normalize(pin.NormalW);
+
+  // Vector from point being lit to eye. 
+  float3 toEyeW = normalize(gEyePosW - pin.PosW);
+
+  // Light terms.
+  float4 ambient = gAmbientLight*diffuseAlbedo;
+
+  const float shininess = 1.0f - gRoughness;
+  Material mat = { diffuseAlbedo, gFresnelR0, shininess };
+  float3 shadowFactor = 1.0f;
+  float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
+    pin.NormalW, toEyeW, shadowFactor);
+
+  float4 litColor = ambient + directLight;
+
+  // Common convention to take alpha from diffuse albedo.
+  litColor.a = diffuseAlbedo.a;
+
+  return litColor;
+}
+```
+<a id="page389"/>
+</section>
+
+<section className="lesson-section" id="s910">
+<h2>9.10 纹理变换</h2>
+
+我们有两个尚未讨论的常量缓冲变量：`gTexTransform` 和 `gMatTransform`。这两个变量在顶点着色器中用来变换输入的纹理坐标：
+
+```hlsl
+// Output vertex attributes for interpolation across triangle.
+float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
+vout.TexC = mul(texC, gMatTransform).xy;
+```
+
+纹理坐标表示<a id="page390"/>纹理平面中的二维点。因此，我们可以像对待任何其他点那样对它们做平移、旋转和缩放。下面是变换纹理的一些示例用途：
+
+1. 一张砖墙纹理沿一堵墙拉伸。墙的顶点目前的纹理坐标在 [0, 1] 范围内。我们把纹理坐标缩放 4 倍到 [0, 4] 范围，这样纹理就会在墙上重复四乘四次。
+2. 我们有一些云纹理铺在晴朗的蓝天上。通过把纹理坐标表示为时间的函数进行平移，云就在天空上动起来了。
+3. 纹理旋转有时对粒子类效果有用，例如让一个火球纹理随时间旋转。
+
+在"Crate"演示中，我们使用单位矩阵变换，使输入的纹理坐标保持不变；但在下一节我们会讲一个确实使用了纹理变换的演示。
+
+注意，要用 4 × 4 矩阵变换二维纹理坐标，我们需要把它增广为四维向量：
+
+```cpp
+vin.TexC ---> float4(vin.Tex, 0.0f, 1.0f)
+```
+
+乘法完成后，得到的四维向量会通过丢弃 z 和 w 分量转回二维向量。也就是说，
+
+```cpp
+vout.TexC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform).xy;
+```
+
+我们使用两个独立的纹理变换矩阵 `gTexTransform` 和 `gMatTransform`，因为有时让材质来变换纹理更合理（比如水这类动画材质），而有时让纹理变换成为对象的一个属性更合理。
+
+**译者注**：上面第一段代码中的 `vin.Tex` 与紧随其后第二段代码中的 `vin.TexC` 不一致，原文如此；译文按原文照录。
+
+因为我们处理的是二维纹理坐标，所以我们只关心对前两个坐标所做的变换。例如，如果纹理矩阵平移了 z 坐标，它不会对最终的纹理坐标产生任何影响。
+</section>
+
+<section className="lesson-section" id="s911">
+<h2>9.11 Land Tex 与 Waves 演示</h2>
+
+在这个演示中，我们给陆地和水面场景添加纹理。第一个关键问题是，我们在大片陆地上平铺一张草地纹理。由于陆地网格是一大片表面，如果我们只简单地把一张纹理拉伸铺在上面，那么每个三角形上覆盖的纹素就会太少。换句话说，表面的纹理分辨率不够，于是我们会得到放大瑕疵。因此，我们在陆地网格上重复草地纹理以获得更多分辨率。<a id="page391"/>第二个关键问题是，我们让水面的纹理随时间在水面几何体上滚动。这份额外的运动让水面看起来更有说服力。图 9.15 展示了该演示的一张截图。
+
+<Figure src="images/Fig9-15.jpg" alt="Land Tex 演示的截图" figureNumber="图 9.15" caption="Land Tex 演示的截图。" />
+
+<h3 id="s9111">9.11.1 网格纹理坐标生成</h3>
+
+图 9.16 展示了 *xz* 平面中一个 *m* × *n* 的网格，以及归一化纹理空间 [0, 1]² 中对应的一个网格。从图中可以清楚看出，*xz* 平面中第 *ij* 个网格顶点的纹理坐标，就是纹理空间中第 *ij* 个网格顶点的坐标。第 *ij* 个顶点的纹理空间坐标为：
+
+$$u_{ij}=j\cdot\Delta u$$
+$$v_{ij}=i\cdot\Delta v$$
+
+其中
+
+$$\Delta u=\frac{1}{n-1},\qquad \Delta v=\frac{1}{m-1}$$
+
+<Figure src="images/Fig9-16.jpg" alt="xz 空间中的网格顶点 v_ij 的纹理坐标由 uv 空间中第 ij 个网格顶点 T_ij 给出" figureNumber="图 9.16" caption="xz 空间中网格顶点 vᵢⱼ 的纹理坐标由 uv 空间中第 ij 个网格顶点 Tᵢⱼ 给出。" />
+
+因此，我们用下面的代码为 `GeometryGenerator::CreateGrid` 方法中的网格生成纹理坐标：<a id="page392"/>
+
+```cpp
+GeometryGenerator::MeshData 
+GeometryGenerator::CreateGrid(float width, float depth, uint32 m, uint32 n)
+{
+  MeshData meshData;
+
+  uint32 vertexCount = m*n;
+  uint32 faceCount   = (m-1)*(n-1)*2;
+
+  float halfWidth = 0.5f*width;
+  float halfDepth = 0.5f*depth;
+
+  float dx = width / (n-1);
+  float dz = depth / (m-1);
+
+  float du = 1.0f / (n-1);
+  float dv = 1.0f / (m-1);
+
+  meshData.Vertices.resize(vertexCount);
+  for(uint32 i = 0; i < m; ++i)
+  {
+    float z = halfDepth - i*dz;
+    for(uint32 j = 0; j < n; ++j)
+    {
+      float x = -halfWidth + j*dx;
+
+      meshData.Vertices[i*n+j].Position = XMFLOAT3(x, 0.0f, z);
+      meshData.Vertices[i*n+j].Normal   = XMFLOAT3(0.0f, 1.0f, 0.0f);
+      meshData.Vertices[i*n+j].TangentU = XMFLOAT3(1.0f, 0.0f, 0.0f);
+
+      // Stretch texture over grid.
+      meshData.Vertices[i*n+j].TexC.x = j*du;
+      meshData.Vertices[i*n+j].TexC.y = i*dv;
+    }
+  }
+```
+
+<h3 id="s9112">9.11.2 纹理平铺</h3>
+
+我们说过想在陆地网格上平铺一张草地纹理。但到目前为止，我们算出的纹理坐标都落在单位域 [0, 1]² 内，所以不会发生平铺。要平铺纹理，我们指定 wrap 寻址模式，并用一个纹理变换矩阵把纹理坐标缩放 5 倍。于是纹理坐标被映射到 [0, 5]² 域，这样纹理就在陆地网格表面上平铺 5 × 5 次：
+
+```cpp
+void TexWavesApp::BuildRenderItems()
+{
+  auto gridRitem = std::make_unique<RenderItem>();
+  gridRitem->World = MathHelper::Identity4x4();
+  XMStoreFloat4x4(&gridRitem->TexTransform, 
+    XMMatrixScaling(5.0f, 5.0f, 1.0f));
+  …
+}
+```
+<a id="page393"/>
+
+<h3 id="s9113">9.11.3 纹理动画</h3>
+
+要让水面纹理在水面几何体上滚动，我们在 `AnimateMaterials` 方法中把纹理坐标表示为时间的函数、在纹理平面内平移它；该方法在每个更新周期都会被调用。只要每一帧的位移足够小，就能产生平滑动画的效果。我们使用 wrap 寻址模式并配上一张无缝纹理，这样就可以在纹理空间平面内无缝地平移纹理坐标。下面的代码展示了我们如何计算水面纹理的偏移向量，以及如何构建和设置水面的纹理矩阵：
+
+```cpp
+void TexWavesApp::AnimateMaterials(const GameTimer& gt)
+{
+   // Scroll the water material texture coordinates.
+   auto waterMat = mMaterials["water"].get();
+
+   float& tu = waterMat->MatTransform(3, 0);
+   float& tv = waterMat->MatTransform(3, 1);
+
+   tu += 0.1f * gt.DeltaTime();
+   tv += 0.02f * gt.DeltaTime();
+
+   if(tu >= 1.0f)
+      tu -= 1.0f;
+
+   if(tv >= 1.0f)
+      tv -= 1.0f;
+
+   waterMat->MatTransform(3, 0) = tu;
+   waterMat->MatTransform(3, 1) = tv;
+
+   // Material has changed, so need to update cbuffer.
+   waterMat->NumFramesDirty = gNumFrameResources;
+}
+```
+</section>
+
+<section className="lesson-section" id="s912">
+<h2>9.12 本章小结</h2>
+
+1. 纹理坐标用来在纹理上定义一个三角形，该三角形会被映射到三维三角形上。
+2. 游戏中最常见的创建纹理的方式，是让美术师在 Photoshop 或其他图像编辑器中制作，然后保存为 BMP、DDS、TGA 或 PNG 之类的图像文件。随后，游戏程序在加载<a id="page394"/>时会把这些图像数据加载到一个 `ID3D12Resource` 对象中。对于实时图形应用，首选 DDS（DirectDraw Surface 格式）图像文件格式，因为它支持各种各样 GPU 能原生理解的图像格式；尤其是它支持可由 GPU 原生解压的压缩图像格式。
+3. 把传统图像格式转换为 DDS 格式有两种流行方法：使用一个能导出 DDS 的图像编辑器，或使用一个名为 texconv 的 Microsoft 命令行工具。
+4. 我们可以用 `CreateDDSTextureFromFile12` 函数从磁盘上的图像文件创建纹理，该函数位于 DVD 上的 *Common/DDSTextureLoader.h/.cpp* 中。
+5. 当我们放大一个表面、试图用少量纹素覆盖太多屏幕像素时，就发生放大。当我们缩小一个表面、太多纹素试图覆盖太少屏幕像素时，就发生缩小。mipmap 和纹理过滤器是处理放大和缩小的技术。GPU 原生支持三种纹理过滤（按质量从低到高、开销从低到高排列）：点过滤、线性过滤和各向异性过滤。
+6. 寻址模式定义当纹理坐标超出 [0, 1] 范围时 Direct3D 应该怎么做。例如，纹理应当被平铺、镜像、钳制，等等。
+7. 纹理坐标可以像其他点一样被缩放、旋转和平移。通过每一帧对纹理坐标做一小步增量变换，我们就让纹理动了起来。
+</section>
+
+<section className="lesson-section" id="s913">
+<h2>9.13 习题</h2>
+
+1. 用"Crate"演示做实验，改变纹理坐标，并使用不同的寻址模式组合和过滤选项。尤其是，重现 图 9.7、9.9、9.10、9.11、9.12 和 9.13 中的图像。
+2. 使用 DirectX Texture Tool，我们可以手动指定每一级 mipmap（**File->Open Onto This Surface**）。创建一个带有像 图 9.17 那样一条 mipmap 链的 DDS 文件，在每一级上放上不同的文字描述或颜色，以便你能轻易区分各 mipmap 层级。修改 Crate 演示，使用这张纹理，并让摄像机来回缩放，以便你能明确看出 mipmap 层级的变化。点过滤和线性过滤两种 mipmap 过滤都试一下。
+
+   <Figure src="images/Fig9-17.jpg" alt="一条手动构造的 mipmap 链，每一级都易于区分" figureNumber="图 9.17" caption="一条手动构造的 mipmap 链，使每一级都易于区分。" /><a id="page395"/>
+
+3. 给定两张大小相同的纹理，我们可以通过不同的运算把它们组合成一张新图像。更一般地说，这称为多重纹理（multitexturing），即用多张纹理来获得某个结果。例如，我们可以对两张纹理的对应纹素做相加、相减或（逐分量）相乘。图 9.18 展示了对两张纹理逐分量相乘、得到一个火球般结果的效果。本题要求修改"Crate"演示，在像素着色器中把 图 9.18 中的两张源纹理组合起来，在每个立方体面上产生那张火球纹理。（本题的图像文件可从本书网站下载。）注意，你将不得不修改 Default.hlsl 以支持一张以上的纹理。
+
+   <Figure src="images/Fig9-18.jpg" alt="对两张纹理的对应纹素逐分量相乘，产生一张新纹理" figureNumber="图 9.18" caption="对两张纹理的对应纹素逐分量相乘，产生一张新纹理。" />
+
+4. 修改习题 3 的解，把火球纹理表示为时间的函数、在每个立方体面上旋转它。
+5. 设 **p**₀、**p**₁ 和 **p**₂ 是某个三维三角形的顶点，它们各自的纹理坐标为 **q**₀、**q**₁ 和 **q**₂。回顾 §9.2，对于三维三角形上的任意一点 **p**(*s*, *t*) = **p**₀ + *s*(**p**₁ − **p**₀) + *t*(**p**₂ − **p**₀)，其中 s ≥ 0、*t* ≥ 0、*s* + *t* ≤ 1，它的纹理坐标 (*u*, *v*) 可以用同样的 *s*、*t* 参数在三维三角形上对顶点纹理坐标做线性插值得到：
+
+   $$(u,v)=\mathbf{q}_0+s(\mathbf{q}_1-\mathbf{q}_0)+t(\mathbf{q}_2-\mathbf{q}_0)$$
+
+   1. 给定 (*u*, *v*) 以及 **q**₀、**q**₁ 和 **q**₂，用 *u* 和 *v* 解出 (*s*, *t*)（提示：考虑向量方程 (*u*, *v*) = **q**₀ + *s*(**q**₁ − **q**₀) + *t*(**q**₂ − **q**₀)。）
+   2. 把 **p** 表示成 *u* 和 *v* 的函数；也就是说，求出一个公式 **p** = **p**(*u*, *v*)。
+   3. 计算 ∂**p**/∂*u* 和 ∂**p**/∂*v*，并对这两个向量给出几何解释。
+6. 修改上一章的"LitColumns"演示，给地面、柱子和球体添加纹理（图 9.19）。这些纹理可以在本章的代码目录中找到。<a id="page396"/>
+
+   <Figure src="images/Fig9-19.jpg" alt="贴了纹理的柱子场景" figureNumber="图 9.19" caption="贴了纹理的柱子场景。" />
+</section>

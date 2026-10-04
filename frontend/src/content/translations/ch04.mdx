@@ -571,7 +571,7 @@ HRESULT ID3D12Device::CreateCommandList(
 ```
 
 1. `nodeMask`：单 GPU 系统设为 0。<a id="page111"/>否则，节点掩码标识该命令列表关联的物理 GPU。本书假定为单 GPU 系统。
-2. `type`：命令列表的类型：`_COMMAND_LIST_TYPE_DIRECT` 或 `D3D12_COMMAND_LIST_TYPE_BUNDLE`。
+2. `type`：命令列表的类型：`D3D12_COMMAND_LIST_TYPE_DIRECT` 或 `D3D12_COMMAND_LIST_TYPE_BUNDLE`。
 3. `pCommandAllocator`：与所创建命令列表关联的分配器。命令分配器的类型必须与命令列表类型一致。
 4. `pInitialState`：指定命令列表的初始管线状态。对 bundle 可以为 null；在命令列表仅为初始化目的而执行、且不包含任何绘制命令的特殊情形下也可以为 null。`ID3D12PipelineState` 会在第 6 章讨论。
 5. `riid`：我们想创建的 `ID3D12CommandList` 接口的 COM ID。

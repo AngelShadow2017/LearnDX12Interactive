@@ -90,8 +90,11 @@
 2. 全文搜索 `[[IMG`，译文中不得残留提取标记。
 3. 每张公式图片都应是已确认的 LaTeX，或仍显示为可放大的原图且列在不确定清单；不允许静默遗漏或猜公式。
 4. 核对所有 `images/...` 文件存在且路径大小写正确；禁止绝对 `/images/...` 路径。
-5. 完成一批后运行 `npm run check:translation-terms`、`npm run build`、`npm test` 和 `npm run check:translations`。全书文件齐备后运行 `npm run check:translations:complete`。
-6. 不使用截图或远程操控浏览器。可直接阅读 EPUB 文件及其图片资源。
+5. 每章同时完成两项独立核验，并在复核记录中分别标状态：
+   - **术语一致性：**运行 `npm run check:translation-terms`，再检查新增术语是否应补入 `TERMINOLOGY.md`。脚本通过不代表正文忠实度已通过。
+   - **原文忠实度：**按 EPUB 顺序逐段对照中文说明、定义、推导、例题讲解、图注、总结和全部习题题干/子题；检查遗漏、增义、反义、数值和变量名错误。发现原书自身错误时照录并加“译者注”，不要把它误记为译文错误。
+6. 完成一批后运行 `npm run build`、`npm test` 和 `npm run check:translations`。全书文件齐备后运行 `npm run check:translations:complete`。
+7. 不使用截图或远程操控浏览器。可直接阅读 EPUB 文件及其图片资源。
 
 ## 可直接交给复制模型的开场指令
 

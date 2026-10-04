@@ -586,8 +586,8 @@ XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
    1. 加法：u + v = (uₓ + vₓ, uᵧ + vᵧ, u_z + v_z)；
    2. 减法：u − v = (uₓ − vₓ, uᵧ − vᵧ, u_z − v_z)；
    3. 数乘：ku = (kuₓ, kuᵧ, ku_z)；
-   4. 长度：‖u‖ = √(x² + y² + z²)；
-   5. 归一化：û = u/‖u‖ = (x/‖u‖, y/‖u‖, z/‖u‖)；
+   4. 长度：‖u‖ = √(uₓ² + uᵧ² + u_z²)；
+   5. 归一化：û = u/‖u‖ = (uₓ/‖u‖, uᵧ/‖u‖, u_z/‖u‖)；
    6. 点积：u · v = ‖u‖‖v‖ cos θ = uₓvₓ + uᵧvᵧ + u_zv_z；
    7. 叉积：u × v = (uᵧv_z − u_zvᵧ, u_zvₓ − uₓv_z, uₓvᵧ − uᵧvₓ)。
 3. 代码中使用 DirectXMath 的 `XMVECTOR` 类型，以 SIMD 操作高效描述向量。类的数据成员使用 `XMFLOAT2`、`XMFLOAT3` 和 `XMFLOAT4`，再用加载和存储方法在 `XMVECTOR` 与 `XMFLOATn` 之间来回转换。需要初始化语法的常量向量应使用 `XMVECTORF32` 类型。

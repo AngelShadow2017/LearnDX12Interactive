@@ -51,7 +51,7 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <section className="lesson-section" id="s194">
 <h2>19.4 顶点切线空间</h2>
 
-<p>由于每个面的切线空间都不同（图 19.5），切线必须作为<b>逐顶点属性</b>存进顶点缓冲。顶点着色器里用 <code>float3x3(T, B, N)</code> 打包传给像素着色器。</p>
+<p>由于每个面的切线空间都不同（图 19.5），切线 T 必须作为<b>逐顶点属性</b>存进顶点缓冲。原书的顶点着色器把几何法线 N 和切线 T 变换到世界空间后传给像素着色器；像素着色器在插值后重新正交化 T，再构造 TBN 基。</p>
 
 <Callout tone="warning">
   <b>工程补充：镜像 UV 的手性</b>
@@ -79,6 +79,7 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
   language="hlsl"
   code={`struct VertexOut
 {
+    float4 PosH : SV_POSITION;
     float2 TexC : TEXCOORD;
     float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
@@ -98,12 +99,12 @@ float4 PS(VertexOut pin) : SV_Target
 {
     float3 sample = gNormalMap.Sample(gSampler, pin.TexC).rgb;
     float3 bumpedNormalW = NormalSampleToWorldSpace(sample, pin.NormalW, pin.TangentW);
-    // 用 bumpedNormalW 做光照，也可用于环境贴图反射
+    // 本行用伪彩色显示法线；原书将 bumpedNormalW 用于光照和环境贴图反射。
     return float4(bumpedNormalW * 0.5f + 0.5f, 1.0f);
 }`}
   input={<>一张切线空间法线贴图，以及逐顶点的 N / T。</>}
   keyLines={[
-    { code: '2.0f * packedN - 1.0f', note: '解包：[0,1] → [−1,1]。漏掉这步，法线全都偏向 (0,0,1)。' },
+    { code: 'float3 normalT = 2.0f * sample - 1.0f', note: '解包：[0,1] → [−1,1]。漏掉这步，法线全都偏向 (0,0,1)。' },
     { code: 'T = normalize(tangentW - dot(tangentW, N) * N)', note: 'Gram–Schmidt 正交化，去掉 T 沿 N 的分量。' },
     { code: 'mul(normalT, TBN)', note: '按行向量约定，用 TBN 基把切线空间法线变换到世界空间。' },
   ]}
@@ -114,6 +115,10 @@ float4 PS(VertexOut pin) : SV_Target
   ]}
 />
 
+<Callout tone="note">
+  <b>教学扩展：法线强度</b>
+  <p>原书的法线变换函数没有强度参数，也没有这张合成纹理交互。交互用正弦高度场的梯度生成法线，再额外缩放切线空间 x/y 分量，帮助观察法线偏离平面几何后高光如何变化。</p>
+</Callout>
 <NormalStrengthActivity />
 </section>
 

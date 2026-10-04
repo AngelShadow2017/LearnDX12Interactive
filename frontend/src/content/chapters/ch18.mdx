@@ -11,6 +11,12 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 <p>「撞到哪一面」由方向各分量<b>绝对值最大的那个</b>决定（主轴规则），它的符号区分正负面；剩下两个分量除以主轴分量就得到该面内的 (u, v)。</p>
 
 <CubeFacePickActivity />
+</section>
+
+<section className="lesson-section" id="s182">
+<h2>18.2 环境贴图</h2>
+
+<p>环境贴图用从某个位置观察到的周围环境六张图，近似记录环境，并存成一个立方体贴图。它可用于天空，也可近似表面反射。原书提到可用 <code>texassemble</code> 把六张面图组成立方体贴图；D3D12 资源按六层纹理数组存储，着色器侧用 <code>TextureCube</code> 采样，SRV 维度设为 <code>D3D12_SRV_DIMENSION_TEXTURECUBE</code>。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig18-2.jpg" alt="展开后的环境贴图：六面拼在一起" figureNumber="图 18.2" caption="「展开」后的环境贴图：六面拼在一起，可以想象再折回立方体。" />
@@ -65,19 +71,35 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 </section>
 
 <section className="lesson-section" id="s186">
+<h2>18.6 几何着色器生成动态立方体贴图</h2>
+
+<p>原书还介绍一种替代方案：把立方体贴图的六个面作为纹理数组渲染目标，几何着色器将输入三角形复制到六个视图，并用 <code>SV_RenderTargetArrayIndex</code> 指定目标面。这样场景只提交一次，而不是逐面提交六次。</p>
+
+<Callout tone="warning">
+  <b>一次提交不保证更快</b>
+  <p>几何着色器要复制并输出大量几何；普通场景里的三角形通常只落在一个立方体面，却会被送往六个面。原书指出，这种方法未必胜过逐面渲染并按面做视锥剔除。它是另一种实现策略，不是前一节示例的默认流程。</p>
+</Callout>
+</section>
+
+<Callout tone="note">
+  <b>练习延伸：用立方体贴图模拟折射</b>
+  <p>原书把折射列为练习：介质折射率 n₁、n₂ 决定光线弯曲方向；HLSL 的 <code>refract(incident, normal, n₁/n₂)</code> 可计算折射方向。n₂ 大于 n₁ 时光线向法线弯，反之远离法线。实时示例通常只模拟进入透明材质时的第一次折射。</p>
+</Callout>
+
+<div className="figure-pair">
+  <Figure src="images/Fig18-10.jpg" alt="折射光从介质 n1 进入透明材质 n2" figureNumber="图 18.10" caption="折射光从折射率 n1 的介质进入折射率 n2 的透明材质。" />
+  <Figure src="images/Fig18-11.jpg" alt="Cube 演示改用折射而非反射" figureNumber="图 18.11" caption="Cube 演示改用折射采样，呈现玻璃骷髅效果。" />
+</div>
+
+<section className="lesson-section" id="s187">
 <h2>本章小结</h2>
 
 <ul>
   <li>立方体贴图用 3D 方向寻址；命中哪一面由绝对值最大的分量（及其符号）决定。</li>
   <li>天空盒用视线方向采样，通常画一个跟随相机的巨大立方体或全屏三角形。</li>
   <li>反射采样方向 = 反射向量 r = d − 2(d·n)n，实际用 r 与立方体交点的方向查贴图。</li>
-  <li>静态环境贴图不会记录生成之后移动的物体；动态立方体贴图可反映当前场景，但每次更新要渲染 6 个面。</li>
+  <li>静态环境贴图不会记录生成之后移动的物体；本章常规动态立方体贴图每次更新渲染 6 个面。原书也介绍几何着色器一次提交到 6 面的替代方案，但它不一定更快。</li>
 </ul>
-
-<div className="figure-pair">
-  <Figure src="images/Fig18-10.jpg" alt="入射光进入透明材质时发生折射" figureNumber="图 18.10" caption="入射光在折射率 n1 的介质中传播，进入透明材质 n2 时发生折射。" />
-  <Figure src="images/Fig18-11.jpg" alt="Cube 演示改用折射而非反射" figureNumber="图 18.11" caption='"Cube" 演示改用折射而非反射（玻璃骷髅效果）。' />
-</div>
 
 <Checkpoint
   chapterId="ch18"
@@ -106,10 +128,10 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
     },
     {
       id: 'ch18-a4',
-      question: '动态立方体贴图每帧的额外开销是多少？',
+      question: '本章常规动态立方体贴图示例每次更新要渲染多少个视图？',
       options: ['0 次渲染，只多一次采样', '6 次渲染（6 个面）', '1 次渲染', '6 次采样'],
       answer: 1,
-      explanation: '要把相机放到物体中心分别朝 6 个方向渲染一遍，所以是 6 次额外渲染。实践中常按重要程度降低更新频率。',
+      explanation: '本章常规示例逐面渲染六个方向；原书另介绍几何着色器一次提交六面的替代方案，但它不保证更快。实践中也可降低更新频率。',
     },
   ]}
 />
@@ -128,7 +150,7 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
   verify={[
     '我跑通了 DynamicCubeMap 示例。',
     '我观察到反射随物体移动而变化。',
-    '我能说明动态贴图每帧的 6 次渲染开销。',
+    '我能说明本章常规做法逐面渲染 6 个方向，并知道原书还讨论了几何着色器方案。',
   ]}
 />
 </section>

@@ -34,7 +34,11 @@ mCommandList->ClearDepthStencilView(
 
 <p>模板测试发生在深度测试<b>之前</b>。形式如下：</p>
 
-<div className="math-block">(StencilRef &amp; StencilReadMask) ⊴ (Value &amp; StencilReadMask)<small>Value 是模板缓冲里的当前值；⊴ 是比较函数；不通过则丢弃像素</small></div>
+$$
+(\operatorname{StencilRef}\;\&\;\operatorname{StencilReadMask})\;\mathrel{\trianglelefteq}\;(\operatorname{Value}\;\&\;\operatorname{StencilReadMask})
+$$
+
+<p className="math-note">Value 是模板缓冲中的当前值；中间的比较关系代表配置的比较函数。测试不通过时，像素片段会被丢弃。</p>
 
 <p>模板测试不通过时，这个片元在输出合并阶段被丢弃，<b>不会写入颜色或深度</b>。像素着色器位于输出合并之前，因此不能据此断言它一定没有执行；但模板值可以限制哪些片元最终写入目标。这正是「倒影不穿墙」的实现方式（图 11.1）。</p>
 

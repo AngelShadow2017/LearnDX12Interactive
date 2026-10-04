@@ -3,6 +3,17 @@ import path, { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import mdx from '@mdx-js/rollup';
+import bash from 'highlight.js/lib/languages/bash';
+import cpp from 'highlight.js/lib/languages/cpp';
+import glsl from 'highlight.js/lib/languages/glsl';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import powershell from 'highlight.js/lib/languages/powershell';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
+import remarkMath from 'remark-math';
 import { defineConfig, type Plugin } from 'vite';
 
 const frontendRoot = dirname(fileURLToPath(import.meta.url));
@@ -37,7 +48,19 @@ export default defineConfig({
   base: './',
   publicDir: false,
   plugins: [
-    { enforce: 'pre', ...mdx({ jsxImportSource: 'react', providerImportSource: '@mdx-js/react' }) },
+    {
+      enforce: 'pre',
+      ...mdx({
+        jsxImportSource: 'react',
+        providerImportSource: '@mdx-js/react',
+        remarkPlugins: [remarkMath],
+        rehypePlugins: [rehypeKatex, [rehypeHighlight, {
+          detect: false,
+          ignoreMissing: true,
+          languages: { bash, cpp, c: cpp, glsl, hlsl: cpp, javascript, json, powershell, sh: bash, typescript, xml, html: xml },
+        }]],
+      }),
+    },
     react(),
     imageAssets(),
   ],

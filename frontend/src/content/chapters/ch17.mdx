@@ -16,7 +16,11 @@ import { PickRayActivity } from '@/activities/ch17/PickRayActivity';
 
 <Figure src="images/Fig17-4.jpg" alt="用相似三角形推导射线参数" figureNumber="图 17.4" caption="用相似三角形推导射线参数。" />
 
-<div className="math-block">v<sub>view</sub> = (x<sub>ndc</sub> / p₀₀, y<sub>ndc</sub> / p₁₁, 1)<small>Direct3D 左手系：相机在原点、看向 +z</small></div>
+$$
+\mathbf{v}_{view}=\left(\frac{x_{ndc}}{p_{00}},\frac{y_{ndc}}{p_{11}},1\right)
+$$
+
+<p className="math-note">Direct3D 左手系中，相机位于原点并朝 +z 方向看；这个向量给出视空间里的射线方向。</p>
 
 <Callout tone="tip">
   <b>屏幕坐标要翻成 NDC</b>
@@ -30,7 +34,7 @@ import { PickRayActivity } from '@/activities/ch17/PickRayActivity';
 <p>视空间射线先乘<b>视图矩阵的逆</b>（相机世界矩阵）变成世界空间；要和某个网格的局部顶点求交，还要再乘该网格世界矩阵的逆。原书直接把两步合成 <code>invView · invWorld</code>（按行向量约定）。每个网格的局部坐标系不同，所以必须对每个网格分别变换射线。变换原点按点处理（w = 1），方向按向量处理（w = 0）；最后将方向归一化，满足相交 API 的输入约定。</p>
 
 <CodeSample
-  title="把点击变成世界空间射线"
+  title="构造拾取射线并转换到网格局部空间（核心伪代码）"
   language="cpp"
   code={`// 1) 窗口坐标 -> NDC（y 要翻转）
 float ndcX =  (x * 2.0f - mClientWidth)  / mClientWidth;
@@ -58,6 +62,7 @@ XMVECTOR rayDirL = XMVector3Normalize(
         XMVector3TransformNormal(rayDirV, viewToLocal));
     // 调用包围盒 / 三角形相交例程；命中时得到局部距离 tLocal。
     float tLocal = 0.0f; // 由相交例程写入
+    // IntersectMesh 表示：先测局部包围盒，再用 TriangleTests::Intersects 遍历 CPU 三角形副本。
     bool hit = IntersectMesh(rayOriginL, rayDirL, ri, tLocal);
     if (!hit) continue;
     XMVECTOR hitPointL = XMVectorMultiplyAdd(
@@ -70,13 +75,13 @@ XMVECTOR rayDirL = XMVector3Normalize(
     if (distanceW > 0.0f && distanceW < closestDistanceW)
         closestDistanceW = distanceW; // 保存这个最近的网格 / 三角形
 }`}
-  input={<>鼠标窗口坐标、投影矩阵、相机视图矩阵，以及每个绘制项的世界矩阵。</>}
+  input={<>鼠标窗口坐标、投影矩阵、相机视图矩阵、每个绘制项的世界矩阵，以及用于拾取的 CPU 网格顶点/索引副本。</>}
   keyLines={[
     { code: '1.0f / mProj[0][0]', note: '投影矩阵的两个缩放项就是这一步要除的数；写成倒数直接相乘更快。' },
     { code: 'XMVector3TransformNormal(rayDirV, viewToLocal)', note: '把方向按 w = 0 变换，不会带上平移；物体缩放会改变方向长度，所以随后归一化。' },
     { code: 'XMMatrixMultiply(invView, invWorld)', note: '行向量先经 invView 到世界，再经 invWorld 到当前网格局部空间。跨网格比较命中时应统一回世界空间。' },
   ]}
-  output={<>一条从相机出发、穿过被点击屏幕点的世界空间射线。</>}
+  output={<>先得到视空间射线，再为每个绘制项变换出局部空间射线；命中点回到世界空间后，才能可靠地跨物体比较远近。</>}
   pitfalls={[
     '忘记翻转 y：拾取位置上下颠倒。',
     '把方向当点变换：平移会污染射线方向；方向应用 TransformNormal（w = 0）。',
@@ -88,13 +93,18 @@ XMVECTOR rayDirL = XMVector3Normalize(
 <section className="lesson-section" id="s173">
 <h2>17.3 射线与网格求交</h2>
 
-<p>有了射线，接下来遍历网格求交。书中用 Möller–Trumbore 算法：先把射线投影到三角形的平面里，用斜坐标系下的 (u, v) 重心坐标判断是否落在三角形内（图 17.5），再算出沿射线的距离 t。</p>
+<p>有了射线，接下来遍历网格求交。原书调用 DirectX Collision 的 <code>TriangleTests::Intersects</code>；这一相交问题可写成射线参数 t 与三角形重心坐标 (u, v) 的方程组（图 17.5）。判定点是否落在三角形内，并得到沿射线的距离 t。</p>
 
 <p>命中条件有三个：<code>u ≥ 0</code>、<code>v ≥ 0</code>、<code>u + v ≤ 1</code>，以及 <code>t &gt; 0</code>（交点必须在射线前方）。</p>
 
 <Figure src="images/Fig17-5.jpg" alt="三角形平面内的点 p 相对斜坐标系的 u、v 坐标" figureNumber="图 17.5" caption="三角形平面内的点 p 相对以 v0 为原点的斜坐标系的 (u,v) 坐标（重心坐标）。" />
 
 <PickRayActivity />
+
+<Callout tone="note">
+  <b>拾取使用 CPU 侧网格数据</b>
+  <p>原书从 <code>MeshGeometry</code> 保存的系统内存副本读取顶点和索引；GPU 正在使用的顶点/索引缓冲不是这样直接读回的。实际项目也可为拾取保存简化网格以节省计算。</p>
+</Callout>
 
 <Callout tone="note">
   <b>为什么一定要比 t</b>

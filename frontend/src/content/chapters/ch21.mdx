@@ -10,7 +10,12 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 
 <p><b>射线法</b>的思路很直观：从表面点 p 向<b>上半球</b>均匀发射 N 根射线，被其他几何挡住的那些对应「这里接收不到的环境光」（图 21.2、21.3）。</p>
 
-<div className="math-block">遮蔽率(p) = 被挡射线数 / 总射线数；环境可见度(p) = 1 − 遮蔽率(p)</div>
+$$
+\begin{aligned}
+\text{遮蔽率}(\mathbf{p}) &= \frac{\text{被挡射线数}}{\text{总射线数}} \\
+\text{环境可见度}(\mathbf{p}) &= 1-\text{遮蔽率}(\mathbf{p})
+\end{aligned}
+$$
 
 <div className="figure-pair">
   <Figure src="images/Fig21-2.jpg" alt="完全无遮挡与部分被遮挡的半球采样" figureNumber="图 21.2" caption="(a) 完全无遮挡：上半球所有入射光都能到达 p；(b) 部分被遮挡：角落变暗。" />
@@ -23,7 +28,7 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 
 <Callout tone="tip">
   <b>射线法很贵</b>
-  <p>每个像素发 N 根射线，还要做相交测试。实时渲染通常不用它，而是：① 离线烘焙进光照贴图；② 用第 13 章的 GPU 计算做屏幕空间近似（SSAO）。</p>
+  <p>若实时对每个像素发 N 根射线并求相交，成本很高。原书的射线法示例是预计算：从三角形质心发射射线、把结果平均到顶点，并用八叉树加速求交。动态场景通常改用屏幕空间近似（SSAO）。</p>
 </Callout>
 </section>
 
@@ -33,6 +38,15 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 <p>SSAO 用<b>视空间法线缓冲和深度缓冲</b>近似射线法：它不读取完整场景网格，但需要由深度重建表面位置，并用法线判断候选点是否位于表面朝向的一侧。</p>
 
 <p>做法（图 21.5）：从深度重建当前像素的视空间位置 p，在其法线半球和设定半径内生成随机样本点 q；把 q 投影到屏幕，读取该视线方向上最近可见点 r 的深度并重建 r。若 <code>|p.z − r.z|</code> 在有效范围内，再根据 <code>dot(n, r − p)</code> 判断方向，估计 r 是否遮挡 p；多个样本的结果汇总成可见度。</p>
+
+<ol>
+  <li><b>重建当前表面：</b>由深度值和反投影关系恢复视空间位置 p，再读取法线 n。</li>
+  <li><b>在局部半球取样：</b>围绕 p 生成候选位置 q；半径决定只考虑多近的邻近几何。</li>
+  <li><b>查屏幕上实际可见的几何：</b>将 q 投影到屏幕，用深度缓冲重建射线上最近的表面点 r。</li>
+  <li><b>过滤并累积：</b>先排除深度差过大或位于法线背面的候选点，再把多个有效样本汇总成环境可见度。</li>
+</ol>
+
+<p>这里的“遮挡”是屏幕空间近似：深度缓冲只知道当前视线最前面的表面，因此屏幕外、镜头后方或被前景挡住的几何不会参与。这也是 SSAO 可能漏掉真实遮挡、也可能产生假遮挡的原因。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig21-5.jpg" alt="SSAO 涉及的各点" figureNumber="图 21.5" caption="SSAO 涉及的各点：p 是当前像素对应的视空间表面点，q 是半球内的随机采样点，r 是从眼睛经过 q 的射线上最近可见的表面点。" />

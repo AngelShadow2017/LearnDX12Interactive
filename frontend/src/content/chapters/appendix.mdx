@@ -41,7 +41,11 @@ import exercises from '@/content/appendixExercises';
 
 <p>下面几条在本书各章都会用到。</p>
 
-<div className="math-block">射线与三角形（Möller–Trumbore，第 17 章）<br />命中条件：u ≥ 0，v ≥ 0，u + v ≤ 1，t &gt; 0</div>
+$$
+u\ge 0,\qquad v\ge 0,\qquad u+v\le 1,\qquad t>0
+$$
+
+<p className="math-note">Möller–Trumbore 射线与三角形相交测试（第 17 章）：u、v 是三角形内的重心坐标，t 是沿射线方向的距离参数。</p>
 
 <ul>
   <li><b>点积判角度</b>：<code>dot(n, l)</code> 的符号告诉你光源在正面还是背面；<code>max(..., 0)</code> 截断（朗伯余弦定律，第 8 章）。</li>

@@ -59,7 +59,11 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
   <Figure src="images/Fig8-11.jpg" alt="f(θ)=max(cosθ,0)=max(L·n,0) 的曲线" figureNumber="图 8.11" caption="函数 f(θ)=max(cosθ,0)=max(L·n,0) 的曲线。" />
 </div>
 
-<div className="math-block">f(θ) = max(cos θ, 0) = max(L · n, 0)<small>θ 是表面法线 n 与指向光源的单位向量 L 之间的夹角</small></div>
+$$
+f(\theta)=\max(\cos\theta,0)=\max(\mathbf{L}\cdot\mathbf{n},0)
+$$
+
+<p className="math-note">θ 是表面法线 n 与指向光源的单位向量 L 之间的夹角。</p>
 
 <Callout tone="tip">
   <b>为什么要有 max(…, 0)</b>
@@ -74,7 +78,11 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 
 <Figure src="images/Fig8-12.jpg" alt="漫反射表面把入射光向所有方向均匀散射" figureNumber="图 8.12" caption="漫反射表面把入射光向所有方向均匀散射。" />
 
-<div className="math-block">D = max(L · n, 0) · (ld ⊗ md)<small>ld 是光源的漫反射强度，md 是材质的漫反射反照率</small></div>
+$$
+\mathbf{D}=\max(\mathbf{L}\cdot\mathbf{n},0)\,\bigl(\mathbf{l}_d\odot\mathbf{m}_d\bigr)
+$$
+
+<p className="math-note">$\mathbf{l}_d$ 是光源的漫反射强度，$\mathbf{m}_d$ 是材质的漫反射反照率；$\odot$ 表示 RGB 各分量分别相乘。</p>
 </section>
 
 <section className="lesson-section" id="s86">
@@ -82,7 +90,9 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 
 <p>环境光模拟经过多次反射后「从各个方向均匀照来」的间接光。它是一个<b>常数项</b>：</p>
 
-<div className="math-block">A = la ⊗ ma</div>
+$$
+\mathbf{A}=\mathbf{l}_a\odot\mathbf{m}_a
+$$
 
 <p>它的作用只是把阴影处整体提亮一点。单独使用环境光会让物体完全没有明暗变化——这正是下面这个互动要你重现的效果。</p>
 </section>

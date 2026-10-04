@@ -50,6 +50,16 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
   <Figure src="images/Fig20-6.jpg" alt="像素深度 d(p) 与最近像素深度 s 的比较" figureNumber="图 20.6" caption="左：像素 p 到光源的深度 d(p)；右：沿同一路径最近像素的深度 s——d(p)&gt;s 则 p 在阴影中。" />
 </div>
 
+<Callout tone="note">
+  <b>跟着一个像素走完整个判断</b>
+  <ol>
+    <li>先用光源视角把可见表面的最近深度写进阴影贴图。</li>
+    <li>绘制相机画面时，把待测像素的位置投影到光源视角，找到阴影贴图里的对应位置。</li>
+    <li>比较两份深度：待测点比光源记录的最近表面更远，就说明中间有遮挡物；两者接近时则认为它能被光照到。</li>
+  </ol>
+  <p>要比较的是同一条光线、同一投影位置上的深度。只拿相机深度和阴影贴图深度直接比，坐标空间不一致，结论没有意义。</p>
+</Callout>
+
 <ShadowCompareActivity />
 </section>
 
@@ -57,6 +67,15 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
 <h2>20.5 大 PCF 核</h2>
 
 <p>阴影痤疮、悬浮阴影和锯齿是三个不同的问题，需要三种不同的手段。</p>
+
+$$
+\begin{cases}
+d(p)>s & \text{被遮挡} \\
+d(p)\le s & \text{可见于光源}
+\end{cases}
+$$
+
+<p className="math-note">这里的比较建立在已经变换到光源空间、并匹配同一阴影贴图位置的深度上。离散纹素和深度精度会让表面误判成挡住自己，于是出现阴影痤疮。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig20-7.jpg" alt="地面上的阴影条纹（阴影痤疮伪影）" figureNumber="图 20.7" caption="地面上的阴影条纹（stair-stepping 明暗交替）——阴影痤疮伪影。" />

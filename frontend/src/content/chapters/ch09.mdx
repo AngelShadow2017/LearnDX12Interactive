@@ -78,6 +78,18 @@ commandList->SetGraphicsRootDescriptorTable(0, gpuSrvHandle);`}
 
 <Figure src="images/Fig9-7.jpg" alt="最近点采样与双线性的对比" figureNumber="图 9.7" caption="放大立方体木箱纹理：左为最近点采样（块状），右为双线性（平滑）。" />
 
+<p>双线性过滤不是「把四个颜色直接平均」。采样点在四个纹素之间的位置决定权重：越靠近某个纹素，它的贡献越大。先在水平方向插值两次，再在竖直方向插值一次：</p>
+
+$$
+\begin{aligned}
+c_0 &= (1-u)c_{00}+uc_{10} \\
+c_1 &= (1-u)c_{01}+uc_{11} \\
+c(u,v) &= (1-v)c_0+vc_1
+\end{aligned}
+$$
+
+<p className="math-note">u、v 是当前采样点在这组 2×2 纹素之间的局部位置，范围都在 [0,1]。只有正好在小方格中心时四个权重才相等。</p>
+
 <h3>缩小与 mipmap</h3>
 
 <p>纹理被缩小时，一个像素覆盖多个纹素，直接采样会闪烁。mipmap 预先生成一条尺寸逐级减半的低细节链（图 9.8），硬件按屏幕覆盖面积自动选层。</p>

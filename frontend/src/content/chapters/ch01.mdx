@@ -1,4 +1,5 @@
 import { VectorFrameActivity } from '@/activities/ch01/VectorFrameActivity';
+import { ScalarMultiplyActivity } from '@/activities/ch01/ScalarMultiplyActivity';
 import { DotProductActivity } from '@/activities/ch01/DotProductActivity';
 import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
 
@@ -48,6 +49,23 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
   <li><b>减法 u − v：</b>等价于 u + (−v)。</li>
 </ul>
 
+<Callout tone="tip">
+  <b>把负的标量乘法算成坐标</b>
+  <p>原书用 <b>v = (2, 1)</b> 比较 v 与负标量倍数。图片中的 <b>−½v</b> 可以直接逐分量计算：负号反转方向，½ 把长度缩短一半。</p>
+</Callout>
+
+$$
+\begin{aligned}
+-\frac{1}{2}\mathbf{v}
+  &= -\frac{1}{2}(2,1) \\
+  &= (-1,-\frac{1}{2})
+\end{aligned}
+$$
+
+<p>检查这一步时分别看两个量：结果坐标的符号都与原向量相反，长度则变成原来的 $\tfrac12$。图上对应的箭头会指向相反方向，长度只有 v 的一半。负号不会只改某一个坐标分量，而是整支向量一起反向。</p>
+
+<ScalarMultiplyActivity />
+
 <div className="figure-pair">
   <Figure src="images/Fig1-6.jpg" alt="标量乘法、向量加法、向量减法的几何解释" figureNumber="图 1.6" caption="(a) 标量乘法的几何解释。(b) 向量加法。(c) 向量减法。" />
   <Figure src="images/Fig1-7.jpg" alt="作用在小球上的多个力用向量加法合成合力" figureNumber="图 1.7" caption="作用在小球上的多个力，用向量加法合成合力。" />
@@ -63,13 +81,17 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
 
 <p>向量的长度（模，magnitude）记作 ‖u‖。对 3D 向量，用两次勾股定理就能推出来：</p>
 
-<div className="math-block">‖u‖ = √(x² + y² + z²)</div>
+$$
+\lVert \mathbf{u}\rVert = \sqrt{x^2+y^2+z^2}
+$$
 
 <Figure src="images/Fig1-8.jpg" alt="用两次勾股定理计算 3D 向量长度" figureNumber="图 1.8" caption="用两次勾股定理计算 3D 向量的长度。" />
 
 <p><b>单位向量</b>是长度为 1 的向量。把任意非零向量除以自己的长度就得到它，这一步叫<b>归一化</b>（normalize）：</p>
 
-<div className="math-block">û = u / ‖u‖</div>
+$$
+\hat{\mathbf{u}} = \frac{\mathbf{u}}{\lVert \mathbf{u}\rVert}
+$$
 
 <p>归一化之后只保留「方向」信息。很多计算（光照里的法线、视线方向、反射向量）必须先归一化，否则结果会错。<b>零向量无法归一化</b>（除以 0），代码里要防。</p>
 
@@ -88,11 +110,17 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
 
 <p>点积（内积）定义为对应分量乘积之和：</p>
 
-<div className="math-block">u · v = u<sub>x</sub>v<sub>x</sub> + u<sub>y</sub>v<sub>y</sub> + u<sub>z</sub>v<sub>z</sub></div>
+$$
+\mathbf{u}\cdot\mathbf{v} = u_xv_x + u_yv_y + u_zv_z
+$$
 
 <p>它同时有一个极其有用的几何关系：</p>
 
-<div className="math-block">u · v = ‖u‖ ‖v‖ cos θ<small>θ 是两个向量之间最小的夹角，0 ≤ θ ≤ π</small></div>
+$$
+\mathbf{u}\cdot\mathbf{v} = \lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta
+$$
+
+<p className="math-note">θ 是两个向量之间最小的夹角，0 ≤ θ ≤ π。</p>
 
 <Figure src="images/Fig1-9.jpg" alt="左图为锐角夹角，右图为钝角夹角" figureNumber="图 1.9" caption="左：u 与 v 的夹角 θ 为锐角；右：θ 为钝角。" />
 
@@ -119,7 +147,12 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
 
 <p>有时一组向量「接近」正交但差一点（浮点误差累积后很常见），需要重新正交化。经典做法是 Gram-Schmidt：以 w₀ 为基准，把 w₁ 中平行于 w₀ 的分量减掉。</p>
 
-<div className="math-block">w₁′ = w₁ − proj<sub>w₀</sub>(w₁) = w₁ − ((w₁ · w₀) / ‖w₀‖²) · w₀</div>
+$$
+\begin{aligned}
+\mathbf{w}_1' &= \mathbf{w}_1 - \operatorname{proj}_{\mathbf{w}_0}(\mathbf{w}_1) \\
+&= \mathbf{w}_1 - \frac{\mathbf{w}_1\cdot\mathbf{w}_0}{\lVert\mathbf{w}_0\rVert^2}\,\mathbf{w}_0
+\end{aligned}
+$$
 
 <div className="figure-pair">
   <Figure src="images/Fig1-11.jpg" alt="2D 平面上的正交化" figureNumber="图 1.11" caption="2D 平面上的正交化（Gram-Schmidt）。" />
@@ -136,7 +169,14 @@ import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
 
 <p>叉积只对 3D 向量有意义，结果<b>不是数而是向量</b>：w = u × v 同时垂直于 u 和 v。</p>
 
-<div className="math-block">u × v = (u<sub>y</sub>v<sub>z</sub> − u<sub>z</sub>v<sub>y</sub>,  u<sub>z</sub>v<sub>x</sub> − u<sub>x</sub>v<sub>z</sub>,  u<sub>x</sub>v<sub>y</sub> − u<sub>y</sub>v<sub>x</sub>)</div>
+$$
+\mathbf{u}\times\mathbf{v} =
+\begin{pmatrix}
+u_yv_z-u_zv_y \\
+u_zv_x-u_xv_z \\
+u_xv_y-u_yv_x
+\end{pmatrix}
+$$
 
 <p>长度满足 ‖u × v‖ = ‖u‖ ‖v‖ sin θ，正好等于 u、v 张成的<b>平行四边形面积</b>。</p>
 
@@ -254,7 +294,17 @@ XMStoreFloat3(&out, normal);    // 存回普通结构体`}
 
 <p>为了让 SIMD 寄存器物尽其用，DirectXMath 定了一套规则：函数要用 <code>XM_CALLCONV</code> 标注，前三个 <code>XMVECTOR</code> 形参用 <code>FXMVECTOR</code>，第四个用 <code>GXMVECTOR</code>，其余用 <code>HXMVECTOR</code>；在 32 位上还会用 <code>CXMVECTOR</code> 修饰。</p>
 
-<div className="math-block">inline XMMATRIX XM_CALLCONV XMMatrixTransformation(<br />&nbsp;&nbsp;FXMVECTOR ScalingOrigin,<br />&nbsp;&nbsp;FXMVECTOR ScalingOrientationQuaternion,<br />&nbsp;&nbsp;FXMVECTOR Scaling,<br />&nbsp;&nbsp;GXMVECTOR RotationOrigin,<br />&nbsp;&nbsp;HXMVECTOR RotationQuaternion,<br />&nbsp;&nbsp;HXMVECTOR Translation);</div>
+<CodeSample
+  title="DirectXMath 变换函数的参数顺序"
+  language="cpp"
+  code={`inline XMMATRIX XM_CALLCONV XMMatrixTransformation(
+    FXMVECTOR ScalingOrigin,
+    FXMVECTOR ScalingOrientationQuaternion,
+    FXMVECTOR Scaling,
+    GXMVECTOR RotationOrigin,
+    HXMVECTOR RotationQuaternion,
+    HXMVECTOR Translation);`}
+/>
 
 <p>非 <code>XMVECTOR</code> 参数可以插在中间，计数时忽略它们。注意：<b>输出用的</b> <code>XMVECTOR&amp;</code> 或 <code>XMVECTOR*</code> 不会走 SSE 寄存器，按普通参数处理。</p>
 

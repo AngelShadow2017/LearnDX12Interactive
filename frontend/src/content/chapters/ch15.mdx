@@ -8,7 +8,21 @@ import { DynamicIndexActivity } from '@/activities/ch15/DynamicIndexActivity';
 
 <Figure src="images/Fig15-1.jpg" alt="相机坐标系：相机位于原点、朝 +z 看" figureNumber="图 15.1" caption="相机坐标系：相对自身坐标系，相机位于原点、朝 +z 看（坐标轴为右/上/前）。" />
 
-<div className="math-block">gView = XMMatrixLookAtLH(eye, focus, up)<small>z = normalize(focus − eye)；x = normalize(cross(up, z))；平移项为 (−dot(eye,x), −dot(eye,y), −dot(eye,z))</small></div>
+<CodeSample
+  title="从眼点、注视点和上方向构造观察矩阵"
+  language="cpp"
+  code={`auto gView = XMMatrixLookAtLH(eye, focus, up);`}
+/>
+
+$$
+\begin{aligned}
+\mathbf{z} &= \operatorname{normalize}(\mathbf{focus}-\mathbf{eye}) \\
+\mathbf{x} &= \operatorname{normalize}(\mathbf{up}\times\mathbf{z}) \\
+\mathbf{y} &= \mathbf{z}\times\mathbf{x}
+\end{aligned}
+$$
+
+<p className="math-note">平移项由眼点在三个相机轴上的投影决定：$(-\mathbf{eye}\cdot\mathbf{x},-\mathbf{eye}\cdot\mathbf{y},-\mathbf{eye}\cdot\mathbf{z})$。</p>
 
 <Callout tone="tip">
   <b>矩阵里能读出相机轴</b>

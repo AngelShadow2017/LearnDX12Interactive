@@ -6,7 +6,11 @@ import { FogClipBlendActivity } from '@/activities/FogClipBlendActivity';
 
 <p>混合发生在输出合并阶段：源色（当前像素着色器的输出）与目标色（后台缓冲里已有的值）按一个方程组合。</p>
 
-<div className="math-block">C = F<sub>src</sub> ⊗ C<sub>src</sub> &nbsp;op&nbsp; F<sub>dst</sub> ⊗ C<sub>dst</sub><small>⊗ 表示逐分量相乘，op 默认是 ADD</small></div>
+$$
+\mathbf{C}=\mathbf{F}_{src}\odot\mathbf{C}_{src}\;\operatorname{op}\;\mathbf{F}_{dst}\odot\mathbf{C}_{dst}
+$$
+
+<p className="math-note">这里逐分量相乘；混合操作 $\operatorname{op}$ 默认是 ADD。</p>
 
 <Figure src="images/Fig10-1.jpg" alt="半透明的水面——透过它能看见水下的东西" figureNumber="图 10.1" caption="半透明的水面——透过它能看见水下的东西。" />
 
@@ -108,7 +112,12 @@ import { FogClipBlendActivity } from '@/activities/FogClipBlendActivity';
 
 <p>雾效与混合无关：它按像素到眼睛的距离，把受光颜色插值到雾色（图 10.9、10.10）。</p>
 
-<div className="math-block">s = saturate((dist(p, E) − fogStart) / fogRange)<br />foggedColor = (1 − s) · litColor + s · fogColor</div>
+$$
+\begin{aligned}
+s &= \operatorname{saturate}\!\left(\frac{\operatorname{dist}(\mathbf{p},\mathbf{E})-\operatorname{fogStart}}{\operatorname{fogRange}}\right) \\
+\operatorname{foggedColor} &= (1-s)\,\operatorname{litColor}+s\,\operatorname{fogColor}
+\end{aligned}
+$$
 
 <div className="figure-pair">
   <Figure src="images/Fig10-9.jpg" alt="点到眼睛的距离与 fogStart、fogRange 的关系" figureNumber="图 10.9" caption="点到眼睛的距离与 fogStart、fogRange 参数的关系。" />

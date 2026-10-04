@@ -10,7 +10,12 @@ import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActi
 
 <p>变换 τ 是线性的，当且仅当它满足：</p>
 
-<div className="math-block">τ(u + v) = τ(u) + τ(v)<br />τ(k·u) = k·τ(u)</div>
+$$
+\begin{aligned}
+\tau(\mathbf{u}+\mathbf{v}) &= \tau(\mathbf{u})+\tau(\mathbf{v}) \\
+\tau(k\mathbf{u}) &= k\tau(\mathbf{u})
+\end{aligned}
+$$
 
 <p>线性变换不改变原点、不产生平移，它把一个向量映射成另一个向量。缩放和旋转都是线性变换。</p>
 
@@ -18,7 +23,13 @@ import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActi
 
 <p>缩放矩阵把各坐标分量分别乘以缩放因子：</p>
 
-<div className="math-block">S = ⎡ sx 0 0 ⎤<br />　　⎢ 0 sy 0 ⎥<br />　　⎣ 0 0 sz ⎦</div>
+$$
+S=\begin{bmatrix}
+s_x&0&0\\
+0&s_y&0\\
+0&0&s_z
+\end{bmatrix}
+$$
 
 <div className="figure-pair">
   <Figure src="images/Fig3-1.jpg" alt="左：原始棋子；中：沿 y 轴放大 2 倍；右：再叠加平移" figureNumber="图 3.1" caption="左：原始棋子；中：沿 y 轴放大 2 倍后变高；右：再叠加平移的组合变换。" />
@@ -45,7 +56,9 @@ import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActi
 
 <p>平移不是线性变换（它移动了原点）。把「线性变换 + 平移」合在一起就是<b>仿射变换</b>：</p>
 
-<div className="math-block">α(u) = τ(u) + b</div>
+$$
+\alpha(\mathbf{u})=\tau(\mathbf{u})+\mathbf{b}
+$$
 
 <p>为了让矩阵能表达平移，要引入<b>齐次坐标</b>：给向量加第四个分量 w。w = 1 表示点（会被平移影响），w = 0 表示方向向量（不受平移影响）。</p>
 
@@ -76,6 +89,11 @@ import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActi
 
 <p>因为矩阵乘法满足结合律，我们可以把一串变换预先乘成一个矩阵。书里的性能对比很直接：20000 个顶点依次做缩放、旋转、平移，逐步做要 20000 × 3 次向量矩阵乘法；先合成 C = SRT 则只要 20000 次向量矩阵乘法加 2 次矩阵乘法。</p>
 
+<Callout tone="note">
+  <b>用一个点检查「先做谁」</b>
+  <p>行向量约定下，取点 $p=(1,1)$，先把 x 放大 2 倍，再沿 x 平移 3，结果是 $(5,1)$。矩阵按 $pST$ 相乘；改成 $pTS$ 就是先平移再放大，结果变成 $(8,1)$。同样两步操作，只因顺序不同就落在不同位置。</p>
+</Callout>
+
 <Callout tone="warning">
   <b>顺序不能随便换</b>
   <p>结合律成立，交换律不成立。图 3.9 就是证据：先旋转再平移（RT）与先平移再旋转（TR）得到完全不同的结果。</p>
@@ -102,11 +120,15 @@ import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActi
 
 <p>设 p 相对 A 的坐标是 (x, y)，A 的基向量是 u、v。从图上直接得到：</p>
 
-<div className="math-block">p = x·u + y·v</div>
+$$
+\mathbf{p}=x\mathbf{u}+y\mathbf{v}
+$$
 
 <p>把等式里每个向量都改用 B 的坐标表示：</p>
 
-<div className="math-block">p<sub>B</sub> = x·u<sub>B</sub> + y·v<sub>B</sub></div>
+$$
+\mathbf{p}_B=x\mathbf{u}_B+y\mathbf{v}_B
+$$
 
 <div className="figure-pair">
   <Figure src="images/Fig3-11.jpg" alt="求 p 相对坐标系 B 的坐标" figureNumber="图 3.11" caption="求 p 相对坐标系 B 的坐标（几何图解）。" />

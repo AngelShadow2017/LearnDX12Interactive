@@ -21,9 +21,22 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>如果 A 是 m × n 矩阵、B 是 n × p 矩阵，那么乘积 AB 有定义，结果是 m × p 矩阵 C。C 的第 ij 项等于 <b>A 的第 i 个行向量</b>与 <b>B 的第 j 个列向量</b>的点积：</p>
 
-<div className="math-block">C<sub>ij</sub> = A 的第 i 行 · B 的第 j 列<small>也就是 A<sub>{'i,*'}</sub> · B<sub>{'*,j'}</sub></small></div>
+$$
+C_{ij} = \sum_k A_{ik}B_{kj}
+$$
+
+<p className="math-note">矩阵乘积第 i 行、第 j 列的元素，是 A 的第 i 行与 B 的第 j 列点积；k 遍历 A 的列（也就是 B 的行）。</p>
 
 <p>所以乘法有定义的前提是：<b>A 的列数等于 B 的行数</b>，也就是 A 的行向量维数等于 B 的列向量维数。维数不同，点积就没有意义。</p>
+
+<Callout tone="note">
+  <b>算一格，再看维数</b>
+  <p>取 A 为 2×3、B 为 3×2，乘积 C 必为 2×2。要算右上角 $C_{12}$，拿 A 第一行与 B 第二列逐项相乘再相加：</p>
+  $$
+  C_{12}=1\cdot 8+2\cdot 10+3\cdot 12=64
+  $$
+  <p>如果把顺序交换成 BA，结果会是 3×3；元素和形状都变了。这就是矩阵乘法不能像普通数字那样随手交换的具体原因。</p>
+</Callout>
 
 <Callout tone="warning">
   <b>矩阵乘法不满足交换律</b>
@@ -34,7 +47,11 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>考虑 uA（u 是行向量）：结果是一个行向量，而且它是 <b>A 的行向量的线性组合</b>，组合系数由 u 给出。</p>
 
-<div className="math-block">uA = x·A<sub>{'1,*'}</sub> + y·A<sub>{'2,*'}</sub> + z·A<sub>{'3,*'}</sub><small>u = (x, y, z)；A<sub>{'i,*'}</sub> 是 A 的第 i 行</small></div>
+$$
+\mathbf{u}A = xA_{1,*} + yA_{2,*} + zA_{3,*}
+$$
+
+<p className="math-note">这里使用行向量约定，$\mathbf{u}=(x,y,z)$，而 $A_{i,*}$ 表示 A 的第 i 行。</p>
 
 <p>这个视角非常有用：把矩阵的行看成一组基向量，那么 uA 就是用 u 的分量去给这组基做加权求和。第 3 章解释「仿射矩阵每一行的几何含义」时还会回到这里。</p>
 
@@ -52,7 +69,9 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>转置就是把矩阵的行列互换：M<sup>T</sup> 的第 ij 项等于 M 的第 ji 项。</p>
 
-<div className="math-block">M<sup>T</sup><sub>ij</sub> = M<sub>ji</sub></div>
+$$
+(M^T)_{ij}=M_{ji}
+$$
 
 <p>转置有一个会在后面反复出现的性质：<b>(AB)<sup>T</sup> = B<sup>T</sup>A<sup>T</sup></b>——乘积的转置要<b>倒过来</b>写。第 8 章变换法线时用的「逆转置」就建立在这条性质上。</p>
 
@@ -64,7 +83,9 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>单位矩阵 I 是主对角线为 1、其余为 0 的方阵。它是矩阵乘法的单位元：</p>
 
-<div className="math-block">AI = IA = A</div>
+$$
+AI=IA=A
+$$
 
 <p>把单位矩阵当作「什么都没做」的变换，是很实用的对照物：任何变换矩阵乘回自己的逆都应该得到它，这也是验证逆矩阵是否正确的最直接办法。</p>
 </section>
@@ -82,7 +103,11 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>行列式按第一行展开（拉普拉斯展开）：</p>
 
-<div className="math-block">det A = Σ<sub>j</sub> A<sub>1j</sub> · (−1)<sup>1+j</sup> · det Ā<sub>1j</sub></div>
+$$
+\det A = \sum_{j=1}^{n} a_{1j}(-1)^{1+j}\det\bar{A}_{1j}
+$$
+
+<p className="math-note">$\bar{A}_{1j}$ 是删去 A 的第 1 行与第 j 列后得到的子矩阵；每一项都带有交替正负号。</p>
 
 <p>几何上，行列式的绝对值表示「体积缩放倍数」，符号表示是否发生了镜像翻转。缩放 (2, 3, 4) 的行列式是 24，意味着体积被放大 24 倍。</p>
 
@@ -107,7 +132,9 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>矩阵没有除法，但有与之等价的概念。逆矩阵满足：</p>
 
-<div className="math-block">A · A⁻¹ = A⁻¹ · A = I</div>
+$$
+AA^{-1}=A^{-1}A=I
+$$
 
 <ul>
   <li>只有<b>方阵</b>才可能有逆；</li>

@@ -18,7 +18,8 @@ Use the catalog section IDs exactly so the persistent TOC links land at the righ
 - `<Checkpoint chapterId="ch01" questions={[{ id, question, options, answer, explanation }]} />` renders the end-of-chapter application questions. 80 % correct automatically marks the chapter concept-passed.
 - `<Practice chapterId="ch01" title="..." goal="..." steps={[...]} expected="..." verify={[...]} />` renders the end-of-chapter Windows practice card. Omit `repoPath` when the chapter has no project (chapters 3 and 5) and pass `fallbackNote` instead.
 - `<CodeSample title="..." code={`...`} input={...} keyLines={[{ code, note }]} output={...} pitfalls={[...]} />` renders a code block that always carries input, key lines, expected output, and pitfalls.
-- `<div className="math-block">`, `<div className="figure-pair">`, `<div className="step-list">` — the typographic blocks the stylesheet provides.
+- Display mathematics uses `$$ ... $$`; inline mathematics uses `$ ... $`. `remark-math` and KaTeX render these expressions.
+- `<div className="figure-pair">` and `<div className="step-list">` provide the corresponding typographic layouts.
 
 ## Writing chapter-specific interactions
 

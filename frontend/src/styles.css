@@ -15,7 +15,7 @@
   --green-wash: #e8f1eb;
   --yellow: #e8be68;
   --warm-wash: #f6efe0;
-  --mono: 'Cascadia Mono', Consolas, monospace;
+  --mono: ui-monospace, 'Cascadia Mono', 'Cascadia Code', 'Source Code Pro', Consolas, 'SFMono-Regular', Menlo, Monaco, 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace;
   --shadow: 0 10px 40px rgba(34, 46, 39, 0.055);
 }
 
@@ -258,8 +258,11 @@ a:hover { color: var(--green-dark); }
 
 /* ---------------------------------------------------------------- 正文排印补充 */
 .lesson-content .section-heading-eyebrow { color: #8b9583; font-family: var(--mono); font-size: 9px; letter-spacing: .12em; }
-.math-block { margin: 16px 0; padding: 13px 16px; border-left: 2px solid #9dbfa6; border-radius: 0 8px 8px 0; background: #f4f8f2; color: #2e4636; font-family: var(--mono); font-size: 12.5px; line-height: 1.9; overflow-x: auto; }
-.math-block small { display: block; margin-top: 5px; color: #6f7d71; font-family: inherit; font-size: 10.5px; }
+.lesson-content .katex-display { margin: 17px 0; padding: 15px 17px; overflow-x: auto; overflow-y: hidden; border-left: 2px solid #9dbfa6; border-radius: 0 8px 8px 0; background: #f4f8f2; color: #2e4636; text-align: left; }
+.lesson-content .katex-display > .katex { text-align: left; }
+.lesson-content .math-note { margin: -7px 0 16px; color: #6f7d71; font-size: 11px; line-height: 1.8; }
+.lesson-content .katex { font-size: 1.05em; }
+.lesson-content pre code.hljs, .code-sample pre code.hljs { display: block; padding: 0; overflow-x: auto; background: transparent; color: #e4eae1; font: inherit; }
 .term { border-bottom: 1px dotted #93a795; cursor: help; }
 .figure-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 23px 0; }
 .figure-pair .inline-figure { margin: 0; }

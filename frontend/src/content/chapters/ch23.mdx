@@ -6,7 +6,11 @@ import { SkinWeightActivity } from '@/activities/ch23/SkinWeightActivity';
 
 <p>角色用一棵<b>骨骼树</b>描述：每根骨骼由「父骨骼 + 偏移 + 姿态」定义。父骨骼的变换会同时影响自己和所有子孙（图 23.1、23.2）。</p>
 
-<div className="math-block">toRoot(child) = local(child) · toRoot(parent)<small>行向量约定：先从子骨骼局部空间变到父骨骼空间，再沿层级变到根空间</small></div>
+$$
+\operatorname{toRoot}(\text{child})=\operatorname{local}(\text{child})\,\operatorname{toRoot}(\text{parent})
+$$
+
+<p className="math-note">行向量约定：先从子骨骼局部空间变到父骨骼空间，再沿层级变到根空间。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig23-1.jpg" alt="层级变换：父骨骼影响自身与所有子孙" figureNumber="图 23.1" caption="层级变换：父骨骼的变换影响自身与所有子孙。" />
@@ -31,7 +35,11 @@ import { SkinWeightActivity } from '@/activities/ch23/SkinWeightActivity';
 
 <p>关键概念是<b>绑定姿势</b>与<b>偏移变换</b>：网格顶点以绑定姿势下的网格空间坐标存储。每根骨骼的偏移变换先把顶点从绑定空间变到该骨骼的局部空间，再用当前的 <code>toRoot</code> 变到骨架根空间（图 23.7）。</p>
 
-<div className="math-block">p<sub>skinned</sub> = Σ<sub>i</sub> w<sub>i</sub> · p<sub>bind</sub> · offsetTransform<sub>i</sub> · toRoot<sub>i</sub><small>行向量约定：点从左侧依次乘变换矩阵</small></div>
+$$
+\mathbf{p}_{skinned}=\sum_i w_i\,\mathbf{p}_{bind}\,\operatorname{offsetTransform}_i\,\operatorname{toRoot}_i
+$$
+
+<p className="math-note">行向量约定：点从左侧开始，依次乘上每个骨骼变换矩阵。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig23-6.jpg" alt="角色网格：骨骼与受影响的皮肤顶点" figureNumber="图 23.6" caption="角色网格：高亮骨链是骨骼；深色多边形表示被这些骨骼影响的皮肤顶点。" />
@@ -42,7 +50,7 @@ import { SkinWeightActivity } from '@/activities/ch23/SkinWeightActivity';
 <section className="lesson-section" id="s233">
 <h2>23.3 顶点混合</h2>
 
-<p>骨骼之间必须连续过渡，否则关节处会裂开或塌陷。所以关节附近的顶点同时受两根骨骼影响（图 23.8）：每个顶点存 4 个骨骼索引和 4 个权重，<b>权重之和必须等于 1</b>。</p>
+<p>骨骼之间必须连续过渡，否则关节处会裂开或塌陷。所以关节附近的顶点同时受多根骨骼影响（图 23.8）。原书示例每个顶点最多存 4 个骨骼索引与权重；未用到的影响可设为零，<b>权重之和必须等于 1</b>。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig23-8.jpg" alt="皮肤是覆盖两根骨骼的连续网格" figureNumber="图 23.8" caption="皮肤是覆盖两根骨骼的连续网格：关节附近的顶点同时受两根骨骼影响。" />

@@ -35,7 +35,11 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 
 <p>四元数范数满足乘法性质：</p>
 
-<div className="math-block">‖q₁ ⊗ q₂‖ = ‖q₁‖ ‖q₂‖<small>因此，精确算术下两个单位四元数的乘积仍为单位四元数</small></div>
+$$
+\lVert q_1\otimes q_2\rVert=\lVert q_1\rVert\,\lVert q_2\rVert
+$$
+
+<p className="math-note">因此在精确算术下，两个单位四元数的乘积仍是单位四元数。</p>
 </section>
 
 <section className="lesson-section" id="s223">
@@ -43,7 +47,11 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 
 <p><b>单位四元数</b>（‖q‖ = 1）可以表示「绕单位轴 n 转 θ」：</p>
 
-<div className="math-block">q = (n·sin(θ/2), cos(θ/2))<small>前三个分量是 (x, y, z)，第四个是 w；n 必须是单位向量</small></div>
+$$
+q=\left(\mathbf{n}\sin\frac{\theta}{2},\;\cos\frac{\theta}{2}\right)
+$$
+
+<p className="math-note">前三个分量对应向量部 $(x,y,z)$，第四个是标量部 $w$；旋转轴 n 必须是单位向量。</p>
 
 <p>在精确算术中，单位四元数相乘仍为单位四元数；实际浮点计算会有舍入误差，长时间复合旋转时仍可能需要重新归一化。四元数不会遇到欧拉角参数化的万向锁。</p>
 
@@ -88,7 +96,11 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
   <Figure src="images/Fig22-10.jpg" alt="从 a 插值到 b 走大弧，先把 b 取负则走短弧" figureNumber="图 22.10" caption="从 a 插值到 b 走大弧 θ1；先把 b 取负则走短弧——最短路径修正。" />
 </div>
 
-<div className="math-block">if (a·b &lt; 0) b = −b;</div>
+```cpp
+if (dot(a, b) < 0.0f) {
+    b = -b;
+}
+```
 
 <SlerpShortArcActivity />
 </section>
@@ -125,7 +137,7 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 
 <ul>
   <li>复数乘法 = 平面内旋转 + 缩放；四元数把它推广到 3D。</li>
-  <li>单位四元数 q = (n·sin(θ/2), cos(θ/2)) 与「绕单位轴 n 转 θ」一一对应。</li>
+  <li>单位四元数 q = (n·sin(θ/2), cos(θ/2)) 可以表示「绕单位轴 n 转 θ」；q 与 −q 表示同一个旋转，所以表示不是一一对应。</li>
   <li>范数满足 ‖pq‖ = ‖p‖‖q‖，所以精确算术下单位四元数复合后仍为单位长度；浮点误差仍可能需要重新归一化。单位四元数表示旋转不会遇到欧拉角的万向锁，四元数乘法则不可交换。</li>
   <li>SLERP 沿球面大圆匀速插值；LERP 归一化简单但速度不均。</li>
   <li><b>q 与 −q 表示同一旋转</b>：插值前必须判断点积并取反，否则会走长弧。</li>

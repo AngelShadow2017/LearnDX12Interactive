@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { bookParts, chapters, type Chapter, type SectionLink } from '@/content/catalog';
+import { pageHref } from '@/content/routes';
 import { useProgress } from '@/progress/ProgressProvider';
 
 type Props = { route: string; sections: SectionLink[]; chapter?: Chapter; mobileOpen: boolean; onNavigate?: () => void };
@@ -35,8 +36,8 @@ export function TableOfContents({ route, sections, chapter, mobileOpen, onNaviga
     <>
       {mobileOpen && <button className="toc-scrim" aria-label="关闭目录" type="button" onClick={onNavigate} />}
       <aside ref={asideRef} id="site-toc" className={`toc ${mobileOpen ? 'toc--open' : ''}`} aria-label="全书目录">
-        <div className="toc__topline"><a className="toc__brand" href="index.html">DX12 学习工作台</a><span>目录</span></div>
-        <a className={`toc__intro ${route === 'intro.html' ? 'is-current' : ''}`} href="intro.html" onClick={onNavigate}>开始之前 <span>导读</span></a>
+        <div className="toc__topline"><a className="toc__brand" href={pageHref('index.html')}>DX12 学习工作台</a><span>目录</span></div>
+        <a className={`toc__intro ${route === 'intro.html' ? 'is-current' : ''}`} href={pageHref('intro.html')} onClick={onNavigate}>开始之前 <span>导读</span></a>
         {bookParts.map((part) => (
           <section className="toc__part" key={part.id}>
             <div className="toc__part-heading"><span>第 {part.id} 部分</span><b>{part.title}</b></div>
@@ -45,7 +46,7 @@ export function TableOfContents({ route, sections, chapter, mobileOpen, onNaviga
                 const progress = getChapterProgress(item.id);
                 const current = item.route === route;
                 return <div className={`toc__chapter ${current ? 'is-current' : ''}`} key={item.id}>
-                  <a href={item.route} onClick={onNavigate} aria-current={current ? 'page' : undefined}>
+                  <a href={pageHref(item.route)} onClick={onNavigate} aria-current={current ? 'page' : undefined}>
                     <span className="toc__chapter-number">{String(item.number).padStart(2, '0')}</span>
                     <span className="toc__chapter-title">{item.title}</span>
                     <span className={`toc__status ${progress.conceptPassed ? 'is-passed' : progress.read ? 'is-read' : ''}`} aria-label={progress.conceptPassed ? '概念过关' : progress.read ? '已阅读' : '未开始'}>{progress.conceptPassed ? '✓' : progress.read ? '·' : ''}</span>
@@ -58,7 +59,7 @@ export function TableOfContents({ route, sections, chapter, mobileOpen, onNaviga
             </nav>
           </section>
         ))}
-        <a className={`toc__appendix ${route === 'appendix.html' ? 'is-current' : ''}`} href="appendix.html" onClick={onNavigate}>附录与速查 <span>A—E</span></a>
+        <a className={`toc__appendix ${route === 'appendix.html' ? 'is-current' : ''}`} href={pageHref('appendix.html')} onClick={onNavigate}>附录与速查 <span>A—E</span></a>
         {chapter && <div className="toc__legend"><i /> 已阅读 <i className="toc__legend-passed" /> 概念过关</div>}
       </aside>
     </>

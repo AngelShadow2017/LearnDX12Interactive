@@ -21,7 +21,7 @@ const expected = Object.keys(captions);
 const missing = expected.filter((file) => !used.has(file));
 const extra = [...used.keys()].filter((file) => !captions[file]);
 
-console.log(`旧页面已引用：${expected.length} 张`);
+console.log(`图注清单包含：${expected.length} 张`);
 console.log(`新 MDX 已放置：${used.size} 张`);
 console.log(`缺少：${missing.length} 张`);
 if (missing.length) {

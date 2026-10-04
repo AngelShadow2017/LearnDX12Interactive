@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { pageHref } from '@/content/routes';
 
 export type Exercise = { id: string; chapter: string; question: string; hint: string; answer: ReactNode };
 
@@ -20,7 +21,7 @@ export function ExerciseAnswers({ exercises }: Props) {
         const answerOpen = openAnswer.includes(exercise.id);
         return <article className="exercise" key={exercise.id}>
           <header>
-            <a className="exercise__chapter" href={`${exercise.chapter}.html`}>{exercise.chapter}</a>
+            <a className="exercise__chapter" href={pageHref(exercise.chapter)}>{exercise.chapter}</a>
             <p className="exercise__question">{exercise.question}</p>
           </header>
           <div className="activity__actions">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { pageHref } from '@/content/routes';
 
 type Topic = { symptom: string; chapter: string; route: string; section: string; reason: string };
 
@@ -67,7 +68,7 @@ export function MathIndex() {
             <span className="order-list__text">
               <b>{topic.symptom}</b>
               <p style={{ margin: '3px 0 5px', fontSize: 10.5, color: '#6b7a6e', lineHeight: 1.7 }}>{topic.reason}</p>
-              <a href={`${topic.route}${topic.section}`} style={{ color: '#2f6b47', fontSize: 10.5, fontWeight: 600 }}>{topic.chapter} →</a>
+              <a href={pageHref(topic.route, topic.section)} style={{ color: '#2f6b47', fontSize: 10.5, fontWeight: 600 }}>{topic.chapter} →</a>
             </span>
           </li>)}
         </ul>

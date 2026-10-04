@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from 're
 import { MDXProvider } from '@mdx-js/react';
 import { bookParts, chapters, chapterByRoute, sampleUrl, type Chapter, type SectionLink } from '@/content/catalog';
 import { referencePages } from '@/content/pages';
+import { pageHref, routeFromLocation } from '@/content/routes';
 import { mdxComponents } from '@/components/ContentBlocks';
 import { ImageLightbox } from '@/components/InlineFigure';
 import { ProgressBackup } from '@/components/ProgressBackup';
@@ -12,8 +13,7 @@ type LessonModule = { default: ComponentType };
 const lessonModules = import.meta.glob('../content/chapters/*.mdx', { eager: true }) as Record<string, LessonModule>;
 
 function currentRoute(): string {
-  const basename = window.location.pathname.split('/').filter(Boolean).at(-1);
-  return basename || 'index.html';
+  return routeFromLocation(window.location.pathname, window.location.search);
 }
 
 function currentPage(route: string): { title: string; sections: SectionLink[]; chapter?: Chapter; reference?: typeof referencePages[keyof typeof referencePages] } {
@@ -69,7 +69,7 @@ function AppShell() {
         <button ref={mobileMenuButtonRef} className="mobile-menu-button" type="button" aria-expanded={mobileMenuOpen} aria-controls="site-toc" onClick={() => setMobileMenuOpen((open) => !open)}>
           <span aria-hidden="true">☰</span><span className="sr-only">{mobileMenuOpen ? '关闭目录' : '打开目录'}</span>
         </button>
-        <a className="topbar__wordmark" href="index.html"><span className="wordmark-icon">D</span><span>DX12 <em>学习工作台</em></span></a>
+        <a className="topbar__wordmark" href={pageHref('index.html')}><span className="wordmark-icon">D</span><span>DX12 <em>学习工作台</em></span></a>
         <div className="topbar__right"><span className="topbar__edition">交互教材 · 中文导读</span><ProgressBackup /></div>
       </header>
 
@@ -106,7 +106,7 @@ function ReaderPage({ route, title, sections, chapter, reference }: { route: str
 
   return (
     <article className="reader-page">
-      <div className="reader-crumbs"><a href="index.html">课程首页</a><span aria-hidden="true">/</span><span>{chapter ? `第 ${chapter.number} 章 · ${bookParts[chapter.part - 1].title}` : reference?.title}</span></div>
+      <div className="reader-crumbs"><a href={pageHref('index.html')}>课程首页</a><span aria-hidden="true">/</span><span>{chapter ? `第 ${chapter.number} 章 · ${bookParts[chapter.part - 1].title}` : reference?.title}</span></div>
       <header className="chapter-hero">
         <div className="chapter-hero__meta">
           {chapter ? <><span className="eyebrow">PART 0{chapter.part} / CHAPTER {String(chapter.number).padStart(2, '0')}</span><span className="time-pill">◷ {chapter.minutes} 分钟</span></> : <span className="eyebrow">学习指南</span>}
@@ -144,9 +144,9 @@ function ReaderPage({ route, title, sections, chapter, reference }: { route: str
           </div>
           <div className="chapter-pager">
             {chapter ? <>
-              {chapter.number > 1 ? <a href={`ch${String(chapter.number - 1).padStart(2, '0')}.html`}><small>上一章</small><span>第 {chapter.number - 1} 章 · {chapters[chapter.number - 2].title}</span></a> : <a href="intro.html"><small>开始之前</small><span>导读与工程准备</span></a>}
-              {chapter.number < 23 ? <a className="chapter-pager__next" href={`ch${String(chapter.number + 1).padStart(2, '0')}.html`}><small>下一章</small><span>第 {chapter.number + 1} 章 · {chapters[chapter.number].title}</span></a> : <a className="chapter-pager__next" href="appendix.html"><small>继续查阅</small><span>附录与速查</span></a>}
-            </> : <a href="index.html"><small>课程首页</small><span>选择一章开始学习</span></a>}
+              {chapter.number > 1 ? <a href={pageHref(`ch${String(chapter.number - 1).padStart(2, '0')}.html`)}><small>上一章</small><span>第 {chapter.number - 1} 章 · {chapters[chapter.number - 2].title}</span></a> : <a href={pageHref('intro.html')}><small>开始之前</small><span>导读与工程准备</span></a>}
+              {chapter.number < 23 ? <a className="chapter-pager__next" href={pageHref(`ch${String(chapter.number + 1).padStart(2, '0')}.html`)}><small>下一章</small><span>第 {chapter.number + 1} 章 · {chapters[chapter.number].title}</span></a> : <a className="chapter-pager__next" href={pageHref('appendix.html')}><small>继续查阅</small><span>附录与速查</span></a>}
+            </> : <a href={pageHref('index.html')}><small>课程首页</small><span>选择一章开始学习</span></a>}
           </div>
           <div id="reading-complete-sentinel" className="reading-end" aria-label="本章阅读结束">本章阅读到这里</div>
         </div>
@@ -209,7 +209,7 @@ function HomePage() {
         <span className="eyebrow">INTERACTIVE STUDY GUIDE · DIRECTX 12</span>
         <h1>把图形学原理，<br /><em>重新接回代码。</em></h1>
         <p>先预测，再操作，再把结果带进 D3D12 示例。按自己的节奏，把这本书真正学会。</p>
-        <div className="home-hero__actions"><a className="button button--accent" href={resume}>{resume === 'intro.html' ? '从导读开始' : '继续上次学习'} <span aria-hidden="true">→</span></a><a className="button button--outline" href="#course-map">查看全书路线</a></div>
+        <div className="home-hero__actions"><a className="button button--accent" href={pageHref(resume)}>{resume === 'intro.html' ? '从导读开始' : '继续上次学习'} <span aria-hidden="true">→</span></a><a className="button button--outline" href="#course-map">查看全书路线</a></div>
       </div>
       <div className="orbit-art" aria-hidden="true"><div className="orbit-art__axis orbit-art__axis--x" /><div className="orbit-art__axis orbit-art__axis--y" /><div className="orbit-art__axis orbit-art__axis--z" /><div className="orbit-art__ring orbit-art__ring--one" /><div className="orbit-art__ring orbit-art__ring--two" /><div className="orbit-art__core" /><span className="orbit-art__label orbit-art__label--x">x</span><span className="orbit-art__label orbit-art__label--y">y</span><span className="orbit-art__label orbit-art__label--z">z</span></div>
       <div className="home-hero__progress"><span>你的学习记录</span><div><b>{readCount}</b><small>/ 23 章已读</small><i /><b>{passedCount}</b><small>/ 23 章概念过关</small></div></div>
@@ -222,14 +222,14 @@ function HomePage() {
         <div className="chapter-grid">{chapters.filter((chapter) => chapter.part === part.id).map((chapter) => {
           const progress = getProgress(chapter.id);
           const status = progress.conceptPassed ? '概念过关' : progress.read ? '已阅读' : '尚未开始';
-          return <a className="course-card" href={chapter.route} key={chapter.id}>
+          return <a className="course-card" href={pageHref(chapter.route)} key={chapter.id}>
             <div className="course-card__top"><span>第 {String(chapter.number).padStart(2, '0')} 章</span><span className={`course-card__status ${progress.conceptPassed ? 'is-passed' : ''}`}>{status}</span></div>
             <h4>{chapter.title}</h4><p>{chapter.summary}</p>
             <div className="course-card__bottom"><span>{chapter.minutes} 分钟</span><span aria-hidden="true">↗</span></div>
           </a>;
         })}</div>
       </div>)}
-      <div className="home-extra-links"><a href="intro.html">导读：环境和学习路线 <span>→</span></a><a href="appendix.html">附录：需要时查阅 <span>→</span></a></div>
+      <div className="home-extra-links"><a href={pageHref('intro.html')}>导读：环境和学习路线 <span>→</span></a><a href={pageHref('appendix.html')}>附录：需要时查阅 <span>→</span></a></div>
     </section>
   </div>;
 }

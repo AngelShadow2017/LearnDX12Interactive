@@ -1,0 +1,1230 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：8.1–8.16 全部小节（含材质与光源结构、LightingUtil.hlsl 与 Default.hlsl 全文、LitWaves 光照演示代码、习题 1–6），依据 EPUB ch08.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
+
+<a id="page315"/>
+
+请看图 8.1。左边是一个未受光照的球体，右边是一个受光照的球体。如你所见，左边那个球看上去相当扁平——它甚至可能根本不是一个球，而只是一个二维圆盘！另一方面，右边那个球看起来确实是三维的——光照与明暗有助于我们感知物体的立体形态和体积。事实上，我们对世界的视觉感知就依赖于光及其与材质的交互，因此，生成照片级真实感场景的许多问题都与物理上准确的光照模型有关。
+
+<Figure src="images/Fig8-1.jpg" alt="(a) 无光照的球看起来是二维的；(b) 有光照的球看起来是三维的" figureNumber="图 8.1" caption="(a) 无光照的球看起来是二维的。(b) 有光照的球看起来是三维的。" />
+
+当然，一般说来，模型越准确，计算开销就越大；因此必须在真实感与速度之间取得平衡。例如，电影中的三维特效场景可以比游戏复杂得多、使用非常真实的光照模型，因为电影的帧是预渲染的，处理一帧花上<a id="page316"/>几小时甚至几天也负担得起。而游戏则是实时应用，因此帧的绘制速度至少要达到每秒 30 帧。
+
+注意，本书讲解并实现的光照模型，在很大程度上基于 [Möller08] 中描述的模型。
+
+**本章目标：**
+
+1. 对光与材质之间的交互有一个基本的理解。
+2. 理解局部光照（local illumination）与全局光照（global illumination）的区别。
+3. 弄清如何用数学方式描述表面上某点"朝向"的方向，以便确定入射光打到表面上的角度。
+4. 学会如何正确地变换法向量。
+5. 能够区分环境光、漫反射光和镜面光。
+6. 学会如何实现平行光、点光源和聚光灯。
+7. 理解如何通过控制衰减参数让光强随距离变化。
+
+<section className="lesson-section lesson-section--intro" id="s81">
+<h2>8.1 光与材质的交互</h2>
+
+使用光照之后，我们不再直接指定顶点颜色；而是指定材质和光源，然后套用一个光照方程，由它根据光与材质的交互为我们计算出顶点颜色。这会让物体的着色真实得多（再对比一下图 8.1*a* 和图 8.1*b*）。
+
+可以把材质理解为决定光如何与物体表面交互的那些属性。这类属性的例子有：表面反射和吸收的光的颜色、表面下方介质的折射率、表面有多光滑、表面有多透明。通过指定材质属性，我们可以为木材、石头、玻璃、金属和水等各种真实世界表面建模。
+
+在我们的模型中，一个光源可以发出强度各异的红、绿、蓝光；这样我们就能模拟许多种光的颜色。当光从光源向外传播并撞到物体时，其中一部分可能被吸收，另一部分可能被反射（对于玻璃这类透明物体，一部分光会穿过介质，但这里不考虑透明）。被反射的光沿着新路径继续传播，可能又打到其他物体上，在那里再次被部分吸收、部分反射。<a id="page317"/>一条光线可能在被完全吸收之前打到许多物体。可以想见，有些光线最终会进入眼睛（见图 8.2），打到视网膜上称为视锥细胞和视杆细胞的光感受细胞。
+
+<Figure src="images/Fig8-2.jpg" alt="(a) 入射白光的光通量；(b) 光打到圆柱上，部分被吸收、部分散射向眼睛与球体；(c) 从圆柱反射向球体的光再次被吸收或反射并进入眼睛；(d) 眼睛接收入射光，决定所见画面" figureNumber="图 8.2" caption="(a) 入射白光的光通量。(b) 光打到圆柱上，一部分光线被吸收，另一部分向眼睛和球体散射。(c) 从圆柱反射向球体的光再次被吸收或反射，并进入眼睛。(d) 眼睛接收入射光，由此决定眼睛看到什么。" />
+
+根据*三色*（trichromatic）理论（见 [Santrock03]），视网膜包含三种光感受细胞，分别对红、绿、蓝光敏感（有一定重叠）。入射的 RGB 光按其强度刺激对应的光感受细胞，强度不同，刺激程度也不同。光感受细胞被刺激（或不被刺激）之后，神经冲动沿视神经传向大脑，大脑根据光感受细胞的受激情况在你脑中生成图像。（当然，如果你闭上或遮住眼睛，感受细胞不受到刺激，大脑就把这登记为黑色。）
+
+例如，再来看图 8.2。假设圆柱的材质反射 75% 的红光、75% 的绿光，其余吸收；球体反射 25% 的红光，其余吸收。再假设光源发出的是纯白光。光线打到圆柱上时，所有蓝光被吸收，只有 75% 的红光和绿光被反射（即中等偏亮的黄色）。这些光随即散射——一部分进入眼睛，一部分射向球体。进入眼睛的那部分主要把红色和绿色视锥细胞刺激到中等偏高的程度；因此观察者看到的圆柱是中等亮度的黄色调。而另一部分光线射向球体并打到它上面。球体反射 25% 的红光、吸收其余；于是，被削弱过的入射红光（中等偏亮强度的红光）被进一步削弱并反射出去，而入射的绿光全部被吸收。剩下的这些红光随后进入眼睛，主要把红色视锥细胞刺激到较低的程度。因此观察者看到的球体是深红色调。
+
+本书（以及大多数实时应用）采用的光照模型称为*局部光照模型*。在局部模型中，每个物体的光照独立于其他物体，光照过程只考虑从光源直接发出的光（即忽略从场景其他物体弹射过来、再打到当前受光物体上的光）。图 8.3 展示了该模型带来的一个后果。
+
+<Figure src="images/Fig8-3.jpg" alt="物理上墙挡住了灯泡发出的光线、球在墙的阴影中；但在局部光照模型里，球被照亮得仿佛墙不存在" figureNumber="图 8.3" caption="物理上，墙挡住了灯泡发出的光线，球处于墙的阴影之中。然而在局部光照模型中，球被照亮得仿佛那道墙并不存在。" />
+
+另一方面，全局<a id="page318"/>光照模型在为物体打光时，不仅考虑从光源直接发出的光，还考虑从场景其他物体上弹射过来的间接光。这类模型之所以称为全局光照模型，是因为它们为物体打光时把整个全局场景都考虑在内。全局光照模型对实时游戏而言通常昂贵得不可接受（但非常接近生成照片级真实感场景）。寻找近似全局光照的实时方法是一个持续研究的领域；例如体素全局光照 [<i><a href="http://on-demand.gputechconf.com/gtc/2014/presentations/S4552-rt-voxel-based-global-illumination-gpus.pdf">http://on-demand.gputechconf.com/gtc/2014/presentations/S4552-rt-voxel-based-global-illumination-gpus.pdf</a></i>]。其他流行的方法是：为静态物体（如墙、雕像）预计算间接光照，再用这个结果去近似动态物体（如移动的游戏角色）的间接光照。
+
+</section>
+
+<section className="lesson-section" id="s82">
+<h2>8.2 法向量</h2>
+
+*面法线*（face normal）是描述多边形朝向方向的单位向量（即它垂直于多边形上的所有点）；见图 8.4*a*。*表面法线*（surface normal）是垂直于表面上某点切平面的单位向量；见图 8.4*b*。可以看到，表面法线决定了表面上某点"朝向"哪个方向。
+
+<Figure src="images/Fig8-4.jpg" alt="(a) 面法线垂直于面上所有点；(b) 表面法线是垂直于表面上某点切平面的向量" figureNumber="图 8.4" caption="(a) 面法线垂直于面上所有点。(b) 表面法线是垂直于表面上某点切平面的向量。" />
+
+<Figure src="images/Fig8-5.jpg" alt="顶点法线 n0 与 n1 定义在线段端点 p0 与 p1 处，线段内部点 p 的法线 n 由两端顶点法线线性插值（加权平均）得到" figureNumber="图 8.5" caption="顶点法线 n₀ 与 n₁ 定义在线段端点 p₀ 与 p₁ 处。线段内部某点 p 的法向量 n，由两端顶点法线线性插值（加权平均）求得；即 n = n₀ + t(n₁ − n₀)，其中 t 满足 p = p₀ + t(p₁ − p₀)。虽然为简单起见我们只在线段上演示了法线插值，但这个想法可以直接推广到在三维三角形上插值。" />
+
+做光照计算时，我们需要三角形网格表面上每个点的表面法线，这样才能确定光打到网格表面上该点的角度。为得到表面法线，我们只在顶点处指定表面法线（所谓*顶点法线*）。然后，为了得到三角形网格表面上每个点的表面法线近似值，这些顶点法线会在光栅化期间沿三角形插值（回顾 §5.10.3，并见图 8.5）。
+
+**注意**：对法线做插值并逐像素进行<a id="page319"/>光照计算，称为像素光照（pixel lighting）或 Phong 光照。一种开销更小、但精度也更低的方法是逐顶点做光照计算，然后把逐顶点光照计算的结果从顶点着色器输出，并在三角形的像素上插值。把计算从像素着色器移到顶点着色器是一种常见的性能优化，代价是画质；有时视觉差异非常细微，使这种优化非常有吸引力。
+
+<h3 id="s821">8.2.1 计算法向量</h3>
+
+为求三角形 Δ$\mathbf{p}_0$, $\mathbf{p}_1$, $\mathbf{p}_2$ 的面法线，我们先计算两个位于三角形边上的向量：
+
+$\mathbf{u} = \mathbf{p}_1 - \mathbf{p}_0$
+
+$\mathbf{v} = \mathbf{p}_2 - \mathbf{p}_0$
+
+于是面法线为：
+
+$$\mathbf{n} = \frac{\mathbf{u}\times\mathbf{v}}{\lVert \mathbf{u}\times\mathbf{v}\rVert}$$
+
+下面这个函数根据三角形的三个顶点，计算三角形正面（§5.10.2）的面法线。
+
+```cpp
+XMVECTOR ComputeNormal(FXMVECTOR p0,
+                       FXMVECTOR p1,
+                       FXMVECTOR p2)
+{
+  XMVECTOR u = p1 - p0;
+  XMVECTOR v = p2 - p0;
+
+  return XMVector3Normalize(
+    XMVector3Cross(u,v)); 
+}
+```
+
+<Figure src="images/Fig8-6.jpg" alt="中间顶点被相邻四个多边形共享，因此用这四个多边形面法线的平均值近似该顶点的法线" figureNumber="图 8.6" caption="中间顶点被相邻的四个多边形共享，所以我们用这四个多边形面法线的平均值近似中间顶点的法线。" />
+
+对于可微曲面<a id="page320"/>，我们可以用微积分求出曲面上各点的法线。可惜三角形网格不可微。处理三角形网格时通常采用的技术称为*顶点法线平均*（vertex normal averaging）。网格中任意顶点 $\mathbf{v}$ 的顶点法线 $\mathbf{n}$，等于网格中所有共享顶点 $\mathbf{v}$ 的多边形的面法线的平均值。例如在图 8.6 中，网格里有四个多边形共享顶点 $\mathbf{v}$，因此 $\mathbf{v}$ 的顶点法线为：
+
+$$\mathbf{n}_{avg} = \frac{\mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3}{\lVert \mathbf{n}_0+\mathbf{n}_1+\mathbf{n}_2+\mathbf{n}_3\rVert}$$
+
+在上面的例子中，我们不必像通常求平均那样除以 4，因为最后要对结果做归一化。另请注意，还可以构造更精细的平均方案；例如可以采用加权平均，权重由多边形的面积决定（面积较大的多边形比面积较小的多边形权重更大）。
+
+下面的伪代码展示了：给定三角形网格的顶点列表和索引列表时，如何实现这种平均：
+
+```cpp
+// Input: 
+// 1. An array of vertices (mVertices). Each vertex has a 
+//   position component (pos) and a normal component (normal).
+// 2. An array of indices (mIndices). 
+
+// For each triangle in the mesh:
+for(UINT i = 0; i < mNumTriangles; ++i)
+{
+  // indices of the ith triangle
+  UINT i0 = mIndices[i*3+0];
+  UINT i1 = mIndices[i*3+1];
+  UINT i2 = mIndices[i*3+2];
+
+  // vertices of ith triangle
+  Vertex v0 = mVertices[i0];
+  Vertex v1 = mVertices[i1];
+  Vertex v2 = mVertices[i2];
+
+  // compute face normal
+  Vector3 e0 = v1.pos - v0.pos;
+  Vector3 e1 = v2.pos - v0.pos;
+  Vector3 faceNormal = Cross(e0, e1);
+
+  // This triangle shares the following three vertices,
+  // so add this face normal into the average of these 
+  // vertex normals.
+  mVertices[i0].normal += faceNormal;
+  mVertices[i1].normal += faceNormal;
+  mVertices[i2].normal += faceNormal;
+}
+
+// For each vertex v, we have summed the face normals of all
+// the triangles that share v, so now we just need to normalize.
+for(UINT i = 0; i < mNumVertices; ++i)
+  mVertices[i].normal = Normalize(&mVertices[i].normal));
+```
+
+**译者注**：上面最后一行调用中 `Normalize(&mVertices[i].normal))` 多了一个右括号（应为 `Normalize(&mVertices[i].normal);`），此处按原文照录。
+
+<a id="page321"/>
+
+<h3 id="s822">8.2.2 变换法向量</h3>
+
+请看图 8.7*a*，其中有一个切向量 $\mathbf{u} = \mathbf{v}_1 - \mathbf{v}_0$ 与法向量 $\mathbf{n}$ 正交。如果我们施加一个非均匀缩放变换 $\mathbf{A}$，从图 8.7*b* 可以看到，变换后的切向量 $\mathbf{uA} = \mathbf{v}_1\mathbf{A} - \mathbf{v}_0\mathbf{A}$ 不再与变换后的法向量 $\mathbf{nA}$ 保持正交。
+
+<Figure src="images/Fig8-7a.jpg" alt="(a) 变换前的表面法线" figureNumber="图 8.7" caption="(a) 变换前的表面法线。(b) 在 x 轴上缩放 2 个单位后，法线不再与表面正交。(c) 用缩放变换的逆转置正确变换后的表面法线。" />
+
+<Figure src="images/Fig8-7b.jpg" alt="(b) 在 x 轴上缩放 2 个单位后的表面法线，已不再与表面正交" caption="图 8.7（续）：(b) 在 x 轴上缩放 2 个单位后，法线不再与表面正交。" />
+
+<Figure src="images/Fig8-7c.jpg" alt="(c) 用缩放变换的逆转置正确变换后的表面法线" caption="图 8.7（续）：(c) 用缩放变换的逆转置正确变换后的表面法线。" />
+
+所以我们的问题是：给定一个同时变换点和非法线向量的变换矩阵 $\mathbf{A}$，我们希望找到一个变换矩阵 $\mathbf{B}$，用它变换法向量，使得变换后的切向量与变换后的法向量正交（即 $\mathbf{uA}\cdot\mathbf{nB} = 0$）。为此，先从我们知道的事情入手：我们知道法向量 $\mathbf{n}$ 与切向量 $\mathbf{u}$ 正交：
+
+| 等式 | 含义 |
+|---|---|
+| $\mathbf{u}\cdot\mathbf{n} = 0$ | 切向量与法向量正交 |
+| $\mathbf{un}^T = 0$ | 把点积改写为矩阵乘法 |
+| $\mathbf{u}(\mathbf{AA}^{-1})\mathbf{n}^T = 0$ | 插入单位矩阵 $\mathbf{I} = \mathbf{AA}^{-1}$ |
+| $(\mathbf{uA})(\mathbf{A}^{-1}\mathbf{n}^T) = 0$ | 矩阵乘法的结合律 |
+| $(\mathbf{uA})(\mathbf{A}^{-1}\mathbf{n}^T)^T = 0$ | 转置性质 $(\mathbf{A}^T)^T = \mathbf{A}$ |
+| $(\mathbf{uA})(\mathbf{n}(\mathbf{A}^{-1})^T)^T = 0$ | 转置性质 $(\mathbf{AB})^T = \mathbf{B}^T\mathbf{A}^T$ |
+| $\mathbf{uA}\cdot\mathbf{n}(\mathbf{A}^{-1})^T = 0$ | 把矩阵乘法改写为点积 |
+| $\mathbf{uA}\cdot\mathbf{nB} = 0$ | 变换后的切向量与变换后的法向量正交 |
+
+**译者注**：上表按原书英文表格照录（原表为图片 `images/tbl355.jpg`）。其中第 5 行的"转置性质 $(\mathbf{A}^T)^T = \mathbf{A}$"与推导步骤的对应关系在原文中并不严密，此处保留原样备查。
+
+因此 $\mathbf{B} = (\mathbf{A}^{-1})^T$（$\mathbf{A}$ 的逆转置）就能完成这个任务：变换法向量，<a id="page322"/>使其与相关联的变换后切向量 $\mathbf{uA}$ 垂直。
+
+注意，如果矩阵是正交矩阵（$\mathbf{A}^T = \mathbf{A}^{-1}$），那么 $\mathbf{B} = (\mathbf{A}^{-1})^T = (\mathbf{A}^T)^T = \mathbf{A}$；也就是说，这种情况下我们不需要计算逆转置，因为 $\mathbf{A}$ 本身就能完成任务。总而言之，用非均匀缩放或切变变换来变换法向量时，要使用逆转置。
+
+我们在 *MathHelper.h* 中实现了一个计算逆转置的辅助函数：
+
+```cpp
+static XMMATRIX InverseTranspose(CXMMATRIX M)
+{
+  XMMATRIX A = M;
+  A.r[3] = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+
+  XMVECTOR det = XMMatrixDeterminant(A);
+  return XMMatrixTranspose(XMMatrixInverse(&det, A));
+}
+```
+
+我们清除了矩阵中的平移，因为我们用逆转置来变换向量，而平移只作用于点。不过，从 §3.2.1 我们知道，对向量设置 $w = 0$（使用齐次坐标）就能阻止向量被平移所改变。因此，按理说我们并不需要在矩阵中把平移清零。问题在于，如果我们想把逆转置和另一个不含非均匀缩放的矩阵相乘，比如视图矩阵 $(\mathbf{A}^{-1})^T\mathbf{V}$，那么 $(\mathbf{A}^{-1})^T$ 第四列里被转置后的平移就会"泄漏"到乘积矩阵中，造成错误。因此我们清零平移作为一种预防措施，避免这个错误。正确的做法应当是用 $((\mathbf{AV})^{-1})^T$ 来变换法线。下面是一个缩放加平移矩阵的例子，以及当第四列不是 $[0, 0, 0, 1]^T$ 时逆转置的样子：
+
+$$\mathbf{A} = \begin{bmatrix} 1 & 0 & 0 & 0 \\ 0 & 0.5 & 0 & 0 \\ 0 & 0 & 0.5 & 0 \\ 1 & 1 & 1 & 1 \end{bmatrix}$$
+
+$$(\mathbf{A}^{-1})^T = \begin{bmatrix} 1 & 0 & 0 & -1 \\ 0 & 2 & 0 & -2 \\ 0 & 0 & 2 & -2 \\ 0 & 0 & 0 & 1 \end{bmatrix}$$
+
+**注意**：即使做了逆转置变换，法向量也可能失去单位长度；因此变换之后可能需要重新归一化。<a id="page323"/>
+
+</section>
+
+<section className="lesson-section" id="s83">
+<h2>8.3 光照中的重要向量</h2>
+
+本节总结光照中涉及的一些重要向量。参见图 8.8，$\mathbf{E}$ 是眼睛位置，我们考虑眼睛沿单位向量 $\mathbf{v}$ 定义的视线所看到的点 $\mathbf{p}$。在点 $\mathbf{p}$ 处表面具有法线 $\mathbf{n}$，该点被一束以入射方向 $\mathbf{I}$ 行进的光线击中。*光向量*（light vector）$\mathbf{L}$ 是指向与打到表面点的光线相反方向的单位向量。虽然用光行进的方向 $\mathbf{I}$ 来思考可能更直观，但做光照计算时我们用的是光向量 $\mathbf{L}$；具体来说，在计算朗伯余弦定律时，用向量 $\mathbf{L}$ 来求 $\mathbf{L}\cdot\mathbf{n} = \cos\theta_i$，其中 $\theta_i$ 是 $\mathbf{L}$ 与 $\mathbf{n}$ 之间的夹角。反射向量 $\mathbf{r}$ 是入射光向量关于表面法线 $\mathbf{n}$ 的反射。*视线向量*（view vector，或*指向眼睛的向量* to-eye vector）$\mathbf{v} = \text{normalize}(\mathbf{E} - \mathbf{p})$ 是从表面点 $\mathbf{p}$ 到眼睛点 $\mathbf{E}$ 的单位向量，它定义了从眼睛到所看到的表面点的视线。有时我们需要使用向量 $-\mathbf{v}$，即从眼睛指向我们要计算光照的那个表面点的单位向量。
+
+<Figure src="images/Fig8-8.jpg" alt="光照计算中涉及的重要向量" figureNumber="图 8.8" caption="光照计算中涉及的重要向量。" />
+
+反射向量由下式给出：$\mathbf{r} = \mathbf{I} - 2(\mathbf{n}\cdot\mathbf{I})\mathbf{n}$；见图 8.9。（这里假定 $\mathbf{n}$ 是单位向量。）不过，在着色器程序中我们其实可以用 HLSL 内置的 `reflect` 函数来替我们计算 $\mathbf{r}$。
+
+<Figure src="images/Fig8-9.jpg" alt="反射的几何关系" figureNumber="图 8.9" caption="反射的几何关系。" />
+
+</section>
+
+<section className="lesson-section" id="s84">
+<h2>8.4 朗伯余弦定律</h2>
+
+我们可以把光看作一组沿某个方向在空间中行进的光子。每个光子都携带一定的（光）能量。每秒发出的（光）能量称为*辐射通量*（radiant flux）。单位面积上辐射通量的密度（称为*辐照度* irradiance）很重要，因为它决定了表面上一块区域接收多少光（从而决定它看起来有多亮）。粗略地说，我们可以把辐照度<a id="page324"/>理解为打到表面上一块区域的光的量，或穿过空间某个假想面积的光的量。
+
+正对着打到表面上的光（即光向量 $\mathbf{L}$ 等于法向量 $\mathbf{n}$）比以某个角度掠过表面的光更强。考虑一束截面积为 $A_1$、辐射通量为 $P$ 的细小光束。如果我们让这束光正对着照向表面（图 8.10*a*），那么光束打在表面上面积为 $A_1$ 的区域，$A_1$ 处的辐照度为 $E_1 = P/A_1$。现在假设我们旋转光束，使它以某个角度照到表面上（图 8.10*b*），那么光束覆盖的面积更大，为 $A_2$，打到这块面积上的辐照度为 $E_2 = P/A_2$。由三角学可知，$A_1$ 与 $A_2$ 的关系为：
+
+$$\cos\theta = \frac{A_1}{A_2} \Rightarrow \frac{1}{A_2} = \frac{\cos\theta}{A_1}$$
+
+因此，
+
+$$E_2 = \frac{P}{A_2} = \frac{P}{A_1}\cos\theta = E_1\cos\theta = E_1(\mathbf{n}\cdot\mathbf{L})$$
+
+<Figure src="images/Fig8-10.jpg" alt="(a) 截面积为 A1 的光束正对着照向表面；(b) 同一光束以某个角度照向表面，覆盖更大的面积 A2" figureNumber="图 8.10" caption="(a) 截面积为 A1 的光束正对着照向表面。(b) 截面积为 A1 的光束以某个角度照向表面，从而在表面上覆盖更大的面积 A2，于是光能被摊到更大面积上，使光看起来“更暗”。" />
+
+换言之，打到面积 $A_2$ 上的辐照度，等于垂直于光方向的面积 $A_1$ 处的辐照度乘以 $\mathbf{n}\cdot\mathbf{L} = \cos\theta$。这就是*朗伯余弦定律*。为处理光打到表面背面的情形（这会使点积为负），我们用 `max` 函数把结果截断：
+
+$$f(\theta) = \max(\cos\theta, 0) = \max(\mathbf{L}\cdot\mathbf{n}, 0)$$
+
+图 8.11 画出了 $f(\theta)$ 的图像，可以看到强度在 0.0 到 1.0 之间（即 0% 到 100%）随 $\theta$ 变化。
+
+<Figure src="images/Fig8-11.jpg" alt="函数 f(θ) = max(cosθ, 0) = max(L·n, 0) 在 −2 ≤ θ ≤ 2 上的图像" figureNumber="图 8.11" caption="函数 f(θ) = max(cosθ, 0) = max(L·n, 0) 在 −2 ≤ θ ≤ 2 上的图像。注意 π/2 ≈ 1.57。" /><a id="page325"/>
+
+</section>
+
+<section className="lesson-section" id="s85">
+<h2>8.5 漫反射光</h2>
+
+考虑一个不透明物体的表面，如图 8.12 所示。光打到表面上的某点时，一部分光进入物体内部，与表面附近的物质发生交互。光会在内部四处弹射，其中一部分被吸收，剩下的部分从表面向各个方向散射出去；这称为*漫反射*（diffuse reflection）。为简化起见，我们假定光是在进入表面的同一点散射出去的。吸收和散射出去的量取决于材质；例如木材、泥土、砖、瓦和灰泥对光的吸收/散射各不相同（这正是这些材质看起来不一样的原因）。在近似建模这种光与材质交互时，我们约定光在表面上方各个方向上均匀散射；因此无论从哪个视点<a id="page326"/>（眼睛位置）看，反射光都会到达眼睛。所以，我们不需要把视点考虑进去（即漫反射光照计算与视点无关），表面上某点的颜色无论从哪个视点看都一样。
+
+<Figure src="images/Fig8-12.jpg" alt="入射光打到漫反射表面时向各个方向均匀散射" figureNumber="图 8.12" caption="入射光打到漫反射表面时向各个方向均匀散射。其思想是光进入介质内部并在表面下方四处散射。一部分光会被吸收，剩下的从表面散射回来。由于难以对这种次表面散射建模，我们假定重新发射出的光以光进入点为中心、在表面上方各个方向上均匀散射出去。" />
+
+我们把漫反射光照的计算拆成两部分。第一部分，我们指定一个光的颜色和一个*漫反射反照率*（diffuse albedo）颜色。漫反射反照率指定了入射光中因漫反射而被表面反射的比例（根据能量守恒，未被反射的部分被材质吸收）。这一步用逐分量颜色乘法处理（因为光可以有颜色）。例如，假设表面上某点反射入射红光的 50%、绿光的 100%、蓝光的 75%，入射光颜色是 80% 强度的白光。也就是说，入射光的量为 $\mathbf{B}_L = (0.8, 0.8, 0.8)$，漫反射反照率为 $\mathbf{m}_d = (0.5, 1.0, 0.75)$；那么该点反射出去的光的量为：
+
+$$\mathbf{c}_d = \mathbf{B}_L \otimes \mathbf{m}_d = (0.8, 0.8, 0.8) \otimes (0.5, 1.0, 0.75) = (0.4, 0.8, 0.6)$$
+
+注意，漫反射反照率各分量必须在 0.0 到 1.0 范围内，这样它们才表示被反射的光的比例。
+
+不过，上面的公式还不完全正确。我们仍需要把朗伯余弦定律计入（它根据表面法线与光向量之间的夹角决定表面接收到原本光的多少）。设 $\mathbf{B}_L$ 表示入射光的量，$\mathbf{m}_d$ 为漫反射反照率颜色，$\mathbf{L}$ 为光向量，$\mathbf{n}$ 为表面法线。那么某点反射出的漫反射光的量为：
+
+$$\mathbf{c}_d = \max(\mathbf{L}\cdot\mathbf{n}, 0) \cdot \mathbf{B}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.1)$$
+
+</section>
+
+<section className="lesson-section" id="s86">
+<h2>8.6 环境光</h2>
+
+如前所述，我们的光照模型不考虑从场景其他物体上弹射过来的间接光。然而，我们在真实世界里看到的光有很大一部分是间接光。例如，一条与房间相连的走廊可能并不在房间内光源的直接视线之内，但光会从房间墙壁上弹射，其中一些能到达走廊，使走廊稍微亮一些。再举一个例子：假设我们坐在一个房间里，桌上有个茶壶，房间里有一个光源。茶壶只有一面处于光源的直接视线之内；然而茶壶的背面不会完全漆黑。这是因为一些光从墙壁或房间里其他物体上散射，最终打到了茶壶背面。
+
+为了以某种方式"糊弄"这种间接<a id="page327"/>光，我们在光照方程中引入一个环境项：
+
+$$\mathbf{c}_a = \mathbf{A}_L \otimes \mathbf{m}_d \qquad (\text{式 } 8.2)$$
+
+颜色 $\mathbf{A}_L$ 指定表面接收到的间接（环境）光总量，它可能与光源发出的光不同，因为光在从其他表面弹射时被吸收过。漫反射反照率 $\mathbf{m}_d$ 指定入射光中因漫反射被表面反射的比例。我们用同一个值来表示表面反射的入射环境光比例；也就是说，对于环境光照，我们建模的是间接（环境）光的漫反射反射率。环境光所做的不过就是把物体均匀地提亮一点——完全没有真正的物理计算。其想法是：间接光在场景中散射、弹射了太多次，以至于它从各个方向均匀地打到物体上。
+
+</section>
+
+<section className="lesson-section" id="s87">
+<h2>8.7 镜面光</h2>
+
+我们用漫反射光照来建模漫反射：光进入介质、四处弹射，一部分光被吸收，剩下的从介质向各个方向散射出去。第二种反射由 Fresnel 效应引起，这是一种物理现象。当光到达折射率不同的两种介质之间的分界面时，一部分光被反射，剩下的光被折射（见图 8.13）。折射率是介质的一种物理属性，等于光在真空中的速度与该介质中光速之比。我们把这种光反射过程称为*镜面反射*（specular reflection），把被反射的光称为*镜面光*（specular light）。镜面光如图 8.14*a* 所示。<a id="page328"/>
+
+<Figure src="images/Fig8-13.jpg" alt="(a) 法线为 n 的完全平面镜的 Fresnel 效应：入射光 I 被分成沿反射方向 r 的反射光和射入介质内部沿折射方向 t 的折射光；(b) 大多数物体不是完全平面镜，而具有微观粗糙度，使反射光与折射光围绕反射向量和折射向量散开" figureNumber="图 8.13" caption="(a) 法线为 n 的完全平面镜的 Fresnel 效应。入射光 I 被分开，一部分沿反射方向 r 反射，剩下的沿折射方向 t 折射进入介质。所有这些向量都在同一平面内。反射向量与法线的夹角始终为 θi，它与光向量 L = −I 和法线 n 之间的夹角相同。折射向量与 −n 之间的夹角 θt 取决于两种介质之间的折射率，由斯涅尔定律（Snell's Law）给出。(b) 大多数物体并不是完全平面镜，而具有微观粗糙度。这会使反射光和折射光围绕反射向量和折射向量散开。" />
+
+如果折射向量从介质中出来（从另一侧）并进入眼睛，物体就看起来是透明的。也就是说，光穿过了透明物体。实时图形通常使用 alpha 混合或后处理效果来近似透明物体中的折射，本书后面会解释。目前我们只考虑不透明物体。
+
+对于不透明物体，折射光进入介质后经历漫反射。因此从图 8.14*b* 可以看出，对不透明物体而言，从表面反射并进入眼睛的光的量，是物体内反射（漫反射）光与镜面反射的组合。与漫反射光不同，镜面光可能不会进入眼睛，因为它沿特定方向反射；也就是说，镜面光照计算与视点有关。这意味着随着眼睛在场景中移动，它接收到的镜面光量会变化。
+
+<Figure src="images/Fig8-14.jpg" alt="(a) 粗糙表面的镜面光围绕反射向量 r 散开；(b) 进入眼睛的反射光是镜面反射与漫反射的组合" figureNumber="图 8.14" caption="(a) 粗糙表面的镜面光围绕反射向量 r 散开。(b) 进入眼睛的反射光是镜面反射与漫反射的组合。" />
+
+<h3 id="s871">8.7.1 Fresnel 效应</h3>
+
+让我们考虑一个法线为 $\mathbf{n}$ 的平面，它分隔了折射率不同的两种介质。由于表面处折射率不连续，入射光打到表面时，一部分从表面反射出去，一部分折射进入表面（见图 8.13）。*Fresnel 方程*用数学方式描述了入射光中被反射的百分比，$0 \le \mathbf{R}_F \le 1$。由能量守恒，如果 $\mathbf{R}_F$ 是被反射的光量，那么 $(1 - \mathbf{R}_F)$ 就是被折射的光量。$\mathbf{R}_F$ 的值是一个 RGB 向量，因为反射量取决于光的颜色。
+
+反射多少光取决于介质（有些材质比别的更反光），也取决于法向量 $\mathbf{n}$ 与光向量 $\mathbf{L}$ 之间的夹角 $\theta_i$。由于完整 Fresnel 方程过于复杂，实时渲染中通常不使用它们；取而代之的是*Schlick 近似*：
+
+$$\mathbf{R}_F(\theta_i) = \mathbf{R}_F(0°) + \left(1 - \mathbf{R}_F(0°)\right)\left(1 - \cos\theta_i\right)^5$$
+
+$\mathbf{R}_F(0°)$ 是介质的一种属性；下面是一些常见<a id="page329"/>材质的取值 [Möller08]：
+
+| 介质 | $\mathbf{R}_F(0°)$ |
+|---|---|
+| 水（Water） | (0.02, 0.02, 0.02) |
+| 玻璃（Glass） | (0.08, 0.08, 0.08) |
+| 塑料（Plastic） | (0.05, 0.05, 0.05) |
+| 金（Gold） | (1.0, 0.71, 0.29) |
+| 银（Silver） | (0.95, 0.93, 0.88) |
+| 铜（Copper） | (0.95, 0.64, 0.54) |
+
+<Figure src="images/tbl363.jpg" alt="常见介质及其 R_F(0°) 取值的英文原表" caption="常见介质与 R_F(0°) 取值的英文原表；逐行中文对照见上表。" />
+
+图 8.15 画出了几个不同 $\mathbf{R}_F(0°)$ 下 Schlick 近似的曲线。关键观察是：当 $\theta_i \rightarrow 90°$ 时反射量增加。来看一个现实世界的例子。考虑图 8.16。假设我们站在一个相对清澈、水深约两尺的平静池塘里。如果低头看，我们主要看到池塘底部的沙子和石头。这是因为从环境中射下来、反射进我们眼睛的光形成的夹角 $\theta_i$ 接近 $0.0°$；因此反射量低，而由能量守恒，折射量高。另一方面，如果向地平线望去，我们会看到池水中有很强的反射。这是因为从环境中射下来、进入我们眼睛的光形成的夹角 $\theta_i$ 更接近 $90.0°$，于是反射量增加。这种行为通常称为 *Fresnel 效应*。简要总结 Fresnel 效应：*被反射的光量取决于材质*（$\mathbf{R}_F(0°)$）*以及法线与光向量之间的夹角*。
+
+<Figure src="images/Fig8-15.jpg" alt="水、红宝石和铁三种不同材质下 Schlick 近似的曲线" figureNumber="图 8.15" caption="水、红宝石和铁三种不同材质下 Schlick 近似的曲线。" />
+
+金属会吸收透射光<a id="page330"/> [Möller08]，这意味着它们没有体反射。不过金属并不会呈现黑色，因为它们具有很高的 $\mathbf{R}_F(0°)$ 值，这意味着即使入射角很小、接近 $0°$，它们也会反射相当多的镜面光。
+
+<h3 id="s872">8.7.2 粗糙度</h3>
+
+真实世界中的反光物体往往不是完美的镜子。即使物体的表面看起来平整，在微观层面上我们也可以认为它具有*粗糙度*（roughness）。参照图 8.17，可以把完美镜子看作没有粗糙度，它的微面法线全都与宏观法线方向一致。随着粗糙度增加，微面法线的方向偏离宏观法线，使反射光散开成一个*镜面波瓣*（specular lobe）。
+
+<Figure src="images/Fig8-16a.jpg" alt="(a) 俯视池塘：反射弱、折射强，因为 L 与 n 的夹角小" figureNumber="图 8.16" caption="(a)：在池塘中低头看时，反射弱而折射强，因为 L 与 n 之间的夹角很小。(b) 向地平线望去时，反射强而折射弱，因为 L 与 n 之间的夹角更接近 90°。" />
+
+<Figure src="images/Fig8-16b.jpg" alt="(b) 向地平线望去：反射强、折射弱，因为 L 与 n 的夹角更接近 90°" caption="图 8.16（续）：(b) 向地平线望去时反射更强、折射更弱。" />
+
+<Figure src="images/Fig8-17.jpg" alt="(a) 黑色横条表示一小块表面元的放大；(b) 粗糙度使镜面反射光散开，形成镜面波瓣" figureNumber="图 8.17" caption="(a) 黑色横条表示一小块表面元的放大。在微观层面，这块区域由于微观粗糙度而有大量朝向各异的微面法线。表面越光滑，微面法线就越与宏观法线对齐；表面越粗糙，微面法线就偏离宏观法线越多。(b) 这种粗糙度使镜面反射光散开。镜面反射的形状称为镜面波瓣。一般来说，镜面波瓣的形状会随所建模的表面材质类型而变化。" />
+
+为了用数学方式建模粗糙度，我们采用*微面*（microfacet）模型：把微观表面建模为一组称为微面元的细小平面元素，微面法线就是这些微面元的法线。对于给定的视线 $\mathbf{v}$ 和光向量 $\mathbf{L}$，我们想知道有多少比例的微面元把 $\mathbf{L}$ 反射进 $\mathbf{v}$；换句话说，就是法线为 $\mathbf{h} = \text{normalize}(\mathbf{L} + \mathbf{v})$ 的微面元所占的比例；见图 8.18。这会告诉我们有多少光经由镜面反射进入眼睛——把 $\mathbf{L}$ 反射进 $\mathbf{v}$ 的微面元<a id="page331"/>越多，眼睛看到的镜面光就越亮。
+
+<Figure src="images/Fig8-18.jpg" alt="法线为 h 的微面元把 L 反射进视线 v" figureNumber="图 8.18" caption="法线为 h 的微面元把 L 反射进 v。" />
+
+向量 $\mathbf{h}$ 称为*半程向量*（halfway vector），因为它位于 $\mathbf{L}$ 与 $\mathbf{v}$ 的正中间。此外，再引入半程向量 $\mathbf{h}$ 与宏观法线 $\mathbf{n}$ 之间的夹角 $\theta_h$。
+
+我们定义归一化分布函数 $\rho(\theta_h) \in [0, 1]$，用来表示法线 $\mathbf{h}$ 与宏观法线 $\mathbf{n}$ 成夹角 $\theta_h$ 的微面元所占的比例。直观上，我们期望 $\rho(\theta_h)$ 在 $\theta_h = 0°$ 时取最大值。也就是说，我们期望微面法线偏向宏观法线；随着 $\theta_h$ 增大（即 $\mathbf{h}$ 偏离宏观法线 $\mathbf{n}$），我们期望法线为 $\mathbf{h}$ 的微面元比例减小。一个流行的、可控的、符合上述期望的 $\rho(\theta_h)$ 建模函数是：
+
+$$\rho(\theta_h) = \cos^m(\theta_h) = \cos^m(\mathbf{n}\cdot\mathbf{h})$$
+
+注意，只要两个向量都是单位长度，就有 $\cos(\theta_h) = (\mathbf{n}\cdot\mathbf{h})$。图 8.19 画出了取不同 $m$ 时 $\rho(\theta_h) = \cos^m(\theta_h)$ 的曲线。这里 $m$ 控制粗糙度，它规定法线 $\mathbf{h}$ 与宏观法线 $\mathbf{n}$ 成夹角 $\theta_h$ 的微面元所占的比例。$m$ 减小时表面变粗糙，微面法线越来越偏离宏观法线。$m$ 增大时表面变光滑，微面法线越来越趋近宏观法线。
+
+**译者注**：原书此句写作 "Figure 8.19 shows $\rho(\theta_h) = \cos_h(\theta_h)$ for various $m$"，左式下标误作 $\cos_h$，按上下文应为 $\cos^m$，译文取 $\cos^m$，原书文字照录于此备查。
+
+<Figure src="images/Fig8-19.jpg" alt="用于建模粗糙度的函数" figureNumber="图 8.19" caption="用于建模粗糙度的函数。" />
+
+我们可以把 $\rho(\theta_h)$ 与一个归一化因子结合起来，得到一个新的函数，用来根据粗糙度建模镜面反射的光量：
+
+$$S(\theta_h) = \frac{m+8}{8}\cos^m(\theta_h) = \frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m$$
+
+图 8.20 画出了取不同 $m$ 时这个函数的曲线。<a id="page332"/>和之前一样，$m$ 控制粗糙度，但我们加入了 $\frac{m+8}{8}$ 这个归一化因子，以使光能守恒；它本质上是在控制图 8.20 中曲线的高度，从而在镜面波瓣随 $m$ 变宽或变窄时，让总光能守恒。$m$ 较小时表面较粗糙，镜面波瓣随光能散布而变宽；因此我们期望镜面高光更暗，因为能量被摊开了。反之，$m$ 较大时表面较光滑，镜面波瓣更窄；因此我们期望镜面高光更亮，因为能量被集中了。从几何上看，$m$ 控制镜面波瓣的展宽程度。要为光滑表面（如抛光金属）建模，就使用较大的 $m$；要为较粗糙的表面建模，就使用较小的 $m$。
+
+<Figure src="images/Fig8-20.jpg" alt="用于根据粗糙度建模镜面反射的函数" figureNumber="图 8.20" caption="用于根据粗糙度建模镜面反射的函数。" />
+
+最后，本节<a id="page333"/>收尾时，我们把 Fresnel 反射与表面粗糙度结合起来。我们要计算的是有多少光被反射进视线方向 $\mathbf{v}$（见图 8.18）。回顾一下：法线为 $\mathbf{h}$ 的微面元会把光反射进 $\mathbf{v}$。设 $\alpha_h$ 为光向量与半程向量 $\mathbf{h}$ 之间的夹角，那么 $\mathbf{R}_F(\alpha_h)$ 告诉我们在 Fresnel 效应下围绕 $\mathbf{h}$ 反射进 $\mathbf{v}$ 的光量。把 Fresnel 效应带来的反射光量 $\mathbf{R}_F(\alpha_h)$ 与粗糙度带来的反射光量 $S(\theta_h)$ 相乘，就得到镜面反射的光量：设 $(\max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L)$ 表示打到我们所计算的那个表面点上的入射光量，那么由于粗糙度和 Fresnel 效应而镜面反射进眼睛的 $(\max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L)$ 的比例由下式给出：
+
+$$\mathbf{c}_s = \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m \qquad (\text{式 } 8.3)$$
+
+注意，如果 $\mathbf{L}\cdot\mathbf{n} \le 0$，光打到了我们所计算的表面背面；因此正面表面接收不到光。
+
+</section>
+
+<section className="lesson-section" id="s88">
+<h2>8.8 光照模型回顾</h2>
+
+把所有内容合到一起，从表面反射的总光量是环境光反射、漫反射光反射和镜面光反射三者之和：
+
+1. 环境光 $\mathbf{c}_a$：建模由于间接光而从表面反射出去的光量。
+2. 漫反射光 $\mathbf{c}_d$：建模进入介质内部、在表面下方四处散射的光——其中一部分被吸收，剩下的从表面散射回来。由于难以对这种次表面散射建模，我们假定重新发射出的光以光进入点为中心、在表面上方各个方向均匀散射出去。
+3. 镜面光 $\mathbf{c}_s$：建模由于 Fresnel 效应和表面粗糙度而从表面反射出去的光。
+
+这就导出了本书着色器实现的光照方程：
+
+$$LitColor = \mathbf{c}_a + \mathbf{c}_d + \mathbf{c}_s = \mathbf{A}_L \otimes \mathbf{m}_d + \max(\mathbf{L}\cdot\mathbf{n}, 0)\cdot\mathbf{B}_L \otimes \left(\mathbf{m}_d + \mathbf{R}_F(\alpha_h)\frac{m+8}{8}(\mathbf{n}\cdot\mathbf{h})^m\right) \qquad (\text{式 } 8.4)$$
+
+该方程中的所有向量都假定为单位长度。
+
+1. $\mathbf{L}$：光向量，指向光源。
+2. $\mathbf{n}$：表面法线。
+3. $\mathbf{h}$：半程向量，位于光向量与视线向量（从受光的表面点指向眼睛点的向量）<a id="page334"/>正中间。
+4. $\mathbf{A}_L$：表示入射环境光的量。
+5. $\mathbf{B}_L$：表示入射直达光的量。
+6. $\mathbf{m}_d$：指定入射光中因漫反射而被表面反射的比例。
+7. $\mathbf{L}\cdot\mathbf{n}$：朗伯余弦定律。
+8. $\alpha_h$：半程向量 $\mathbf{h}$ 与光向量 $\mathbf{L}$ 之间的夹角。
+9. $\mathbf{R}_F(\alpha_h)$：指定在 Fresnel 效应下围绕 $\mathbf{h}$ 反射进眼睛的光量。
+10. $m$：控制表面粗糙度。
+11. $(\mathbf{n}\cdot\mathbf{h})^m$：指定法线为 $\mathbf{h}$ 且与宏观法线 $\mathbf{n}$ 成夹角 $\theta_h$ 的微面元所占的比例。
+12. $\frac{m+8}{8}$：用于在镜面反射中建模能量守恒的归一化因子。
+
+**译者注**：原书第 11 项写作 "$(\mathbf{n}\cdot\mathbf{h})_h$"，上标误作下标，按上下文应为 $(\mathbf{n}\cdot\mathbf{h})^m$；译文取上图所画的 $(\mathbf{n}\cdot\mathbf{h})^m$，原书文字照录于此备查。
+
+图 8.21 展示了这三个分量如何协同工作。
+
+<Figure src="images/Fig8-21.jpg" alt="(a) 仅用环境光着色的球，被均匀提亮；(b) 环境光与漫反射光组合；(c) 环境光、漫反射光与镜面光三者组合，出现镜面高光" figureNumber="图 8.21" caption="(a) 仅用环境光着色的球，它被均匀提亮。(b) 环境光与漫反射光组合。由于朗伯余弦定律的作用，现在从亮到暗有平滑过渡。(c) 环境光、漫反射光与镜面光。镜面光产生一个镜面高光。" />
+
+**注意**：式 4 是一个常见且流行的光照方程，但它只是一个模型。人们也提出了其他光照模型。
+
+</section>
+
+<section className="lesson-section" id="s89">
+<h2>8.9 实现材质</h2>
+
+我们的材质结构如下，定义在 *d3dUtil.h* 中：
+
+```cpp
+// Simple struct to represent a material for our demos. 
+struct Material
+{
+  // Unique material name for lookup.
+  std::string Name;
+
+  // Index into constant buffer corresponding to this material.
+  int MatCBIndex = -1;
+
+  // Index into SRV heap for diffuse texture. Used in the texturing
+  // chapter.
+  int DiffuseSrvHeapIndex = -1;
+
+  // Dirty flag indicating the material has changed and we need to 
+  // update the constant buffer. Because we have a material constant 
+  // buffer for each FrameResource, we have to apply the update to each 
+  // FrameResource. Thus, when we modify a material we should set
+  // NumFramesDirty = gNumFrameResources so that each frame resource 
+  // gets the update.
+  int NumFramesDirty = gNumFrameResources;
+
+  // Material constant buffer data used for shading.
+  DirectX::XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+  DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
+  float Roughness = 0.25f;
+  DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
+};
+```
+
+为真实世界的材质建模，需要结合<a id="page335"/>为 `DiffuseAlbedo` 和 `FresnelR0` 设置真实取值，再加上一些艺术性的调整。例如，金属导体吸收进入金属内部的折射光 [Möller08]，这意味着金属不会有漫反射（即 `DiffuseAlbedo` 应为 0）。不过，为了补偿我们并没有对光照做 100% 的物理模拟，给一个较低的 `DiffuseAlbedo` 值而不是 0，可能会得到更好的艺术效果。要点是：我们会尽量使用物理上真实的材质取值，但如果最终结果从艺术角度看更好，也可以随意调整这些值。
+
+在我们的材质结构中，粗糙度用 [0, 1] 范围内的归一化浮点值指定。粗糙度为 0 表示完全光滑的表面，粗糙度为 1 表示物理上可能的最粗糙表面。归一化范围使粗糙度的设定以及不同材质之间的粗糙度比较更容易。例如，粗糙度为 0.6 的材质比粗糙度为 0.3 的材质粗糙一倍。在着色器代码中，我们将用粗糙度推导出式 8.4 里使用的指数 $m$。注意，按照我们对粗糙度的定义，表面的光泽度（shininess）就是粗糙度的倒数：*shininess* = 1 − *roughness* ∈ [0, 1]。
+
+现在的一个问题是：我们应该以什么粒度指定材质取值？材质取值可能在表面上变化；也就是说，表面上不同的点可能具有不同的材质取值。例如，考虑图 8.22 所示的汽车模型，其中车架、车窗、车灯和轮胎对光的反射与吸收各不相同，因此材质取值需要在汽车表面上变化。
+
+<Figure src="images/Fig8-22.jpg" alt="汽车网格被划分为五个材质属性组" figureNumber="图 8.22" caption="汽车网格被划分为五个材质属性组。" />
+
+要实现这种变化，一种方案是逐顶点指定材质取值。这些逐顶点材质随后会在光栅化期间沿三角形插值，从而得到三角形网格表面上每个点的材质取值。<a id="page336"/>然而，正如我们在第 <a href="ch07.html#chap07">7</a> 章的"Hills"演示中看到的，逐顶点颜色仍然太粗糙，无法真实地建模精细细节。此外，逐顶点颜色会给顶点结构增加额外数据，而且我们还需要有工具来绘制逐顶点颜色。相反，流行的方案是使用纹理映射，但这要留到下一章。本章中，我们允许材质以绘制调用的频率变化。为此，我们定义每个独特材质的属性并把它们放进一张表：
+
+```cpp
+std::unordered_map<std::string, std::unique_ptr<Material>> mMaterials;
+
+void LitWavesApp::BuildMaterials()
+{
+  auto grass = std::make_unique<Material>();
+  grass->Name = "grass";
+  grass->MatCBIndex = 0;
+  grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.6f, 1.0f);
+  grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+  grass->Roughness = 0.125f;
+
+  // This is not a good water material definition, but we do not have
+  // all the rendering tools we need (transparency, environment 
+  // reflection), so we fake it for now.
+  auto water = std::make_unique<Material>();
+  water->Name = "water";
+  water->MatCBIndex = 1;
+  water->DiffuseAlbedo = XMFLOAT4(0.0f, 0.2f, 0.6f, 1.0f);
+  water->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+  water->Roughness = 0.0f;
+
+  mMaterials["grass"] = std::move(grass);
+  mMaterials["water"] = std::move(water);
+}
+```
+
+上表把材质数据存储在系统内存中。为了让 GPU 能在着色器中访问材质数据，我们需要在常量缓冲中镜像相关数据。就像我们对逐对象常量缓冲所做的那样<a id="page337"/>，我们给每个 `FrameResource` 添加一个常量缓冲，用来存储每个材质的常量：
+
+```cpp
+struct MaterialConstants
+{
+  DirectX::XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+  DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
+  float Roughness = 0.25f;
+
+  // Used in the chapter on texture mapping.
+  DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
+};
+
+struct FrameResource
+{
+public:
+  …
+
+  std::unique_ptr<UploadBuffer<MaterialConstants>> MaterialCB = nullptr;
+
+  …
+};
+```
+
+注意，`MaterialConstants` 结构只包含 `Material` 数据的一个子集；具体来说，它只包含着色器渲染所需的数据。
+
+在更新函数中，只要材质数据发生变化（"脏了"），就把它复制到常量缓冲的某个子区域，从而让 GPU 的材质常量缓冲数据与系统内存中的材质数据保持同步：
+
+```cpp
+void LitWavesApp::UpdateMaterialCBs(const GameTimer& gt)
+{
+  auto currMaterialCB = mCurrFrameResource->MaterialCB.get();
+  for(auto& e : mMaterials)
+  {
+    // Only update the cbuffer data if the constants have changed. If
+    // the cbuffer data changes, it needs to be updated for each 
+    // FrameResource.
+    Material* mat = e.second.get();
+    if(mat->NumFramesDirty > 0)
+    {
+      XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
+
+      MaterialConstants matConstants;
+      matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
+      matConstants.FresnelR0 = mat->FresnelR0;
+      matConstants.Roughness = mat->Roughness;
+
+      currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
+
+      // Next FrameResource need to be updated too.
+      mat->NumFramesDirty--;
+    }
+  }
+}
+```
+
+现在每个渲染项都包含<a id="page338"/>一个指向 `Material` 的指针。注意，多个渲染项可以引用同一个 `Material` 对象；例如，多个渲染项可能使用同一个"砖块"材质。相应地，每个 `Material` 对象都有一个索引，指明它的常量数据位于材质常量缓冲中的什么位置。由此，我们可以偏移到正在绘制的渲染项所需常量数据的虚拟地址，并把它设置到期望材质常量数据的根描述符上。（另一种做法是：我们可以偏移到堆中的 CBV 描述符并设置一个描述符表，但在本演示中我们把根签名定义为使用根描述符来处理材质常量缓冲，而不是描述符表。）下面的代码展示了如何绘制使用不同材质的渲染项：
+
+```cpp
+void LitWavesApp::DrawRenderItems(
+  ID3D12GraphicsCommandList* cmdList, 
+  const std::vector<RenderItem*>& ritems)
+{
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize
+   (sizeof(ObjectConstants));
+  UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize
+   (sizeof(MaterialConstants));
+
+  auto objectCB = mCurrFrameResource->ObjectCB->Resource();
+  auto matCB = mCurrFrameResource->MaterialCB->Resource();
+
+  // For each render item…
+  for(size_t i = 0; i < ritems.size(); ++i)
+  {
+    auto ri = ritems[i];
+
+    cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+    cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = 
+      objectCB->GetGPUVirtualAddress() + 
+      ri->ObjCBIndex*objCBByteSize;
+    D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = 
+      matCB->GetGPUVirtualAddress() + 
+      ri->Mat->MatCBIndex*matCBByteSize;
+
+    cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+    cmdList->SetGraphicsRootConstantBufferView(1, matCBAddress);
+
+    cmdList->DrawIndexedInstanced(ri->IndexCount, 1, 
+      ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+  }
+}
+```
+
+我们提醒读者，<a id="page339"/>我们需要三角形网格表面上每个点的法向量，这样才能确定光打到网格表面上某点的角度（用于朗伯余弦定律）。为了得到三角形网格表面上每个点的法向量近似值，我们在顶点层级指定法线。这些顶点法线会在光栅化期间沿三角形插值。
+
+到目前为止我们讨论了光的各个分量，但还没有讨论具体的光源类型。接下来三节将描述如何实现平行光、点光源和聚光灯。
+
+</section>
+
+<section className="lesson-section" id="s810">
+<h2>8.10 平行光</h2>
+
+平行光（parallel light，或称方向光 directional light）近似一个非常遥远的光源。因此，我们可以把所有入射光线近似为互相平行（图 8.23）。而且，由于光源非常遥远，我们可以忽略距离的影响，只需指定光打到场景处的光强。
+
+<Figure src="images/Fig8-23.jpg" alt="互相平行的光线打到表面上" figureNumber="图 8.23" caption="互相平行的光线打到表面上。" />
+
+平行光源由一个向量定义，该向量指定光线的行进方向。因为光线互相平行，它们都使用同一个方向向量。光向量指向与光线行进方向相反的方向。可以准确建模为方向光的光源，一个常见例子是太阳（图 8.24）。
+
+<Figure src="images/Fig8-24.jpg" alt="此图未按比例绘制；但若在地球上取一小块表面区域，打到该区域的光线近似平行" figureNumber="图 8.24" caption="此图未按比例绘制；但若在地球上取一小块表面区域，打到该区域的光线近似平行。" />
+
+</section>
+
+<section className="lesson-section" id="s811">
+<h2>8.11 点光源</h2>
+
+点光源的一个很好的物理例子是灯泡；它向所有方向球面辐射（图 8.25）。具体来说，对任意一点 $\mathbf{P}$，都存在一条从点光源位置 $\mathbf{Q}$ 出发、朝向该点的光线。和往常一样，我们定义光<a id="page340"/>向量沿相反方向，即从点 $\mathbf{P}$ 指向点光源 $\mathbf{Q}$ 的方向：
+
+$$\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}$$
+
+本质上，点光源和平行光唯一的区别在于光向量如何计算——对点光源而言它逐点变化，对平行光而言它保持恒定。
+
+<Figure src="images/Fig8-25.jpg" alt="点光源向所有方向辐射；对任意点 P，都存在一条从点光源 Q 出发朝向 P 的光线" figureNumber="图 8.25" caption="点光源向所有方向辐射；具体来说，对任意点 P，都存在一条从点光源 Q 出发朝向 P 的光线。" />
+
+<h3 id="s8111">8.11.1 衰减</h3>
+
+从物理上看，光强随距离按平方反比定律减弱。也就是说，距离光源 $d$ 处某点的光强为：
+
+$$I(d) = \frac{I_0}{d^2}$$
+
+其中 $I_0$ 是距离光源 $d = 1$ 处的光强。如果你设置了基于物理的光照取值，并使用 HDR（高动态范围）光照和色调映射，这个公式效果很好。不过，一个更容易上手、也是我们演示中将要使用的公式是线性衰减函数：
+
+$$\operatorname{att}(d) = \operatorname{saturate}\left(\frac{falloffEnd - d}{falloffEnd - falloffStart}\right)$$
+
+**译者注**：原书该式图片中写作 `att( ) saturate(...)`，漏写了参数 $d$ 和等号，此处按上下文补足为 $\operatorname{att}(d) = \operatorname{saturate}(\cdots)$，原图 `images/eq374-03.jpg` 仍可对照。
+
+该函数的图像见图 8.26。`saturate` 函数把参数截断到 [0, 1] 范围：
+
+$$\operatorname{saturate}(x) = \begin{cases} x, & 0 \le x \le 1 \\ 0, & x < 0 \\ 1, & x > 1 \end{cases}$$
+
+<Figure src="images/Fig8-26.jpg" alt="衰减因子在距离达到 falloffStart 之前保持满强度 1.0，随后随距离线性衰减到 0.0，直到达到 falloffEnd" figureNumber="图 8.26" caption="缩放光值的衰减因子在距离 d 达到 falloffStart 之前保持满强度（1.0），随后随距离增大线性衰减到 0.0，直到距离达到 falloffEnd。" />
+
+评估<a id="page341"/>点光源的公式与式 8.4 相同，但我们必须用衰减因子 att($d$) 缩放光源值 $\mathbf{B}_L$。注意，衰减不影响环境项，因为环境项用来建模已经在场景中弹射过的间接光。
+
+使用我们的衰减函数时，与光源距离大于或等于 $falloffEnd$ 的点接收不到光。这提供了一个有用的光照优化：在着色器程序中，如果某点超出范围，我们就可以提前返回，并用动态分支跳过光照计算。
+
+</section>
+
+<section className="lesson-section" id="s812">
+<h2>8.12 聚光灯</h2>
+
+聚光灯的一个很好的物理例子是手电筒。本质上，聚光灯有一个位置 $\mathbf{Q}$，朝向一个方向 $\mathbf{d}$，并通过一个锥体辐射光线（见图 8.27）。
+
+<Figure src="images/Fig8-27.jpg" alt="聚光灯有位置 Q、朝向 d，并通过夹角为 φmax 的锥体辐射光线" figureNumber="图 8.27" caption="聚光灯有位置 Q、朝向方向 d，并通过夹角为 φmax 的锥体辐射光线。" />
+
+要实现聚光灯，我们像处理点光源那样开始：光向量由下式给出：
+
+$$\mathbf{L} = \frac{\mathbf{Q}-\mathbf{P}}{\lVert \mathbf{Q}-\mathbf{P}\rVert}$$
+
+其中 $\mathbf{P}$ 是正在<a id="page342"/>受光的点的位置，$\mathbf{Q}$ 是聚光灯的位置。从图 8.27 可以观察到，$\mathbf{P}$ 位于聚光灯锥体内部（因而接收到光）当且仅当 $-\mathbf{L}$ 与 $\mathbf{d}$ 之间的夹角 $\varphi$ 小于锥体夹角 $\varphi_{max}$。而且，聚光灯锥体内的光不应具有相同强度；锥体中心处应最强，随着 $\varphi$ 从 0 增加到 $\varphi_{max}$，光强应衰减到零。
+
+那么，我们如何控制光强随 $\varphi$ 的衰减，又该如何控制聚光灯锥体的大小呢？我们可以使用与图 8.19 图像相同的函数，但把 $\theta_h$ 换成 $\varphi$，把 $m$ 换成 $s$：
+
+$$k_{spot}(\varphi) = \max(\cos\varphi, 0)^s = \max(-\mathbf{L}\cdot\mathbf{d}, 0)^s$$
+
+这样就得到了我们想要的结果：强度随着 $\varphi$ 增大平滑衰减；此外，通过改变指数 $s$，我们可以间接控制 $\varphi_{max}$（强度降为 0 的角度）；也就是说，我们可以通过调整 $s$ 来缩小或扩大聚光灯锥体。例如，如果设 $s = 8$，锥体大约有 45° 的半角。
+
+聚光灯方程与式 8.4 相同，只是我们用衰减因子 att($d$) 和聚光灯因子 $k_{spot}$ 同时缩放光源值 $\mathbf{B}_L$，以根据点相对于聚光灯锥体的位置来缩放光强。
+
+可以看到，聚光灯比点光源更昂贵，因为我们需要额外计算 $k_{spot}$ 因子并与它相乘。类似地，点光源比方向光更昂贵，因为需要计算距离 $d$（这实际上相当昂贵，因为求距离涉及开平方运算），还需要计算并乘以衰减因子。总之，方向光是最便宜的光源，其次是点光源，聚光灯是最昂贵的光源。
+
+</section>
+
+<section className="lesson-section" id="s813">
+<h2>8.13 光照实现</h2>
+
+本节讨论实现方向光、点光源和聚光灯的细节。
+
+<h3 id="s8131">8.13.1 Light 结构</h3>
+
+在 *d3dUtil.h* 中，我们定义下面的结构来支持光源。这个结构可以表示方向光、点光源或聚光灯。不过，取决于光的类型，有些值不会被用到；例如点光源不使用 `Direction` 数据成员。
+
+```cpp
+struct Light
+{
+  DirectX::XMFLOAT3 Strength; // Light color
+  float FalloffStart;     // point/spot light only
+  DirectX::XMFLOAT3 Direction;// directional/spot light only
+  float FalloffEnd;      // point/spot light only
+  DirectX::XMFLOAT3 Position; // point/spot light only
+  float SpotPower;      // spot light only
+};
+```
+
+*LightingUtils.hlsl* 文件定义了与之对应的结构：<a id="page343"/>
+
+```hlsl
+struct Light
+{
+  float3 Strength;
+  float FalloffStart; // point/spot light only
+  float3 Direction;   // directional/spot light only
+  float FalloffEnd;   // point/spot light only
+  float3 Position;    // point light only
+  float SpotPower;    // spot light only
+};
+```
+
+`Light` 结构（以及 `MaterialConstants` 结构）中数据成员的排列顺序不是随意的。它们考虑了 HLSL 的结构打包规则。详见附录 B（"结构打包"），但要点是：在 HLSL 中会发生结构填充，使元素被打包进 4D 向量，并有一个限制：单个元素不能被拆分到两个 4D 向量中。这意味着上面的结构会被整齐地打包成三个 4D 向量，像这样：
+
+```hlsl
+vector 1: (Strength.x, Strength.y, Strength.z, FalloffStart)
+vector 2: (Direction.x, Direction.y, Direction.z, FalloffEnd)
+vector 3: (Position.x, Position.y, Position.z, SpotPower)
+```
+
+另一方面，如果我们像下面这样写 `Light` 结构
+
+```cpp
+struct Light
+{
+  DirectX::XMFLOAT3 Strength; // Light color
+  DirectX::XMFLOAT3 Direction;// directional/spot light only
+  DirectX::XMFLOAT3 Position; // point/spot light only
+  float FalloffStart;         // point/spot light only
+  float FalloffEnd;           // point/spot light only
+  float SpotPower;            // spot light only
+};
+```
+
+```hlsl
+struct Light
+{
+  float3 Strength;
+  float3 Direction;   // directional/spot light only
+  float3 Position;    // point light only
+  float FalloffStart; // point/spot light only
+  float FalloffEnd;   // point/spot light only
+  float SpotPower;    // spot light only
+};
+```
+
+<a id="page344"/>那么它会被打包成四个 4D 向量，像这样：
+
+```hlsl
+vector 1: (Strength.x, Strength.y, Strength.z, empty)
+vector 2: (Direction.x, Direction.y, Direction.z, empty)
+vector 3: (Position.x, Position.y, Position.z, empty)
+vector 4: (FalloffStart, FalloffEnd, SpotPower, empty)
+```
+
+第二种写法占用更多数据，但那不是主要问题。更严重的问题是：我们有一个镜像 HLSL 结构的 C++ 应用端结构，但 C++ 结构并不遵循同样的 HLSL 打包规则；因此，除非你小心处理 HLSL 打包规则、并按照规则来写使两者一致，否则 C++ 和 HLSL 的结构布局很可能不匹配。如果 C++ 和 HLSL 的结构布局不匹配，那么当我们用 `memcpy` 把数据从 CPU 上传到 GPU 常量缓冲时，就会出现渲染错误。
+
+<h3 id="s8132">8.13.2 公共辅助函数</h3>
+
+下面三个函数定义在 *LightingUtils.hlsl* 中，它们包含不止一种光源类型共用的代码，因此我们把它们定义在辅助函数里。
+
+1. `CalcAttenuation`：实现线性衰减因子，适用于点光源和聚光灯。
+2. `SchlickFresnel`：Fresnel 方程的 Schlick 近似；它根据光向量 $\mathbf{L}$ 与表面法线 $\mathbf{n}$ 之间的夹角，近似计算法线为 $\mathbf{n}$ 的表面上因 Fresnel 效应被反射的光的百分比。
+3. `BlinnPhong`：计算反射进眼睛的光量；它是漫反射与镜面反射之和。
+
+```hlsl
+float CalcAttenuation(float d, float falloffStart, float falloffEnd)
+{
+  // Linear falloff.
+  return saturate((falloffEnd-d) / (falloffEnd - falloffStart));
+}
+
+// Schlick gives an approximation to Fresnel reflectance 
+// (see pg. 233 "Real-Time Rendering 3rd Ed.").
+// R0 = ( (n-1)/(n+1) )^2, where n is the index of refraction.
+float3 SchlickFresnel(float3 R0, float3 normal, float3 lightVec)
+{
+  float cosIncidentAngle = saturate(dot(normal, lightVec));
+
+  float f0 = 1.0f - cosIncidentAngle;
+  float3 reflectPercent = R0 + (1.0f - R0)*(f0*f0*f0*f0*f0);
+
+  return reflectPercent;
+}
+
+struct Material
+{
+  float4 DiffuseAlbedo;
+  float3 FresnelR0;
+
+  // Shininess is inverse of roughness: Shininess = 1-roughness.
+  float Shininess;
+};
+
+float3 BlinnPhong(float3 lightStrength, float3 lightVec, 
+         float3 normal, float3 toEye, Material mat)
+{
+  // Derive m from the shininess, which is derived from the roughness.
+  const float m = mat.Shininess * 256.0f;
+  float3 halfVec = normalize(toEye + lightVec);
+
+  float roughnessFactor = (m + 8.0f)*pow(max(dot(halfVec, normal), 0.0f), m) / 8.0f;
+  float3 fresnelFactor = SchlickFresnel(mat.FresnelR0, halfVec, lightVec);
+
+  // Our spec formula goes outside [0,1] range, but we are doing
+  // LDR rendering. So scale it down a bit.
+  specAlbedo = specAlbedo / (specAlbedo + 1.0f);
+
+  return (mat.DiffuseAlbedo.rgb + specAlbedo) * lightStrength;
+}
+```
+
+**译者注**：上面 `BlinnPhong` 函数中，原书漏掉了由 `roughnessFactor` 与 `fresnelFactor` 相乘得到 `specAlbedo` 的那一行（即缺少 `float3 specAlbedo = roughnessFactor * fresnelFactor;`），却直接使用了 `specAlbedo`。此处按原文照录，阅读时应以 §8.13.7 的完整实现为准（在示例代码中该行是存在的）。
+
+用到了下面这些 HLSL 内置函数：`dot`、`pow` 和 `max`，分别是向量点积函数、幂函数和最大值函数。大多数 HLSL 内置函数的说明可以在附录 B 中找到，那里还有对其他 HLSL 语法的快速入门。不过有一点需要注意：当两个向量用 `operator*` 相乘时，乘法是逐分量进行的。
+
+**注意**：我们计算镜面反照率的公式允许镜面值大于 1，这表示非常明亮的高光。然而，我们的渲染目标期望颜色值处于 [0, 1] 的低动态范围（LDR）内。超出这一范围的值会被直接截断到 1.0，因为渲染目标要求颜色值位于 [0, 1] 范围。因此，为了得到更柔和、没有硬截断的镜面高光，我们需要把镜面反照率缩小：
+
+```hlsl
+  specAlbedo = specAlbedo / (specAlbedo + 1.0f);
+```
+
+高动态范围（HDR）光照使用浮点渲染目标，允许光值超出 [0, 1] 范围，然后再执行一步色调映射，把高动态范围重新映射回 [0, 1] 以便显示，同时保留那些重要的细节。HDR 渲染和色调映射本身就是一个主题<a id="page346"/>——参见 [Reinhard10] 的教材。不过，[Pettineo12] 提供了一个很好的入门介绍和可动手实验的演示。
+
+**注意**：在 PC 上，HLSL 函数总是内联的；因此函数调用或参数传递没有性能开销。
+
+<h3 id="s8133">8.13.3 实现方向光</h3>
+
+给定眼睛位置 $\mathbf{E}$、眼睛可见的表面上一点 $\mathbf{p}$（表面法线为 $\mathbf{n}$）以及材质属性，下面的 HLSL 函数输出方向光源反射进指向眼睛方向 $\mathbf{v} = \text{normalize}(\mathbf{E} - \mathbf{p})$ 的光量。在我们的示例中，这个函数会在像素着色器中被调用，以根据光照确定像素的颜色。
+
+```hlsl
+float3 ComputeDirectionalLight(Light L, Material mat, float3 normal, float3 toEye)
+{
+  // The light vector aims opposite the direction the light rays travel.
+  float3 lightVec = -L.Direction;
+
+  // Scale light down by Lambert's cosine law.
+  float ndotl = max(dot(lightVec, normal), 0.0f);
+  float3 lightStrength = L.Strength * ndotl;
+
+  return BlinnPhong(lightStrength, lightVec, normal, toEye, mat);
+}
+```
+
+<h3 id="s8134">8.13.4 实现点光源</h3>
+
+给定眼睛位置 $\mathbf{E}$、眼睛可见的表面上一点 $\mathbf{p}$（表面法线为 $\mathbf{n}$）以及材质属性，下面的 HLSL 函数输出点光源反射进指向眼睛方向 $\mathbf{v} = \text{normalize}(\mathbf{E} - \mathbf{p})$ 的光量。在我们的示例中，这个函数会在像素着色器中被调用，以根据光照确定像素的颜色。
+
+```hlsl
+float3 ComputePointLight(Light L, Material mat, float3 pos, float3 normal, float3 toEye)
+{
+  // The vector from the surface to the light.
+  float3 lightVec = L.Position - pos;
+
+  // The distance from surface to light.
+  float d = length(lightVec);
+
+  // Range test.
+  if(d > L.FalloffEnd)
+    return 0.0f;
+
+  // Normalize the light vector.
+  lightVec /= d;
+
+  // Scale light down by Lambert's cosine law.
+  float ndotl = max(dot(lightVec, normal), 0.0f);
+  float3 lightStrength = L.Strength * ndotl;
+
+  // Attenuate light by distance.
+  float att = CalcAttenuation(d, L.FalloffStart, L.FalloffEnd);
+  lightStrength *= att;
+
+  return BlinnPhong(lightStrength, lightVec, normal, toEye, mat);
+}
+```
+
+<a id="page347"/>
+
+<h3 id="s8135">8.13.5 实现聚光灯</h3>
+
+给定眼睛位置 $\mathbf{E}$、眼睛可见的表面上一点 $\mathbf{p}$（表面法线为 $\mathbf{n}$）以及材质属性，下面的 HLSL 函数输出聚光灯源反射进指向眼睛方向 $\mathbf{v} = \text{normalize}(\mathbf{E} - \mathbf{p})$ 的光量。在我们的示例中，这个函数会在像素着色器中被调用，以根据光照确定像素的颜色。
+
+```hlsl
+float3 ComputeSpotLight(Light L, Material mat, float3 pos, float3 normal, float3 toEye)
+{
+  // The vector from the surface to the light.
+  float3 lightVec = L.Position - pos;
+
+  // The distance from surface to light.
+  float d = length(lightVec);
+
+  // Range test.
+  if(d > L.FalloffEnd)
+    return 0.0f;
+
+  // Normalize the light vector.
+  lightVec /= d;
+
+  // Scale light down by Lambert's cosine law.
+  float ndotl = max(dot(lightVec, normal), 0.0f);
+  float3 lightStrength = L.Strength * ndotl;
+
+  // Attenuate light by distance.
+  float att = CalcAttenuation(d, L.FalloffStart, L.FalloffEnd);
+  lightStrength *= att;
+
+  // Scale by spotlight
+  float spotFactor = pow(max(dot(-lightVec, L.Direction), 0.0f), L.SpotPower);
+  lightStrength *= spotFactor;
+
+  return BlinnPhong(lightStrength, lightVec, normal, toEye, mat);
+}
+```
+
+<a id="page348"/>
+
+<h3 id="s8136">8.13.6 叠加多个光源</h3>
+
+光照是可加的，所以在一个场景中支持多个光源，只需遍历每个光源、把它对正在计算光照的点/像素的贡献累加起来。我们的示例框架最多支持总共十六个光源。我们可以任意组合方向光、点光源或聚光灯，但总数不能超过十六个。此外，我们的代码约定：方向光必须排在光源数组的开头，点光源其次，聚光灯排在最后。下面的代码为某一点计算光照方程：
+
+```hlsl
+#define MaxLights 16
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b2)
+{
+  …
+// Indices [0, NUM_DIR_LIGHTS) are directional lights;
+// indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are 
+// point lights; 
+// indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS, 
+// NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
+// are spot lights for a maximum of MaxLights per object.
+  Light gLights[MaxLights];
+};
+
+float4 ComputeLighting(Light gLights[MaxLights], Material mat,
+            float3 pos, float3 normal, float3 toEye,
+            float3 shadowFactor) 
+{
+  float3 result = 0.0f;
+
+  int i = 0;
+
+#if (NUM_DIR_LIGHTS > 0)
+  for(i = 0; i < NUM_DIR_LIGHTS; ++i)
+  {
+    result += shadowFactor[i] * ComputeDirectionalLight(gLights[i], mat, normal, toEye);
+  }
+#endif
+
+#if (NUM_POINT_LIGHTS > 0)
+  for(i = NUM_DIR_LIGHTS; i < NUM_DIR_LIGHTS+NUM_POINT_LIGHTS; ++i)
+  {
+    result += ComputePointLight(gLights[i], mat, pos, normal, toEye);
+  }
+#endif
+
+#if (NUM_SPOT_LIGHTS > 0)
+  for(i = NUM_DIR_LIGHTS + NUM_POINT_LIGHTS; 
+    i < NUM_DIR_LIGHTS + NUM_POINT_LIGHTS + NUM_SPOT_LIGHTS; 
+    ++i)
+  {
+    result += ComputeSpotLight(gLights[i], mat, pos, normal, toEye);
+  }
+#endif 
+
+  return float4(result, 0.0f);
+}
+```
+
+**译者注**：上面 `cbPass` 常量缓冲前的注释 "Constant data that varies per material."（随材质变化的常量数据）按原文照录；该 `cbPass` 实际是逐 pass 常量缓冲，注释应为 "varies per frame"（随帧变化）。此处保留原文备查。
+
+注意，<a id="page349"/>每种光源的数量都由 `#define` 控制。其想法是让着色器只对实际需要的光源数量执行光照方程。因此，如果应用只需要三个光源，我们就只对三个光源做计算。如果你的应用需要在不同时刻支持不同数量的光源，那么只要用不同的 `#define` 生成不同的着色器即可。
+
+**注意**：`shadowFactor` 参数要到讲阴影的章节才会用到。所以目前我们把它设为向量 (1, 1, 1)，使阴影因子在方程中不起作用。
+
+<h3 id="s8137">8.13.7 主 HLSL 文件</h3>
+
+下面的代码包含本章演示所用的顶点着色器和像素着色器，并用到了我们前面一直在讨论的 *LightingUtil.hlsl* 中的 HLSL 代码。
+
+```hlsl
+//*********************************************************************
+// Default.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+//
+// Default shader, currently supports lighting.
+//*********************************************************************
+
+// Defaults for number of lights.
+#ifndef NUM_DIR_LIGHTS
+  #define NUM_DIR_LIGHTS 1
+#endif
+
+#ifndef NUM_POINT_LIGHTS
+  #define NUM_POINT_LIGHTS 0
+#endif
+
+#ifndef NUM_SPOT_LIGHTS
+  #define NUM_SPOT_LIGHTS 0
+#endif
+
+// Include structures and functions for lighting.
+#include "LightingUtil.hlsl"
+
+// Constant data that varies per frame.
+
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+};
+
+cbuffer cbMaterial : register(b1)
+{
+  float4 gDiffuseAlbedo;
+  float3 gFresnelR0;
+  float gRoughness;
+  float4x4 gMatTransform;
+};
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b2)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerObjectPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+  float4 gAmbientLight;
+
+  // Indices [0, NUM_DIR_LIGHTS) are directional lights;
+  // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are
+  // point lights;
+  // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS, 
+  // NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
+  // are spot lights for a maximum of MaxLights per object.
+  Light gLights[MaxLights];
+};
+
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  float3 NormalL : NORMAL;
+};
+
+struct VertexOut
+{
+  float4 PosH  : SV_POSITION;
+  float3 PosW  : POSITION;
+  float3 NormalW : NORMAL;
+};
+
+VertexOut VS(VertexIn vin)
+{
+   VertexOut vout = (VertexOut)0.0f;
+   
+  // Transform to world space.
+  float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+  vout.PosW = posW.xyz;
+
+  // Assumes nonuniform scaling; otherwise, need to use 
+  // inverse-transpose of world matrix.
+  vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+
+  // Transform to homogeneous clip space.
+  vout.PosH = mul(posW, gViewProj);
+
+  return vout;
+}
+
+float4 PS(VertexOut pin) : SV_Target
+{
+  // Interpolating normal can unnormalize it, so renormalize it.
+  pin.NormalW = normalize(pin.NormalW);
+
+  // Vector from point being lit to eye. 
+  float3 toEyeW = normalize(gEyePosW - pin.PosW);
+
+  // Indirect lighting.
+  float4 ambient = gAmbientLight*gDiffuseAlbedo;
+
+  // Direct lighting.
+  const float shininess = 1.0f - gRoughness;
+  Material mat = { gDiffuseAlbedo, gFresnelR0, shininess };
+  float3 shadowFactor = 1.0f;
+  float4 directLight = ComputeLighting(gLights, mat, 
+    pin.PosW, pin.NormalW, toEyeW, shadowFactor);
+
+  float4 litColor = ambient + directLight;
+
+  // Common convention to take alpha from diffuse material.
+  litColor.a = gDiffuseAlbedo.a;
+
+  return litColor;
+}
+```
+
+<a id="page351"/>
+
+</section>
+
+<section className="lesson-section" id="s814">
+<h2>8.14 光照演示</h2>
+
+光照演示建立在上一章的"Waves"演示之上。它使用一个方向光来表示太阳。用户可以用左、右、上、下方向键旋转太阳的位置。虽然我们已经讨论过材质和光源是如何实现的，但下面几小节将讲解尚未讨论过的实现细节。图 8.28 展示了光照演示的截图。
+
+<Figure src="images/Fig8-28.jpg" alt="光照演示的截图" figureNumber="图 8.28" caption="光照演示的截图。" />
+
+<h3 id="s8141">8.14.1 顶点格式</h3>
+
+光照计算需要<a id="page352"/>表面法线。我们在顶点层级定义法线；这些法线随后会在三角形的像素上插值，以便我们逐像素做光照计算。此外，我们不再指定顶点颜色。取而代之的是，通过对每个像素套用光照方程来生成像素颜色。为支持顶点法线，我们像下面这样修改顶点结构：
+
+```cpp
+// C++ Vertex structure
+struct Vertex
+{
+  DirectX::XMFLOAT3 Pos;
+  DirectX::XMFLOAT3 Normal;
+};
+
+// Corresponding HLSL vertex structure
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  float3 NormalL : NORMAL;
+};
+```
+
+当我们添加新的顶点格式时，需要用新的输入布局描述来描述它：
+
+```cpp
+mInputLayout =
+{
+  { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+  { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, 
+   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+};
+```
+
+<h3 id="s8142">8.14.2 法线计算</h3>
+
+`GeometryGenerator` 中的形状函数已经生成了带顶点法线的数据，所以这部分我们不用操心。不过，由于在这个演示中我们要修改网格的高度、让它看起来像<a id="page353"/>地形，所以需要自己为地形生成法向量。
+
+由于我们的地形表面由函数 $y = f(x, z)$ 给出，我们可以直接用微积分计算法向量，而不必使用 §8.2.1 中描述的法线平均技术。为此，对表面上的每个点，我们分别沿 $+x$ 和 $+z$ 方向求偏导数，得到两个切向量：
+
+$$\mathbf{T}_x = \left(1, \frac{\partial f}{\partial x}, 0\right)$$
+$$\mathbf{T}_z = \left(0, \frac{\partial f}{\partial z}, 1\right)$$
+
+这两个向量位于该表面点的切平面内。取它们的叉积就得到法向量：
+
+$$\mathbf{n} = \mathbf{T}_z \times \mathbf{T}_x = \begin{vmatrix} \mathbf{i} & \mathbf{j} & \mathbf{k} \\ 0 & \dfrac{\partial f}{\partial z} & 1 \\ 1 & \dfrac{\partial f}{\partial x} & 0 \end{vmatrix} = \left( \begin{vmatrix} \dfrac{\partial f}{\partial z} & 1 \\ \dfrac{\partial f}{\partial x} & 0 \end{vmatrix}, -\begin{vmatrix} 0 & 1 \\ 1 & 0 \end{vmatrix}, \begin{vmatrix} 0 & \dfrac{\partial f}{\partial z} \\ 1 & \dfrac{\partial f}{\partial x} \end{vmatrix} \right) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right)$$
+
+我们用来生成山丘网格的函数是：
+
+$$f(x, z) = 0.3z\cdot\sin(0.1x) + 0.3x\cdot\cos(0.1z)$$
+
+偏导数为：
+
+$$\frac{\partial f}{\partial x} = 0.03z\cdot\cos(0.1x) + 0.3\cos(0.1z)$$
+$$\frac{\partial f}{\partial z} = 0.3\sin(0.1x) - 0.03x\cdot\sin(0.1z)$$
+
+因此，表面点 $(x, f(x, z), z)$ 处的表面法线<a id="page354"/>为：
+
+$$\mathbf{n}(x, z) = \left(-\frac{\partial f}{\partial x}, 1, -\frac{\partial f}{\partial z}\right) = \begin{bmatrix} -0.03z\cdot\cos(0.1x) - 0.3\cos(0.1z) \\ 1 \\ -0.3\sin(0.1x) + 0.03x\cdot\sin(0.1z) \end{bmatrix}^T$$
+
+我们注意到这个表面法线不是单位长度，因此在做光照计算之前需要归一化。
+
+具体来说，我们在每个顶点处做上述法线计算，得到顶点法线：
+
+```cpp
+XMFLOAT3 LitWavesApp::GetHillsNormal(float x, float z)const
+{
+  // n = (-df/dx, 1, -df/dz)
+  XMFLOAT3 n(
+    -0.03f*z*cosf(0.1f*x) - 0.3f*cosf(0.1f*z),
+    1.0f,
+    -0.3f*sinf(0.1f*x) + 0.03f*x*sinf(0.1f*z));
+
+  XMVECTOR unitNormal = XMVector3Normalize(XMLoadFloat3(&n));
+  XMStoreFloat3(&n, unitNormal);
+
+  return n;
+}
+```
+
+水面的法向量用类似方法计算，只是我们没有水面的公式。不过，每个顶点处的切向量可以用有限差分格式近似（见 [Lengyel02] 或任何数值分析教材）。
+
+**注意**：如果你的微积分有点生疏，不用担心，它在本书中不会扮演重要角色。眼下它有用，是因为我们在用数学曲面生成几何体，好让我们有一些有趣的物体可以绘制。最终我们会从文件加载由三维建模程序导出的三维网格。
+
+<h3 id="s8143">8.14.3 更新光照方向</h3>
+
+如 §8.13.7 所示，我们的 `Light` 数组放在逐 pass 常量缓冲中。该演示使用一个方向光来表示太阳，并允许用户用左、右、上、下方向键旋转太阳位置。所以每一帧我们都需要计算来自太阳的新的光照方向，并把它设置到逐 pass 常量缓冲中。
+
+我们用球坐标 $(\rho, \theta, \varphi)$ 跟踪太阳位置，但半径 $\rho$ 无关紧要，因为我们假定太阳在无限远处。具体来说，我们只取 $\rho = 1$，使它落在单位球面上，并把 $(1, \theta, \varphi)$ 解释为指向太阳的方向。<a id="page355"/>光照方向就是指向太阳方向的相反数。下面是更新太阳的相关代码。
+
+```cpp
+float mSunTheta = 1.25f*XM_PI;
+float mSunPhi = XM_PIDIV4;
+
+void LitWavesApp::OnKeyboardInput(const GameTimer& gt)
+{
+  const float dt = gt.DeltaTime();
+
+  if(GetAsyncKeyState(VK_LEFT) & 0x8000)
+    mSunTheta -= 1.0f*dt;
+
+  if(GetAsyncKeyState(VK_RIGHT) & 0x8000)
+    mSunTheta += 1.0f*dt;
+
+  if(GetAsyncKeyState(VK_UP) & 0x8000)
+    mSunPhi -= 1.0f*dt;
+
+  if(GetAsyncKeyState(VK_DOWN) & 0x8000)
+    mSunPhi += 1.0f*dt;
+
+  mSunPhi = MathHelper::Clamp(mSunPhi, 0.1f, XM_PIDIV2);
+}
+
+void LitWavesApp::UpdateMainPassCB(const GameTimer& gt)
+{
+    …
+  XMVECTOR lightDir = -MathHelper::SphericalToCartesian(1.0f, mSunTheta, mSunPhi);
+
+  XMStoreFloat3(&mMainPassCB.Lights[0].Direction, lightDir);
+  mMainPassCB.Lights[0].Strength = { 0.8f, 0.8f, 0.7f };
+
+  auto currPassCB = mCurrFrameResource->PassCB.get();
+  currPassCB->CopyData(0, mMainPassCB);
+}
+```
+
+**注意**：把 `Light` 数组放在逐 pass 常量缓冲中，意味着每个渲染遍不能有超过十六个（我们支持的最大光源数）光源。这对小型演示来说绰绰有余。然而，对大型游戏世界而言这就不够了，因为可以想见游戏关卡中有数百个光源散布在整个关卡里。解决这个问题的一种办法是把 `Light` 数组移到逐对象常量缓冲中。然后，对每个对象 O，你搜索场景，找出影响对象 O 的光源，再把这些光源绑定到常量缓冲。影响 O 的光源就是其体积（点光源为球体、聚光灯为锥体）与 O 相交的光源。另一种流行策略是使用延迟渲染或 Forward+ 渲染。<a id="page356"/>
+
+<h3 id="s8144">8.14.4 根签名的更新</h3>
+
+光照给我们的着色器程序引入了一个新的材质常量缓冲。为支持它，我们需要更新根签名，以支持一个额外的常量缓冲。与逐对象常量缓冲一样，我们对材质常量缓冲使用根描述符，以支持直接绑定常量缓冲，而不必经过描述符堆。
+
+</section>
+
+<section className="lesson-section" id="s815">
+<h2>8.15 本章小结</h2>
+
+1. 使用光照后，我们不再指定逐顶点颜色，而是定义场景光源和逐顶点材质。可以把材质理解为决定光如何与物体表面交互的那些属性。逐顶点材质会在三角形面上插值，得到三角形网格每个表面点处的材质取值。光照方程随后根据光与表面材质的交互计算出眼睛看到的表面颜色；其他参数也会参与其中，比如表面法线和眼睛位置。
+2. *表面法线*是垂直于表面上某点切平面的单位向量。表面法线决定表面上某点"朝向"的方向。做光照计算时，我们需要三角形网格表面上每个点的表面法线，这样才能确定光打到网格表面上该点的角度。为得到表面法线，我们只在顶点处指定表面法线（所谓*顶点法线*）。然后，为了得到三角形网格表面上每个点的表面法线近似值，这些顶点法线会在光栅化期间沿三角形插值。对于任意三角形网格，顶点法线通常用一种称为法线平均的技术来近似。如果用矩阵 $\mathbf{A}$ 变换点和向量（非法线向量），那么应当用 $(\mathbf{A}^{-1})^T$ 来变换表面法线。
+3. 平行（方向）光近似一个非常遥远的光源。因此，我们可以把所有入射光线近似为互相平行。方向光的一个物理例子是相对地球的太阳。点光源向*每个*方向发光。点光源的一个物理例子是灯泡。聚光灯通过一个锥体发光。聚光灯的一个物理例子是手电筒。
+4. 由于 Fresnel 效应，当光到达折射率不同的两种介质之间的分界面时，一部分光被反射，剩下的光折射<a id="page357"/>进入介质。反射多少光取决于介质（有些材质比别的更反光），也取决于法向量 $\mathbf{n}$ 与光向量 $\mathbf{L}$ 之间的夹角 $\theta_i$。由于完整 Fresnel 方程过于复杂，实时渲染中通常不使用它们；取而代之的是 *Schlick 近似*。
+5. 真实世界中的反光物体往往不是完美的镜子。即使物体的表面看起来平整，在微观层面上我们也可以认为它具有*粗糙度*。可以把完美镜子看作没有粗糙度，它的微面法线全都与宏观法线方向一致。随着粗糙度增加，微面法线的方向偏离宏观法线，使反射光散开成一个*镜面波瓣*。
+6. 环境光建模间接光：它在场景中散射、弹射了太多次，以至于从各个方向均匀地打到物体上，从而把物体均匀地提亮。漫反射光建模进入介质内部、在表面下方四处散射的光——其中一部分被吸收，剩下的从表面散射回来。由于难以对这种次表面散射建模，我们假定重新发射出的光以光进入点为中心、在表面上方各个方向均匀散射出去。镜面光建模由于 Fresnel 效应和表面粗糙度而从表面反射出去的光。
+
+</section>
+
+<section className="lesson-section" id="s816">
+<h2>8.16 习题</h2>
+
+1. 修改本章的光照演示，使方向光只发出以红光为主的光。此外，用正弦函数让光强随时间振荡，使光看起来像是在脉动。使用有色光与脉动光对营造不同的游戏氛围很有用；例如，脉动的红光可以用来表示紧急状况。
+2. 修改本章的光照演示，改变材质中的粗糙度。
+3. 修改上一章的"Shapes"演示，添加材质和一个三点光照系统。三点光照系统在电影和摄影中常用来获得比单一光源更好的照明效果；它由一个称为*主光*（key light）的主光源、一个通常从主光侧向打来的*辅光*（fill light）和一个*背光*（back light）组成。我们用三点光照来模拟间接光，它能比仅用环境分量做间接光提供更好的物体轮廓。三点光照系统使用三个方向光。
+
+   <Figure src="images/Fig8-29.jpg" alt="习题 3 解答的截图" figureNumber="图 8.29" caption="习题 3 解答的截图。" />
+
+4. <a id="page358"/>修改习题 3 的解，去掉三点光照，并在每根柱子之上的每个球体中心处添加一个点光源。
+5. 修改习题 3 的解，去掉三点光照，并在每根柱子之上的每个球体中心处添加一个朝下照射的聚光灯。
+6. 卡通风格光照的一个特点是颜色明暗之间是突变而非平滑过渡，如图 8.30 所示。实现方法是：照常计算 $k_d$ 和 $k_s$，但在像素着色器中使用它们之前，先用如下离散函数对它们做变换：
+
+   $$k_d' = f(k_d) = \begin{cases} 0.4 & \text{if } -\infty < k_d \le 0.0 \\ 0.6 & \text{if } 0.0 < k_d \le 0.5 \\ 1.0 & \text{if } 0.5 < k_d \le 1.0 \end{cases}$$
+   $$k_s' = g(k_s) = \begin{cases} 0.0 & \text{if } 0.0 \le k_s \le 0.1 \\ 0.5 & \text{if } 0.1 < k_s \le 0.8 \\ 0.8 & \text{if } 0.8 < k_s \le 1.0 \end{cases}$$
+
+   修改本章的光照演示，使用这种卡通着色（toon shading）。（注意：上面的函数 $f$ 和 $g$ 只是用来起步的示例函数，可以调整到你得到想要的效果为止。）
+
+   <Figure src="images/Fig8-30.jpg" alt="卡通光照的截图" figureNumber="图 8.30" caption="卡通光照的截图。" />
+
+</section>

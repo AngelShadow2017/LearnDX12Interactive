@@ -79,6 +79,39 @@
 | base vertex location | 基顶点位置 | DrawIndexedInstanced 参数语境；保持与第 6 章 SubmeshGeometry 译法一致。 |
 | dynamic vertex buffer | 动态顶点缓冲 | 与“静态缓冲”相对；§7.7.5。 |
 | instancing | 实例化 | §7.5.1 “实例化几何”；第 16 章 hardware instancing 沿用“硬件实例化”。 |
+| light source | 光源 | 泛指；具体类型见下面平行光/点光源/聚光灯。 |
+| local illumination model | 局部光照模型 | §8.1；不译“本地光照”。与 global illumination model（全局光照模型）对照。 |
+| face normal | 面法线 | §8.2；多边形朝向，与 surface normal 区分。 |
+| surface normal | 表面法线 | §8.2；与 vertex normal（顶点法线）区分。 |
+| vertex normal averaging | 顶点法线平均 | §8.2.1；不译“法线插值”，插值是另一件事。 |
+| inverse-transpose | 逆转置 | §8.2.2 法线变换；公式写作 $(\mathbf{A}^{-1})^T$。 |
+| light vector | 光向量 | §8.3；指从表面点指向光源的单位向量（代码 `lightVec`），与光线行进方向 $\mathbf{I}$ 相反。不要简写成“光方向”。 |
+| view vector / to-eye vector | 视线向量 / 指向眼睛的向量 | §8.3；首次括注 to-eye vector，后文可用“指向眼睛的向量”，代码 `toEye`。 |
+| reflection vector | 反射向量 | §8.3；$\mathbf{r}=\mathbf{I}-2(\mathbf{n}\cdot\mathbf{I})\mathbf{n}$，代码中用 HLSL `reflect`。 |
+| radiant flux | 辐射通量 | §8.4；每秒发出的光能。 |
+| irradiance | 辐照度 | §8.4；首次括注 irradiance，后文用“辐照度”。 |
+| Lambert's cosine law | 朗伯余弦定律 | §8.4；译名固定，不要写作“朗伯定律”。 |
+| diffuse reflection | 漫反射 | §8.5；与 specular reflection（镜面反射）对照。 |
+| diffuse light | 漫反射光 | §8.5。 |
+| diffuse albedo | 漫反射反照率 | §8.5；代码 `DiffuseAlbedo`。 |
+| ambient light | 环境光 | §8.6；间接光的近似项。 |
+| specular reflection / specular light | 镜面反射 / 镜面光 | §8.7。 |
+| specular lobe | 镜面波瓣 | §8.7.2；roughness 使反射散开的形状。 |
+| specular highlight | 镜面高光 | §8.7.2、图 8.21；不译“高光点”。 |
+| Fresnel effect | Fresnel 效应 | §8.7.1；保留人名英文，不译“菲涅尔”以外的写法。 |
+| Schlick approximation | Schlick 近似 | §8.7.1；Fresnel 方程的近似。 |
+| index of refraction | 折射率 | §8.7.1；代码注释中的 `n`。 |
+| refraction / refract | 折射 | §8.7.1；与 reflection（反射）对照。 |
+| roughness | 粗糙度 | §8.7.2、§8.9；[0, 1] 归一化，代码 `Roughness`。 |
+| shininess | 光泽度 | §8.9；`shininess = 1 - roughness`，代码 `Shininess`；不要与 roughness 混用。 |
+| microfacet | 微面元 | §8.7.2；microfacet model 译“微面模型”，微面法线/宏观法线按原文区分。 |
+| halfway vector | 半程向量 | §8.7.2；$\mathbf{h}=\text{normalize}(\mathbf{L}+\mathbf{v})$，代码 `halfVec`。 |
+| parallel light / directional light | 平行光 / 方向光 | §8.10；同一概念的两个名字，首次并列给出。 |
+| point light | 点光源 | §8.11。 |
+| spotlight | 聚光灯 | §8.12；不译“射灯”。 |
+| attenuation | 衰减 | §8.11.1；`falloffStart`/`falloffEnd` 为代码标识符，保持原样不译。 |
+| toon shading | 卡通着色 | §8.16 习题 6；也可称“卡通风格光照”。 |
+| pixel lighting / phong lighting | 像素光照 / Phong 光照 | §8.2.1 提示框；per-vertex lighting 译“逐顶点光照”。 |
 
 ## 术语一致性检查
 

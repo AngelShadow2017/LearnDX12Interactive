@@ -51,18 +51,19 @@
 
 ### 第 6 章
 
-- §6.1 已完整录入：7 项成员说明（含 `AlignedByteOffset` 内嵌的 `Vertex2` 偏移代码块）、`InputSlotClass`、`InstanceDataStepRate` 与 `desc1`/`desc2` 输入布局描述示例均已对照源文录入；本节仅引用图 6.1，无公式图。6.2 及其后全部章节仍未录入。
+- 第 6 章已全文录入（6.1–6.13，含 BoxApp.cpp 全文与习题 1–16），构建与图注检查通过。全章为"已录入待审校"，尚未独立逐段复核。
 - 原书 §6.1 `desc2` 中 `TEXCOORD` 0 元素末尾缺少逗号（EPUB `ch06.html` 第 113–116 行，`..., 0}` 之后直接开始下一元素）。译文按原文照录并加“译者注”说明；后续审校时不要把它当成录入错误改掉，也不要悄悄补上逗号。
-- 必须继续录入 §6.1 剩余正文，再按原书顺序完成：6.2 Vertex Buffers；6.3 Indices and Index Buffers；6.4 Example Vertex Shader（含 6.4.1 Input Layout Description and Input Signature Linking）；6.5 Example Pixel Shader；6.6 Constant Buffers（含 6.6.1–6.6.5）；6.7 Compiling Shaders（含 6.7.1–6.7.3）；6.8 Rasterizer State；6.9 Pipeline State Object；6.10 Geometry Helper Structure；6.11 Box Demo；6.12 Summary；6.13 Exercises。
-- EPUB 图片资源至少包括 `Fig6-1.jpg` 至 `Fig6-8.jpg`、`tbl272.jpg`、`tbl273.jpg` 和多个 `note.jpg` 引用。当前目标只引用 `Fig6-1.jpg`，故后续章节的图片、表格、提示说明都没有进入译稿。录入时要根据每次源文出现的位置安排图片，不能把它们统一挪到章节末尾。
+- 第 6 章已照录的其他原书笔误（审校时同样不要“修复”）：§6.2 多缓冲示例中 `&VBView1` 少一个 `m`；§6.3 `CreateDefaultBuffer` 调用中 `indices),` 多一个右括号（已加译者注）；§6.5 首个 `PS` 返回 `pin.Color` 而该版本参数名是 `color`（已加译者注）；§6.6.1 `float2x2` 被用作声明"2×4 矩阵"、"显式填充"代码中 `Pad1` 出现两次（已加译者注）；§6.6.2 `Map` 说明把返回指针的参数写成“第二个参数”（应为第三个）；§6.10 "format and strike" 应为 "stride"（已加译者注）；习题 6 `vinL.Pos.x` 应为 `vin.PosL.x`（已加译者注）；Box 演示中 `D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST` 与 `mhMainWnd` 均照录。
+- 原书目录为：6.2 Vertex Buffers；6.3 Indices and Index Buffers；6.4 Example Vertex Shader（含 6.4.1 Input Layout Description and Input Signature Linking）；6.5 Example Pixel Shader；6.6 Constant Buffers（含 6.6.1–6.6.5）；6.7 Compiling Shaders（含 6.7.1–6.7.3）；6.8 Rasterizer State；6.9 Pipeline State Object；6.10 Geometry Helper Structure；6.11 Box Demo；6.12 Summary；6.13 Exercises。译文已全部包含；审校时按此目录逐节勾对。
+- EPUB 图片资源 `Fig6-1.jpg`–`Fig6-8.jpg`、`tbl272.jpg`、`tbl273.jpg` 均已进入译稿原位；tbl272（FXC 参数表）与 tbl273（条件/摊平对照表）已读图译成中文表格并保留原图。`note.jpg` 提示图标按全书惯例不保留图片、只译提示文字。
 - 第 6 章源文代码密集。按段保留 C++/HLSL/编译命令和代码解释，核对变量名、结构字段、根签名/描述符槽、着色器语义和示例执行顺序；不要用摘要替代 Box 演示。
 - 末尾习题必须录入全部题干和小题。完成后删除/更新首页“待录入”进度，并确认它和真实文件一致。
-- §6.1 的 `<section>` 已闭合，构建在用户侧（launch.json → `npm run preview:build`）已跑通；在 6.2–6.13 录入完成前不得把第 6 章标为章节完成。复制模型命令行环境的构建/测试报错原因见 `SESSION-STATE.md`“最近验证结果”，属于执行环境假象。
+- 第 6 章全文已闭合，构建在用户侧（launch.json → `npm run preview:build`）与复制模型临时配置构建下均通过；在独立逐段审校完成前，第 6 章仍不得标为"已审校"。复制模型命令行环境的构建/测试报错原因见 `SESSION-STATE.md`“最近验证结果”，属于执行环境假象。
 
 ## 续传执行顺序
 
 1. 新会话先读 `SESSION-STATE.md`、`TERMINOLOGY.md`、`README.md` 和本文；按状态文件指定的精确源文游标恢复。再次报告是否能直接读取 EPUB 内图片、是否能看清公式，再依能力执行；不要等待用户重复说明。
-2. 当前第一个续录游标是第 6 章 §6.2 的首段（`ch06.html` 第 110 行，印刷页 207，"In order for the GPU to access an array of vertices…"），细节见 `SESSION-STATE.md`。§6.1 已完成录入，随后按状态文件队列完成 6.3–6.13，再按章节顺序审校已有第 1–6 章。审校与录入分开标记，不能将其中一类的“完成”误报为另一类完成。
+2. 第 6 章已全文录入；按用户 2026-10-04 指示，当前任务为先录入第 7 章，第 1–6 章逐段审校顺延（细节见 `SESSION-STATE.md`）。审校与录入分开标记，不能将其中一类的“完成”误报为另一类完成。
 3. 每个新会话只处理一个连续工作单元，通常一个小节；超长小节拆成连续 2–4 个 EPUB 页或约 20 个源内容单元。必须在完整段落/代码/列表项之后停下，更新精确续传指针，再开下一个会话。不要跨章跳做或合并不相邻原文。
 4. 从源 XHTML 建立该工作单元清单：标题、段落、公式、例题、列表和子项、代码和说明、表格、图像/图注、note/hint、总结、习题。按源顺序逐项记录完成和待办；字数、标题存在或图片数量不能代替内容核对。
 5. 译名查 `TERMINOLOGY.md`。每轮遇到的新固定术语都记录；要改现有译名时先说明语义理由、旧/新译法和影响章节，再同步回改受影响文本，不做未经核语境的全局替换。
@@ -71,3 +72,10 @@
 8. 对原书疑似错误保持译文忠实，并另作“译者注”；教学补充也要单独标记，不得替换或压缩原书内容。
 9. 每轮收尾前**先保存并更新** `SESSION-STATE.md`，更新本章的精确完成游标、各类内容计数和下一轮唯一任务；同时更新 `TERMINOLOGY.md` 与 `uncertain-images.md`。最后的聊天摘要只作为提示，真正的交接信息必须已经写入文件。
 10. 按工作范围运行检查。`npm run check:translation-terms`、`npm test`、图片检查和 `npm run check:translations` 可验证部分工程状态，不能证明译文完整或忠实。第 6 章补全后再要求 `npm run build` 通过；所有图片路径须存在、大小写匹配且为相对路径，正文无残留 `[[IMG ...]]`。
+
+## 2026-10-04：第 1、2 章公式图复核补记
+
+- **第 1 章公式图：已逐张读图并核对上下文。**修正英文原文渲染映射中 `eq45-01.jpg`、`eq45-02.jpg` 错漏 `eq` 前缀的问题；补齐 `eq46-0d.jpg`、`eq52-01.jpg`、`eq68-01.jpg` 的 LaTeX 映射。`50-0c.jpg` 在 EPUB 中只呈现为极小碎片，仍保留放大图，不推测公式；已记入 `uncertain-images.md`。
+- **第 2 章公式图：已逐张读图并对照译文。**涵盖 §2.1–2.9、例题、逆矩阵推导与习题的矩阵/公式图（`eq72-*` 至 `eq92-*` 及 `89-0a.jpg`）。发现 4×4 行列式展开只保留了余子式简写，已按 `eq80-04.jpg` 补成四个完整 3×3 余子式。其余公式当前均有完整 LaTeX 或保留原图；习题数据与原图一致。
+- **文本忠实度尚未完成。**本次没有逐段核完第 1、2 章所有正文、DirectXMath 代码和代码周围解释；不能把上面的公式图复核写成两章全文通过。后续审校需从 EPUB XHTML 按原顺序逐段继续，并重点核代码、习题小项与例题说明。
+- 英文版第 1–5 章共享渲染器已改为语义化显示目标、列表、例题、图注和 C++ 代码；配对图注与对应图片，代码接入 Highlight.js。`OriginalBookText.test.ts` 覆盖解析及锚点行为。

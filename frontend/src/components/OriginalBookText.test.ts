@@ -1,0 +1,84 @@
+import { describe, expect, it } from 'vitest';
+import { parseSource } from './OriginalBookText';
+
+describe('parseSource', () => {
+  it('turns chapter objectives, examples, lists, captions, and code into semantic blocks', () => {
+    const blocks = parseSource(`
+Book title
+
+Chapter 1
+
+VECTOR ALGEBRA
+
+Chapter introduction must remain visible.
+
+Objectives:
+
+- Learn vectors.
+
+- Use coordinates.
+
+# 1.1 VECTORS
+
+[[IMG hand.jpg]]
+
+Example 1.1
+
+- First item.
+
+- Second item.
+
+[[IMG Fig1-1.jpg]]
+
+Figure 1.1. A vector picture.
+
+[[IMG note.jpg]]
+
+#include <vector>
+
+std::vector<int> values;
+`, 'ch01');
+
+    expect(blocks.find((block) => block.kind === 'objectives')).toMatchObject({ items: ['Learn vectors.', 'Use coordinates.'] });
+    expect(blocks.some((block) => block.kind === 'paragraph' && block.text === 'Chapter introduction must remain visible.')).toBe(true);
+    expect(blocks.find((block) => block.kind === 'heading')?.id).toBe('s11');
+    expect(blocks.find((block) => block.kind === 'example')).toMatchObject({ text: '1.1' });
+    expect(blocks.filter((block) => block.kind === 'marker')).toHaveLength(1);
+    expect(blocks.find((block) => block.kind === 'list')).toMatchObject({ ordered: false, items: ['First item.', 'Second item.'] });
+    expect(blocks.find((block) => block.kind === 'image')).toMatchObject({ figureNumber: 'Figure 1.1', caption: 'A vector picture.' });
+    expect(blocks.find((block) => block.kind === 'code')).toMatchObject({ text: '#include <vector>\nstd::vector<int> values;' });
+  });
+
+  it('keeps extracted Direct3D code lines separate from prose and list text', () => {
+    const source = `
+Chapter 4
+
+DIRECT3D INITIALIZATION
+
+Direct3D is a low-level graphics API. We can call ID3D12CommandList::ClearRenderTargetView to clear the target.
+
+- Get: Returns a pointer to the underlying COM interface. For example:
+ComPtr<ID3D12RootSignature> mRootSignature;
+
+...
+
+// SetGraphicsRootSignature expects ID3D12RootSignature* argument.
+
+mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
+- GetAddressOf: Returns the address of the pointer. For example:
+ThrowIfFailed(md3dDevice->CreateCommandAllocator(
+
+D3D12_COMMAND_LIST_TYPE_DIRECT,
+
+mDirectCmdListAlloc.GetAddressOf()));
+`;
+    const blocks = parseSource(source, 'ch04');
+    const code = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []).join('\n');
+
+    expect(code).toContain('ComPtr<ID3D12RootSignature> mRootSignature;');
+    expect(code).toContain('mCommandList->SetGraphicsRootSignature(mRootSignature.Get());');
+    expect(code).toContain('D3D12_COMMAND_LIST_TYPE_DIRECT,');
+    expect(blocks.some((block) => block.kind === 'paragraph' && block.text.startsWith('Direct3D is a low-level graphics API'))).toBe(true);
+  });
+});

@@ -1,4 +1,4 @@
-<div className="translation-progress"><b>本章译文进度</b><span>录入中 · 已录入：6.1 顶点与输入布局（完整） · 待录入：6.2 顶点缓冲、6.3 索引与索引缓冲、6.4 顶点着色器示例、6.5 像素着色器示例、6.6 常量缓冲、6.7 编译着色器、6.8 光栅器状态、6.9 管线状态对象、6.10 几何辅助结构、6.11 Box 演示、6.12 小结、6.13 习题</span></div>
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：6.1–6.13 全部小节（含 Box 演示全文与习题 1–16），依据 EPUB ch06.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
 
 上一章我们主要关注渲染管线的概念与数学层面。本章则关注配置渲染管线、定义顶点与像素着色器，以及向渲染管线提交几何数据以进行绘制所需的 Direct3D API 接口与方法。读完本章，你将能够绘制一个采用纯色着色或线框模式的立方体。
 
@@ -65,10 +65,8 @@ typedef struct D3D12_INPUT_ELEMENT_DESC
 3. `Format`：`DXGI_FORMAT` 枚举类型的一个成员，向 Direct3D 指定该顶点元素的格式（即数据类型）；下面是一些常用格式示例：
 
    ```cpp
-   DXGI_FORMAT_R32_FLOAT     // 1D 32-bit float scalar    
-   DXGI_FORMAT_R32G32_FLOAT  // 2D 32-bit float vector
-   DXGI_FORMAT_R32G32B32_FLOAT    // 3D 32-bit float vector    
-   DXGI_FORMAT_R32G32B32A32_FLOAT // 4D 32-bit float vector
+   DXGI_FORMAT_R32_FLOAT     // 1D 32-bit float scalar   DXGI_FORMAT_R32G32_FLOAT  // 2D 32-bit float vector
+   DXGI_FORMAT_R32G32B32_FLOAT    // 3D 32-bit float vector   DXGI_FORMAT_R32G32B32A32_FLOAT // 4D 32-bit float vector
 
    DXGI_FORMAT_R8_UINT       // 1D 8-bit unsigned integer scalar
    DXGI_FORMAT_R16G16_SINT   // 2D 16-bit signed integer vector
@@ -120,5 +118,2229 @@ D3D12_INPUT_ELEMENT_DESC desc2[] =
 <a id="page207"/>
 
 **译者注**：原书 `desc2` 中 `TEXCOORD` 0 元素末尾缺少逗号（`..., 0}` 之后应为 `..., 0},`），此处按原文照录。
+
+</section>
+
+<section className="lesson-section" id="s62">
+<h2>6.2 顶点缓冲</h2>
+
+为了让 GPU 访问顶点数组，我们需要把它们放在一种称为*缓冲*（buffer）的 GPU 资源（`ID3D12Resource`）中。我们把存储顶点的缓冲称为*顶点缓冲*（vertex buffer）。缓冲是比纹理更简单的资源；它们不是多维的，也不支持 mipmap、过滤器或多重采样。只要需要向 GPU 提供诸如顶点之类的数据元素数组，我们就会使用缓冲。
+
+正如 §4.3.8 中所做的，我们通过填写描述缓冲资源的 `D3D12_RESOURCE_DESC` 结构，然后调用 `ID3D12Device::CreateCommittedResource` 方法来创建 `ID3D12Resource` 对象。`D3D12_RESOURCE_DESC` 结构所有成员的描述参见 §4.3.8。Direct3D 12 提供了一个 C++ 包装类 `CD3DX12_RESOURCE_DESC`，它派生自 `D3D12_RESOURCE_DESC`，并提供了一些便捷的构造函数和方法。特别是，它提供了下面这个方法，简化了构造描述缓冲的 `D3D12_RESOURCE_DESC` 的过程：
+
+```cpp
+static inline CD3DX12_RESOURCE_DESC Buffer(    UINT64 width,    D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE,
+    UINT64 alignment = 0 )
+{
+  return CD3DX12_RESOURCE_DESC( D3D12_RESOURCE_DIMENSION_BUFFER,    alignment, width, 1, 1, 1,    DXGI_FORMAT_UNKNOWN, 1, 0,    D3D12_TEXTURE_LAYOUT_ROW_MAJOR, flags );
+}
+```
+
+对缓冲而言，*宽度*（width）指的是缓冲中的字节数。例如，如果缓冲存储了 64 个 `float`，那么宽度就是 `64*sizeof(float)`。
+
+**注意**：`CD3DX12_RESOURCE_DESC` 类还为构造描述纹理资源的 `D3D12_RESOURCE_DESC` 以及查询资源信息提供了便捷方法：
+
+1. `CD3DX12_RESOURCE_DESC::Tex1D`
+2. `CD3DX12_RESOURCE_DESC::Tex2D`
+3. `CD3DX12_RESOURCE_DESC::Tex3D`
+
+**注意**：回顾第 4 章，作为 2D 纹理的深度/模板缓冲同样是由一个 `ID3D12Resource` 对象表示的。Direct3D 12 中的所有资源都由 `ID3D12Resource` 接口表示。这与 Direct3D 11 不同，后者对各种资源使用了不同的接口，比如 `ID3D11Buffer` 和 `ID3D11Texture2D`。资源的类型由 `D3D12_RESOURCE_DESC::D3D12_RESOURCE_DIMENSION` 字段指定。例如，缓冲的维度为 `D3D12_RESOURCE_DIMENSION_BUFFER`，2D 纹理的维度为 `D3D12_RESOURCE_DIMENSION_TEXTURE2D`。
+
+对于静态几何体<a id="page208"/>（即不逐帧变化的几何体），我们把顶点缓冲放在默认堆（`D3D12_HEAP_TYPE_DEFAULT`）中以获得最佳性能。一般来说，游戏中的大多数几何体都是如此（例如树、建筑、地形、角色）。顶点缓冲初始化之后，绘制几何体时只需要 GPU 从顶点缓冲读取数据，因此使用默认堆是合理的。然而，如果 CPU 不能写入默认堆中的顶点缓冲，那我们该如何初始化顶点缓冲呢？
+
+除了创建实际的顶点缓冲资源之外，我们还需要创建一个堆类型为 `D3D12_HEAP_TYPE_UPLOAD` 的中间*上传*（upload）缓冲资源。回顾 §4.3.8，当我们需要把数据从 CPU 内存复制到 GPU 内存时，就把资源提交到上传堆。创建上传缓冲之后，我们把顶点数据从系统内存复制到上传缓冲，然后把顶点数据从上传缓冲复制到实际的顶点缓冲。
+
+因为初始化默认缓冲（堆类型为 `D3D12_HEAP_TYPE_DEFAULT` 的缓冲）的数据需要一个中间上传缓冲，我们在 *d3dUtil.h/.cpp* 中构建了下面这个工具函数，以免每次需要默认缓冲时都重复这项工作：
+
+```cpp
+Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
+    ID3D12Device* device,
+    ID3D12GraphicsCommandList* cmdList,
+    const void* initData,
+    UINT64 byteSize,
+    Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer)
+{
+  ComPtr<ID3D12Resource> defaultBuffer;
+
+  // Create the actual default buffer resource.
+  ThrowIfFailed(device->CreateCommittedResource(
+    &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+    D3D12_HEAP_FLAG_NONE,
+    &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+      D3D12_RESOURCE_STATE_COMMON,
+    nullptr,
+    IID_PPV_ARGS(defaultBuffer.GetAddressOf())));
+
+  // In order to copy CPU memory data into our default buffer, we need
+  // to create an intermediate upload heap.  ThrowIfFailed(device->CreateCommittedResource(
+    &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+      D3D12_HEAP_FLAG_NONE,
+    &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+      D3D12_RESOURCE_STATE_GENERIC_READ,
+    nullptr,
+    IID_PPV_ARGS(uploadBuffer.GetAddressOf())));
+
+
+  // Describe the data we want to copy into the default buffer.
+  D3D12_SUBRESOURCE_DATA subResourceData = {};
+  subResourceData.pData = initData;
+  subResourceData.RowPitch = byteSize;
+  subResourceData.SlicePitch = subResourceData.RowPitch;
+
+  // Schedule to copy the data to the default buffer resource.  // At a high level, the helper function UpdateSubresources
+  // will copy the CPU memory into the intermediate upload heap.
+  // Then, using ID3D12CommandList::CopySubresourceRegion,
+  // the intermediate upload heap data will be copied to mBuffer.
+  cmdList->ResourceBarrier(1,    &CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),    D3D12_RESOURCE_STATE_COMMON,    D3D12_RESOURCE_STATE_COPY_DEST));
+  UpdateSubresources<1>(cmdList,    defaultBuffer.Get(), uploadBuffer.Get(),
+    0, 0, 1, &subResourceData);
+  cmdList->ResourceBarrier(1,
+    &CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),
+    D3D12_RESOURCE_STATE_COPY_DEST,    D3D12_RESOURCE_STATE_GENERIC_READ));
+
+  // Note: uploadBuffer has to be kept alive after the above function  // calls because the command list has not been executed yet that
+  // performs the actual copy.
+  // The caller can Release the uploadBuffer after it knows the copy
+  // has been executed.
+  return defaultBuffer;
+}
+```
+
+`D3D12_SUBRESOURCE_DATA` 结构定义如下：<a id="page209"/>
+
+```cpp
+typedef struct D3D12_SUBRESOURCE_DATA
+{
+  const void *pData;
+  LONG_PTR RowPitch;
+  LONG_PTR SlicePitch;
+} D3D12_SUBRESOURCE_DATA;
+```
+
+1. `pData`：指向系统内存数组的指针，该数组包含用于初始化缓冲的数据。如果缓冲可以存储 *n* 个顶点，那么系统数组必须至少包含 *n* 个顶点，以便整个缓冲都能被初始化。
+2. `RowPitch`：对缓冲而言，即所复制数据的大小（以字节为单位）。
+3. `SlicePitch`：对缓冲而言，即所复制数据的大小（以字节为单位）。
+
+下面的代码展示了<a id="page210"/>如何用这个类来创建一个存储立方体 8 个顶点的默认缓冲，其中每个顶点都关联了一个不同的颜色：
+
+```cpp
+Vertex vertices[] =
+{
+  { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) },
+  { XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) },
+  { XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) },
+  { XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) },
+  { XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) },
+  { XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) },
+  { XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) },
+  { XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) }
+};
+
+const UINT64 vbByteSize = 8 * sizeof(Vertex);
+
+ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
+VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+  mCommandList.Get(), vertices, vbByteSize, VertexBufferUploader);
+```
+
+其中 `Vertex` 类型和颜色定义如下：
+
+```cpp
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+};
+```
+
+要把顶点缓冲绑定到管线，我们需要为顶点缓冲资源创建一个顶点缓冲视图。与 RTV（渲染目标视图）不同，顶点缓冲视图不需要描述符堆。顶点缓冲视图由 `D3D12_VERTEX_BUFFER_VIEW` 结构表示：
+
+```cpp
+typedef struct D3D12_VERTEX_BUFFER_VIEW
+{
+  D3D12_GPU_VIRTUAL_ADDRESS BufferLocation;
+  UINT SizeInBytes;
+  UINT StrideInBytes;
+}     D3D12_VERTEX_BUFFER_VIEW;
+```
+
+1. `BufferLocation`：我们要创建视图的顶点缓冲资源的虚拟地址。可以用 `ID3D12Resource::GetGPUVirtualAddress` 方法来获取。
+2. `SizeInBytes`：从 `BufferLocation` 开始要在顶点缓冲中查看的字节数。
+3. `StrideInBytes`：每个顶点元素的大小（以字节为单位）。
+
+顶点缓冲创建完成并有了它的视图之后，我们就可以把它绑定到管线的某个输入槽，把顶点送入管线的输入装配阶段。这可以用下面的方法完成：<a id="page211"/>
+
+```cpp
+void ID3D12GraphicsCommandList::IASetVertexBuffers(
+  UINT StartSlot,
+  UINT NumBuffers,
+  const D3D12_VERTEX_BUFFER_VIEW *pViews);
+```
+
+1. `StartSlot`：开始绑定顶点缓冲的输入槽。共有 16 个输入槽，索引 0–15。
+2. `NumBuffers`：要绑定到输入槽的顶点缓冲个数。如果起始槽的索引为 *k*，我们要绑定 *n* 个缓冲，那么绑定的输入槽就是 $I_k,\ I_{k+1},\ \ldots,\ I_{k+n-1}$。
+3. `pViews`：指向顶点缓冲视图数组第一个元素的指针。
+
+下面是一次示例调用：
+
+```cpp
+D3D12_VERTEX_BUFFER_VIEW vbv;
+vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
+vbv.StrideInBytes = sizeof(Vertex);
+vbv.SizeInBytes = 8 * sizeof(Vertex);
+
+D3D12_VERTEX_BUFFER_VIEW vertexBuffers[1] = { vbv };
+mCommandList->IASetVertexBuffers(0, 1, vertexBuffers);
+```
+
+`IASetVertexBuffers` 方法看起来有点复杂，因为它支持把一个顶点缓冲数组设置到各个输入槽。不过我们只会使用一个输入槽。章末的一道习题会让你练习使用两个输入槽。
+
+顶点缓冲会一直绑定在输入槽上，直到你更改它。因此，如果你使用多个顶点缓冲，可以这样组织代码：
+
+```cpp
+ID3D12Resource* mVB1; // stores vertices of type Vertex1
+ID3D12Resource* mVB2; // stores vertices of type Vertex2
+
+D3D12_VERTEX_BUFFER_VIEW_DESC mVBView1; // view to mVB1
+D3D12_VERTEX_BUFFER_VIEW_DESC mVBView2; // view to mVB2
+
+/*…Create the vertex buffers and views…*/
+
+mCommandList->IASetVertexBuffers(0, 1, &VBView1);
+/* …draw objects using vertex buffer 1… */
+
+mCommandList->IASetVertexBuffers(0, 1, &mVBView2);
+/* …draw objects using vertex buffer 2… */
+```
+
+把顶点缓冲设置<a id="page212"/>到输入槽并不会进行绘制；它只是让顶点准备好送入管线。真正绘制这些顶点的最后一步由 `ID3D12GraphicsCommandList::DrawInstanced` 方法完成：
+
+```cpp
+void ID3D12CommandList::DrawInstanced(
+  UINT VertexCountPerInstance,
+  UINT InstanceCount,
+  UINT StartVertexLocation,
+  UINT StartInstanceLocation);
+```
+
+1. `VertexCountPerInstance`：要绘制的顶点数（每个实例）。
+2. `InstanceCount`：用于名为实例化（instancing）的高级技术；目前把它设为 1，因为我们只绘制一个实例。
+3. `StartVertexLocation`：指定从顶点缓冲中开始绘制的第一个顶点的索引（从零开始）。
+4. `StartInstanceLocation`：用于名为实例化（instancing）的高级技术；目前把它设为 0。
+
+参数 `VertexCountPerInstance` 和 `StartVertexLocation` 定义了顶点缓冲中要绘制的一个连续顶点子集；见图 6.2。
+
+<Figure src="images/Fig6-2.jpg" alt="顶点缓冲中由 StartVertexLocation 和 VertexCountPerInstance 确定的连续顶点子集" figureNumber="图 6.2" caption="`StartVertexLocation` 指定从顶点缓冲中开始绘制的第一个顶点的索引（从零开始）；`VertexCountPerInstance` 指定要绘制的顶点数。" />
+
+`DrawInstanced` 方法并没有指定这些顶点定义的是哪种图元。它们应该按点、线列表还是三角形列表来绘制？回顾 §5.5.2，图元拓扑状态通过 `ID3D12GraphicsCommandList::IASetPrimitiveTopology` 方法设置。下面是一次示例调用：
+
+```cpp
+cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+```
+
+</section>
+
+<section className="lesson-section" id="s63">
+<h2>6.3 索引与索引缓冲</h2>
+
+与顶点类似，为了让 GPU 访问索引数组，也需要把它们放在一种缓冲 GPU 资源（`ID3D12Resource`）中。我们把存储索引的缓冲称为*索引缓冲*（index buffer）。由于 `d3dUtil::CreateDefaultBuffer` 函数通过 `void*` 处理通用数据，我们可以用同一个函数来创建索引缓冲（或任何默认缓冲）。
+
+为了把索引<a id="page213"/>缓冲绑定到管线，我们需要为索引缓冲资源创建一个索引缓冲视图。与顶点缓冲视图一样，索引缓冲视图也不需要描述符堆。索引缓冲视图由 `D3D12_INDEX_BUFFER_VIEW` 结构表示：
+
+```cpp
+typedef struct D3D12_INDEX_BUFFER_VIEW
+{
+  D3D12_GPU_VIRTUAL_ADDRESS BufferLocation;
+  UINT SizeInBytes;
+  DXGI_FORMAT Format;
+} D3D12_INDEX_BUFFER_VIEW;
+```
+
+1. `BufferLocation`：我们要创建视图的顶点缓冲资源的虚拟地址。可以用 `ID3D12Resource::GetGPUVirtualAddress` 方法来获取。
+2. `SizeInBytes`：从 `BufferLocation` 开始要在索引缓冲中查看的字节数。
+3. `Format`：索引的格式，必须是表示 16 位索引的 `DXGI_FORMAT_R16_UINT`，或表示 32 位索引的 `DXGI_FORMAT_R32_UINT`。应当使用 16 位索引来减少内存和带宽占用；只有当索引值确实需要 32 位才能表示时才使用 32 位索引。
+
+与顶点缓冲以及任何其他 Direct3D 资源一样，在使用之前需要把它绑定到管线。索引缓冲通过 `ID3D12CommandList::SetIndexBuffer` 方法绑定到输入装配阶段。下面的代码展示了如何创建一个定义立方体各三角形的索引缓冲、为它创建视图并把它绑定到管线：
+
+```cpp
+std::uint16_t indices[] = {
+  // front face
+  0, 1, 2,
+  0, 2, 3,
+
+  // back face
+  4, 6, 5,
+  4, 7, 6,
+
+  // left face
+  4, 5, 1,
+  4, 1, 0,
+
+  // right face
+  3, 2, 6,
+  3, 6, 7,
+
+  // top face
+  1, 5, 6,
+  1, 6, 2,
+
+  // bottom face
+  4, 0, 3,
+  4, 3, 7
+};
+
+const UINT ibByteSize = 36 * sizeof(std::uint16_t);
+
+ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+ComPtr<ID3D12Resource> IndexBufferUploader = nullptr;
+IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+  mCommandList.Get(), indices), ibByteSize, IndexBufferUploader);
+
+D3D12_INDEX_BUFFER_VIEW ibv;
+ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
+ibv.Format = DXGI_FORMAT_R16_UINT;
+ibv.SizeInBytes = ibByteSize;
+
+mCommandList->IASetIndexBuffer(&ibv);
+```
+
+**译者注**：原书上面调用 `CreateDefaultBuffer` 的一行中 `indices),` 多了一个右括号（应为 `indices,`），此处按原文照录。
+
+最后，使用索引时<a id="page214"/>必须用 `ID3D12GraphicsCommandList::DrawIndexedInstanced` 方法代替 `DrawInstanced`：
+
+```cpp
+void ID3D12GraphicsCommandList::DrawIndexedInstanced(
+  UINT IndexCountPerInstance,
+  UINT InstanceCount,
+  UINT StartIndexLocation,
+  INT BaseVertexLocation,
+  UINT StartInstanceLocation);
+```
+
+1. `IndexCountPerInstance`：要绘制的索引数（每个实例）。
+2. `InstanceCount`：用于名为实例化（instancing）的高级技术；目前把它设为 1，因为我们只绘制一个实例。
+3. `StartIndexLocation`：索引缓冲中某个元素的索引，标记从哪里开始读取索引。
+4. `BaseVertexLocation`：一个整数值，在获取顶点之前会加到本次绘制调用所用的索引上。
+5. `StartInstanceLocation`：用于名为实例化（instancing）的高级技术；目前把它设为 0。
+
+为了说明这些参数，考虑如下情形。假设我们有三个物体：球、盒子和圆柱。起初每个物体都有自己的顶点缓冲和自己的索引缓冲，每个局部索引缓冲中的索引都是相对于对应局部顶点缓冲的。现在假设我们把球、盒子和圆柱的顶点和索引拼接成一个全局顶点缓冲和一个全局索引缓冲，如图 6.3 所示。（人们之所以拼接顶点和索引缓冲，是因为切换顶点缓冲和索引缓冲存在一定的 API 开销。这多半不会成为瓶颈，但如果你有许多容易合并的小顶点缓冲和索引缓冲，出于性能考虑这样做可能是值得的。）这次拼接之后<a id="page215"/>，索引就不再正确了，因为它们存储的是相对于各自局部顶点缓冲的索引位置，而不是相对于全局顶点缓冲的；因此需要重新计算索引，使其能正确地索引到全局顶点缓冲。盒子原本的索引是在假设盒子的顶点占据索引
+
+<Figure src="images/Fig6-3.jpg" alt="多个顶点缓冲拼接成一个大顶点缓冲，多个索引缓冲拼接成一个大索引缓冲" figureNumber="图 6.3" caption="把若干顶点缓冲拼接成一个大顶点缓冲，并把若干索引缓冲拼接成一个大索引缓冲。" />
+
+```cpp
+  0, 1, …, numBoxVertices-1
+```
+
+的前提下计算出来的，但合并之后它们从
+
+```cpp
+  firstBoxVertexPos,  firstBoxVertexPos+1,  …,  firstBoxVertexPos+numBoxVertices-1
+```
+
+开始。因此，为了更新索引，我们需要给盒子的每个索引加上 `firstBoxVertexPos`。同理，需要给圆柱的每个索引加上 `firstCylVertexPos`。注意球的索引不需要改变（因为第一个球顶点的位置是零）。我们把一个物体的第一个顶点相对于全局顶点缓冲的位置称为它的*基顶点位置*（base vertex location）。一般来说，物体新的索引由它的每个索引加上基顶点位置得到。我们可以不必自己计算新索引，而是把基顶点位置传给 `DrawIndexedInstanced` 的第四个参数，让 Direct3D 替我们完成这项工作。
+
+于是我们可以用下面三次调用逐一绘制球、盒子和圆柱：
+
+```cpp
+mCmdList->DrawIndexedInstanced(
+  numSphereIndices, 1, 0, 0, 0);
+mCmdList->DrawIndexedInstanced(
+  numBoxIndices, 1, firstBoxIndex, firstBoxVertexPos, 0);
+mCmdList->DrawIndexedInstanced(
+  numCylIndices, 1, firstCylIndex, firstCylVertexPos, 0);
+```
+
+下一章的"Shapes"演示项目就使用了这种技巧。<a id="page216"/>
+
+</section>
+
+<section className="lesson-section" id="s64">
+<h2>6.4 顶点着色器示例</h2>
+
+下面是简单顶点着色器的一个实现（回顾 §5.6）：
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;};
+
+void VS(float3 iPosL : POSITION,    float4 iColor : COLOR,    out float4 oPosH : SV_POSITION,
+    out float4 oColor : COLOR)
+{
+  // Transform to homogeneous clip space.
+  oPosH = mul(float4(iPosL, 1.0f), gWorldViewProj);
+  // Just pass vertex color into the pixel shader.
+  oColor = iColor;
+}
+```
+
+着色器是用一种称为*高级着色语言*（high level shading language，HLSL）的语言编写的，它的语法与 C++ 相似，因此很容易学习。附录 B 提供了 HLSL 的简明参考。我们教授 HLSL 和编写着色器的方法将以示例为主。也就是说，随着本书的推进，我们会介绍实现当前演示程序所需的任何新 HLSL 概念。着色器通常写在扩展名为 .hlsl 的文本文件中。
+
+顶点着色器就是名为 `VS` 的函数。注意，你可以给顶点着色器起任何有效的函数名。这个顶点着色器有四个参数；前两个是*输入*参数，后两个是输出参数（由 `out` 关键字标示）。HLSL 没有引用或指针，因此要想从函数返回多个值，你需要使用结构或 out 参数。在 HLSL 中，函数总是内联的。
+
+前两个输入参数构成顶点着色器的*输入签名*（input signature），与我们绘制所用的自定义顶点结构中的数据成员相对应。参数语义"`:POSITION`"和"`:COLOR`"用于把顶点结构中的元素映射到顶点着色器的输入参数，如图 6.4 所示。
+
+<Figure src="images/Fig6-4.jpg" alt="顶点结构元素通过语义映射到顶点着色器输入参数" figureNumber="图 6.4" caption="每个顶点元素都有由 `D3D12_INPUT_ELEMENT_DESC` 数组指定的关联语义。顶点着色器的每个参数也附有语义。这些语义用于把顶点元素与顶点着色器参数匹配起来。" />
+
+输出参数也附有语义（"`:SV_POSITION`"和"`:COLOR`"）。它们用于把顶点着色器的输出映射到下一阶段（几何着色器或像素着色器）的对应输入。注意 `SV_POSITION` 语义是特殊的（SV 代表*系统值*，system value）。它用来标示保存齐次裁剪空间中顶点位置的顶点着色器输出元素。我们必须把 `SV_POSITION` 语义附在位置输出上，因为 GPU 需要知道这个值，它参与了其他属性不参与的操作，比如裁剪、深度测试和光栅化。对于非系统值的输出参数，语义名可以是任何有效的语义名。
+
+第一行通过乘以 4×4 矩阵 `gWorldViewProj`，把顶点位置从局部空间变换到齐次裁剪空间：
+
+```hlsl
+  // Transform to homogeneous clip space.
+  oPosH = mul(float4(iPosL, 1.0f), gWorldViewProj);
+```
+
+构造语法 `float4(iPosL, 1.0f)` 构造一个 4D 向量，等价于 `float4(iPosL.x, iPosL.y, iPosL.z, 1.0f)`；因为我们知道顶点的位置是点<a id="page218"/>而不是向量，所以我们在第四个分量中放 1（*w* = 1）。`float2` 和 `float3` 类型分别表示 2D 和 3D 向量。矩阵变量 `gWorldViewProj` 存放在所谓的常量缓冲（constant buffer）中，这将在下一节讨论。内置函数 `mul` 用于向量-矩阵乘法。顺便一提，`mul` 函数为不同规模的矩阵乘法进行了重载；例如，可以用它乘两个 4×4 矩阵、两个 3×3 矩阵，或一个 1×3 向量与一个 3×3 矩阵。着色器体的最后一行只是把输入颜色复制到输出参数，让颜色被送入管线的下一个阶段：
+
+```hlsl
+  oColor = iColor;
+```
+
+我们可以等价地改写上面的顶点着色器，用结构作为返回类型和输入签名（而不是长长的参数列表）：
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;};
+
+struct VertexIn
+{
+  float3 PosL : POSITION;
+  float4 Color : COLOR;
+};
+
+struct VertexOut
+{
+  float4 PosH : SV_POSITION;
+  float4 Color : COLOR;
+};
+
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout;
+  // Transform to homogeneous clip space.
+  vout.PosH = mul(float4(vin.PosL, 1.0f), gWorldViewProj);
+  // Just pass vertex color into the pixel shader.
+  vout.Color = vin.Color;
+
+  return vout;
+}
+```
+
+**注意**：如果没有几何着色器<a id="page219"/>（几何着色器在第 12 章讨论），那么顶点着色器必须以 `SV_POSITION` 语义输出齐次裁剪空间中的顶点位置，因为在没有几何着色器时，硬件期望顶点在离开顶点着色器时正处于该空间。如果有几何着色器，输出齐次裁剪空间位置的工作可以推迟给几何着色器完成。
+
+**注意**：顶点着色器（或几何着色器）不做透视除法；它只做投影矩阵那部分。透视除法稍后由硬件完成。
+
+<h3 id="s641">6.4.1 输入布局描述与输入签名的链接</h3>
+
+从图 6.4 可以注意到，送入管线的顶点属性之间存在一种链接，这种链接由输入布局描述定义。如果你送入的顶点没有提供顶点着色器期望的全部输入，就会产生错误。例如，下面的顶点着色器输入签名与顶点数据是不兼容的：
+
+```cpp
+//--------------
+// C++ app code
+//--------------
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+};
+
+D3D12_INPUT_ELEMENT_DESC desc[] =
+{
+  {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,    D3D12_INPUT_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,    D3D12_INPUT_PER_VERTEX_DATA, 0}
+};
+
+//--------------
+// Vertex shader
+//--------------
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  float4 Color : COLOR;
+  float3 Normal : NORMAL;
+};
+
+struct VertexOut
+{
+  float4 PosH : SV_POSITION;
+  float4 Color : COLOR;
+};
+
+
+VertexOut VS(VertexIn vin) { … }
+```
+
+正如我们将在<a id="page220"/> §6.9 中看到的，创建 `ID3D12PipelineState` 对象时，必须同时指定输入布局描述和顶点着色器。随后 Direct3D 会验证输入布局描述与顶点着色器是否兼容。
+
+顶点数据与输入签名不需要完全匹配。所需的只是顶点数据提供顶点着色器期望的全部数据。因此，允许顶点数据提供顶点着色器不使用的额外数据。也就是说，下面两者是兼容的：
+
+```cpp
+//--------------
+// C++ app code
+//--------------
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+  XMFLOAT3 Normal;
+};
+
+D3D12_INPUT_ELEMENT_DESC desc[] =
+{
+  {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,    D3D12_INPUT_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,    D3D12_INPUT_PER_VERTEX_DATA, 0},
+  { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 28,    D3D12_INPUT_PER_VERTEX_DATA, 0 }
+};
+
+//--------------
+// Vertex shader
+//--------------
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  float4 Color : COLOR;
+};
+
+struct VertexOut
+{
+  float4 PosH : SV_POSITION;
+  float4 Color : COLOR;
+};
+
+
+VertexOut VS(VertexIn vin) { … }
+```
+
+现在考虑这样一种情形<a id="page221"/>：顶点结构与输入签名拥有匹配的顶点元素，但 color 属性的类型不同：
+
+```cpp
+//--------------
+// C++ app code
+//--------------
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+};
+
+D3D12_INPUT_ELEMENT_DESC desc[] =
+{
+  {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,    D3D12_INPUT_PER_VERTEX_DATA, 0},
+  {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,    D3D12_INPUT_PER_VERTEX_DATA, 0}
+};
+
+//--------------
+// Vertex shader
+//--------------
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+  int4 Color : COLOR;
+};
+
+struct VertexOut
+{
+  float4 PosH : SV_POSITION;
+  float4 Color : COLOR;
+};
+
+VertexOut VS(VertexIn vin) { … }
+```
+
+这实际上是合法的，因为 Direct3D 允许重新解释输入寄存器中的位。不过，VC++ 调试输出窗口会给出如下警告：
+
+```cpp
+D3D12 WARNING: ID3D11Device::CreateInputLayout: The provided input signature expects to read an element with SemanticName/Index: 'COLOR'/0 and component(s) of the type 'int32'. However, the matching entry in the Input Layout declaration, element[1], specifies mismatched format: 'R32G32B32A32_FLOAT'. This is not an error, since behavior is well defined: The element format determines what data conversion algorithm gets applied before it shows up in a shader register. Independently, the shader input signature defines how the shader will interpret the data that has been placed in its input registers, with no change in the bits stored. It is valid for the application to reinterpret data as a different type once it is in the vertex shader, so this warning is issued just in case reinterpretation was not intended by the author.
+```
+
+<a id="page222"/>
+
+</section>
+
+<section className="lesson-section" id="s65">
+<h2>6.5 像素着色器示例</h2>
+
+如 §5.10.3 所讨论的，在光栅化期间，顶点着色器（或几何着色器）输出的顶点属性会在三角形的各像素之间进行插值。插值得到的值随后作为输入送入像素着色器（§5.11）。假设没有几何着色器，图 6.5 展示了到目前为止顶点数据走过的路径。
+
+<Figure src="images/Fig6-5.jpg" alt="顶点元素语义、顶点着色器输入输出语义与像素着色器输入语义的对应关系" figureNumber="图 6.5" caption="每个顶点元素都有由 `D3D12_INPUT_ELEMENT_DESC` 数组指定的关联语义。顶点着色器的每个参数也附有语义。这些语义用于把顶点元素与顶点着色器参数匹配起来。同样，顶点着色器的每个输出都附有语义，像素着色器的每个输入参数也附有语义。这些语义用于把顶点着色器的输出映射到像素着色器的输入参数。" />
+
+像素着色器与顶点着色器类似，是一个针对每个像素片段执行的函数。给定像素着色器的输入，像素着色器的任务是为该像素片段计算一个颜色值。我们要指出，像素片段未必能存活并最终到达后缓冲；例如，它可能在像素着色器中被裁剪（HLSL 提供了一个 `clip` 函数，可以丢弃像素片段使其不再继续处理）、被另一个深度值更小的像素片段遮挡，或在管线的后续测试（如模板缓冲测试）中被丢弃。<a id="page223"/>因此，后缓冲上的一个像素可能同时有若干个像素片段候选；这就是"像素片段"（pixel fragment）与"像素"（pixel）的含义区别所在，尽管这两个术语有时被混用，但上下文通常能说明具体所指。
+
+**注意**：作为一种硬件优化，像素片段可能在到达像素着色器之前就被管线拒绝（例如 early-z 拒绝）。这时先做深度测试，如果该像素片段被深度测试判定为被遮挡，就跳过像素着色器。不过，某些情况会禁用 early-z 拒绝优化。例如，如果像素着色器会修改像素的深度，那么像素着色器就必须执行，因为如果像素着色器要改变深度，我们在它执行之前无法知道像素的真实深度。
+
+下面是一个简单的像素着色器，对应 §6.4 给出的顶点着色器。为了完整起见，这里把顶点着色器再次列出。
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;};
+
+void VS(float3 iPos : POSITION, float4 iColor : COLOR,    out float4 oPosH : SV_POSITION,
+   out float4 oColor : COLOR)
+{
+  // Transform to homogeneous clip space.
+  oPosH = mul(float4(iPos, 1.0f), gWorldViewProj);
+  // Just pass vertex color into the pixel shader.
+  oColor = iColor;
+}
+
+float4 PS(float4 posH : SV_POSITION, float4 color : COLOR) : SV_Target
+{
+  return pin.Color;
+}
+```
+
+**译者注**：原书上面 `PS` 的函数体返回 `pin.Color`，但该版本的参数名是 `color`，二者不一致；此处按原文照录。
+
+在本例中，像素着色器只是返回插值后的颜色值。注意像素着色器的输入与顶点着色器的输出完全匹配；这是一项要求。像素着色器返回一个 4D 颜色值，函数参数列表之后的 `SV_TARGET` 语义表示返回值的类型应当与渲染目标格式匹配。
+
+我们可以等价地改写上面的顶点着色器和像素着色器，改用输入/输出结构。写法的差别在于：我们把语义附加到输入/输出结构的成员上，并且用 return 语句而不是输出参数来产生输出。
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+   float4x4 gWorldViewProj;};
+
+struct VertexIn
+{
+  float3 Pos  : POSITION;
+  float4 Color : COLOR;
+};
+
+struct VertexOut
+{
+  float4 PosH : SV_POSITION;
+  float4 Color : COLOR;
+};
+
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout;
+  // Transform to homogeneous clip space.
+  vout.PosH = mul(float4(vin.Pos, 1.0f), gWorldViewProj);
+  // Just pass vertex color into the pixel shader.
+  vout.Color = vin.Color;
+
+  return vout;
+}
+
+float4 PS(VertexOut pin) : SV_Target
+{
+  return pin.Color;
+}
+```
+
+<a id="page224"/>
+
+</section>
+
+<section className="lesson-section" id="s66">
+<h2>6.6 常量缓冲</h2>
+
+<h3 id="s661">6.6.1 创建常量缓冲</h3>
+
+常量缓冲是这样一种 GPU 资源（`ID3D12Resource`）的例子：它的数据内容可以在着色器程序中引用。正如本书后面将学到的，纹理和其他类型的缓冲资源也可以在着色器程序中引用。§6.4 的示例顶点着色器中有这样的代码：
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;};
+```
+
+这段代码引用了一个名为 `cbPerObject` 的 `cbuffer` 对象（常量缓冲）。在本例中，该常量缓冲存储一个名为 `gWorldViewProj` 的 4×4 矩阵，表示把点从局部空间变换到齐次裁剪空间所用的世界矩阵、<a id="page225"/>视图矩阵和投影矩阵的组合。在 HLSL 中，4×4 矩阵用内置的 `float4x4` 类型声明；例如，要声明 3×4 矩阵和 2×4 矩阵，你会分别使用 `float3x4` 和 `float2x2` 类型。
+
+与顶点缓冲和索引缓冲不同，常量缓冲通常由 CPU 每帧更新一次。例如，如果摄像机每帧都在移动，常量缓冲就需要每帧用新的视图矩阵更新。因此，我们在上传堆而不是默认堆中创建常量缓冲，以便能从 CPU 更新其内容。
+
+常量缓冲还有一项特殊的硬件要求：它的大小必须是硬件最小分配大小（256 字节）的倍数。
+
+我们经常需要多个同类型的常量缓冲。例如，上面的常量缓冲 `cbPerObject` 存储逐对象变化的常量，所以如果有 *n* 个对象，就需要 *n* 个这种类型的常量缓冲。下面的代码展示了如何创建一个存储 `NumElements` 个常量缓冲的缓冲：
+
+```cpp
+struct ObjectConstants
+{
+  DirectX::XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
+};
+
+UINT elementByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+ComPtr<ID3D12Resource> mUploadCBuffer;
+device->CreateCommittedResource(
+  &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+  D3D12_HEAP_FLAG_NONE,
+  &CD3DX12_RESOURCE_DESC::Buffer(mElementByteSize * NumElements),
+  D3D12_RESOURCE_STATE_GENERIC_READ,
+  nullptr,
+  IID_PPV_ARGS(&mUploadCBuffer));
+```
+
+可以把 `mUploadCBuffer` 想象成存储了一个 `ObjectConstants` 类型的常量缓冲数组（带填充，使其成为 256 字节的倍数）。当要绘制某个对象时，我们只需把一个常量缓冲视图（CBV）绑定到缓冲中存储该对象常量的子区域。注意，由于 `mUploadCBuffer` 存储的是一个常量缓冲数组，我们通常会把它称为一个常量缓冲。
+
+工具函数 `d3dUtil::CalcConstantBufferByteSize` 负责做算术，把缓冲的字节大小向上取整为硬件最小分配大小（256 字节）的倍数：
+
+```cpp
+UINT d3dUtil::CalcConstantBufferByteSize(UINT byteSize)
+{
+  // Constant buffers must be a multiple of the minimum hardware
+  // allocation size (usually 256 bytes). So round up to nearest
+  // multiple of 256. We do this by adding 255 and then masking off
+  // the lower 2 bytes which store all bits < 256.
+  // Example: Suppose byteSize = 300.
+  // (300 + 255) & ~255
+  // 555 & ~255
+  // 0x022B & ~0x00ff
+  // 0x022B & 0xff00
+  // 0x0200
+  // 512
+  return (byteSize + 255) & ~255;
+}
+```
+
+**注意**：尽管我们按 256 的倍数分配常量<a id="page226"/>数据，但并不需要在 HLSL 结构中显式填充相应的常量数据，因为这一步是隐式完成的：
+
+```hlsl
+// Implicitly padded to 256 bytes.
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;};
+
+// Explicitly padded to 256 bytes.
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorldViewProj;  float4x4 Pad0;
+  float4x4 Pad1;
+  float4x4 Pad1;
+};
+```
+
+**译者注**：原书上面"显式填充"的代码中 `Pad1` 出现了两次（按顺序应为 `Pad0`、`Pad1`、`Pad2`），此处按原文照录。
+
+**注意**：如果不想处理把常量缓冲元素取整为 256 字节倍数的问题，也可以显式地把所有常量缓冲结构填充成始终为 256 字节的倍数。
+
+Direct3D 12 引入了着色器模型 5.1。着色器模型 5.1 引入了一种定义常量缓冲的替代 HLSL 语法，形如：
+
+```hlsl
+struct ObjectConstants
+{
+  float4x4 gWorldViewProj;
+  uint matIndex;};
+ConstantBuffer<ObjectConstants> gObjConstants : register(b0);
+```
+
+这里常量缓冲的数据元素<a id="page227"/>只是单独定义在一个结构中，然后再由该结构创建常量缓冲。之后在着色器中用数据成员语法访问常量缓冲的字段：
+
+```hlsl
+uint index = gObjConstants.matIndex;
+```
+
+<h3 id="s662">6.6.2 更新常量缓冲</h3>
+
+由于常量缓冲是以 `D3D12_HEAP_TYPE_UPLOAD` 堆类型创建的，我们可以把数据从 CPU 上传到常量缓冲资源。为此，首先必须获得指向资源数据的指针，这可以用 `Map` 方法完成：
+
+```cpp
+ComPtr<ID3D12Resource> mUploadBuffer;
+
+BYTE* mMappedData = nullptr;
+mUploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mMappedData));
+```
+
+第一个参数是标识要映射的子资源的子资源索引。对缓冲而言，唯一的子资源就是缓冲本身，所以我们直接把它设为 0。第二个参数是可选的指向 `D3D12_RANGE` 结构的指针，描述要映射的内存范围；指定 null 表示映射整个资源。第二个参数返回一个指向映射数据的指针。要把数据从系统内存复制到常量缓冲，直接做一次 memcpy 即可：
+
+```cpp
+memcpy(mMappedData, &data, dataSizeInBytes);
+```
+
+用完常量缓冲后，应在释放内存之前 `Unmap` 它：
+
+```cpp
+if(mUploadBuffer != nullptr)
+  mUploadBuffer->Unmap(0, nullptr);
+
+mMappedData = nullptr;
+```
+
+`Unmap` 的第一个参数是标识要取消映射的子资源的子资源索引，对缓冲而言同样是 0。`Unmap` 的第二个参数是可选的指向 `D3D12_RANGE` 结构的指针，描述要取消映射的内存范围；指定 null 表示取消映射整个资源。
+
+<h3 id="s663">6.6.3 上传缓冲辅助类</h3>
+
+为上传缓冲构建一个轻量包装会很方便。我们在 *UploadBuffer.h* 中定义了下面这个类，让使用上传缓冲更容易。它替我们处理上传缓冲资源的构造与析构，处理资源的映射与取消映射，并提供 `CopyData` 方法来更新缓冲中的特定元素。当我们需要从 CPU 更新上传缓冲的内容时（例如视图矩阵变化时），就使用 `CopyData` 方法。注意这个类可以用于任何上传缓冲，不一定是常量缓冲。但如果把它用于常量缓冲，就需要通过 `isConstantBuffer` 构造参数加以指示。如果它存储的是常量缓冲，那么它会自动填充内存，使每个常量缓冲都是 256 字节的倍数。<a id="page228"/>
+
+```cpp
+template<typename T>
+class UploadBuffer
+{
+public:
+  UploadBuffer(ID3D12Device* device, UINT elementCount, bool isConstantBuffer) :    mIsConstantBuffer(isConstantBuffer)
+  {
+    mElementByteSize = sizeof(T);
+
+    // Constant buffer elements need to be multiples of 256 bytes.
+    // This is because the hardware can only view constant data    // at m*256 byte offsets and of n*256 byte lengths.    // typedef struct D3D12_CONSTANT_BUFFER_VIEW_DESC {
+    // UINT64 OffsetInBytes; // multiple of 256
+    // UINT   SizeInBytes;   // multiple of 256
+    // } D3D12_CONSTANT_BUFFER_VIEW_DESC;
+    if(isConstantBuffer)
+      mElementByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(T));
+
+    ThrowIfFailed(device->CreateCommittedResource(
+      &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+      D3D12_HEAP_FLAG_NONE,
+      &CD3DX12_RESOURCE_DESC::Buffer(mElementByteSize*elementCount),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+      nullptr,
+      IID_PPV_ARGS(&mUploadBuffer)));
+
+    ThrowIfFailed(mUploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mMappedData)));
+
+    // We do not need to unmap until we are done with the resource.
+    // However, we must not write to the resource while it is in use by
+    // the GPU (so we must use synchronization techniques).
+  }
+
+  UploadBuffer(const UploadBuffer& rhs) = delete;
+  UploadBuffer& operator=(const UploadBuffer& rhs) = delete;
+  ~UploadBuffer()
+  {
+    if(mUploadBuffer != nullptr)
+      mUploadBuffer->Unmap(0, nullptr);
+
+    mMappedData = nullptr;
+  }
+
+  ID3D12Resource* Resource()const
+  {
+    return mUploadBuffer.Get();
+  }
+
+  void CopyData(int elementIndex, const T& data)
+  {
+    memcpy(&mMappedData[elementIndex*mElementByteSize], &data, sizeof(T));
+  }
+
+private:
+  Microsoft::WRL::ComPtr<ID3D12Resource> mUploadBuffer;
+  BYTE* mMappedData = nullptr;
+
+  UINT mElementByteSize = 0;
+  bool mIsConstantBuffer = false;
+};
+```
+
+通常，对象的<a id="page229"/>世界矩阵会在它移动/旋转/缩放时改变，视图矩阵在摄像机移动/旋转时改变，投影矩阵在窗口大小改变时改变。在本章的演示程序中，我们允许用户用鼠标旋转和移动摄像机，并在 `Update` 函数中每帧用新的视图矩阵更新世界-视图-投影组合矩阵：
+
+```cpp
+void BoxApp::OnMouseMove(WPARAM btnState, int x, int y)
+{
+  if((btnState & MK_LBUTTON) != 0)
+  {
+    // Make each pixel correspond to a quarter of a degree.
+    float dx = XMConvertToRadians(0.25f*static_cast<float> (x - mLastMousePos.x));
+    float dy = XMConvertToRadians(0.25f*static_cast<float> (y - mLastMousePos.y));
+
+    // Update angles based on input to orbit camera around box.
+    mTheta += dx;
+    mPhi += dy;
+
+    // Restrict the angle mPhi.
+    mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
+  }
+  else if((btnState & MK_RBUTTON) != 0)
+  {
+    // Make each pixel correspond to 0.005 unit in the scene.
+    float dx = 0.005f*static_cast<float>(x - mLastMousePos.x);
+    float dy = 0.005f*static_cast<float>(y - mLastMousePos.y);
+
+    // Update the camera radius based on input.
+    mRadius += dx - dy;
+
+    // Restrict the radius.
+    mRadius = MathHelper::Clamp(mRadius, 3.0f, 15.0f);
+  }
+
+  mLastMousePos.x = x;
+  mLastMousePos.y = y;
+}
+
+void BoxApp::Update(const GameTimer& gt)
+{
+  // Convert Spherical to Cartesian coordinates.
+  float x = mRadius*sinf(mPhi)*cosf(mTheta);
+  float z = mRadius*sinf(mPhi)*sinf(mTheta);
+  float y = mRadius*cosf(mPhi);
+
+  // Build the view matrix.
+  XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
+  XMVECTOR target = XMVectorZero();
+  XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+  XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+  XMStoreFloat4x4(&mView, view);
+
+  XMMATRIX world = XMLoadFloat4x4(&mWorld);
+  XMMATRIX proj = XMLoadFloat4x4(&mProj);
+  XMMATRIX worldViewProj = world*view*proj;
+
+  // Update the constant buffer with the latest worldViewProj matrix.
+  ObjectConstants objConstants;
+  XMStoreFloat4x4(&objConstants.WorldViewProj,  XMMatrixTranspose(worldViewProj));
+  mObjectCB->CopyData(0, objConstants);
+}
+```
+
+<a id="page230"/>
+
+<h3 id="s664">6.6.4 常量缓冲描述符</h3>
+
+回顾 §4.1.6，我们通过描述符对象把资源绑定到渲染管线。到目前为止，我们已经为渲染目标、深度/模板缓冲以及顶点和索引缓冲使用过描述符/视图。我们还需要描述符来把常量缓冲绑定到管线。常量缓冲描述符存放在类型为 `D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV` 的描述符堆中。这样的堆可以混合存储常量缓冲、着色器资源和无序访问描述符。为了存储这些新类型的描述符，我们需要创建一个这种类型的新描述符堆：
+
+```cpp
+D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+cbvHeapDesc.NumDescriptors = 1;
+cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+cbvHeapDesc.NodeMask = 0;
+
+ComPtr<ID3D12DescriptorHeap> mCbvHeap
+md3dDevice->CreateDescriptorHeap(&cbvHeapDesc,
+  IID_PPV_ARGS(&mCbvHeap));
+```
+
+这段代码与我们创建渲染目标及深度/模板缓冲描述符堆的方式类似。不过有一个重要区别：我们指定了 `D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE` 标志，表示这些描述符将被着色器程序访问。在本章的演示程序中，我们没有 SRV 或 UAV 描述符，而且<a id="page231"/>只打算绘制一个对象；因此这个堆里只需要 1 个描述符来存储 1 个 CBV。
+
+常量缓冲视图的创建方法是填写一个 `D3D12_CONSTANT_BUFFER_VIEW_DESC` 实例，然后调用 `ID3D12Device::CreateConstantBufferView`：
+
+```cpp
+// Constant data per-object.
+struct ObjectConstants
+{
+  XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
+};
+
+// Constant buffer to store the constants of n object.
+std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB = nullptr;
+mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(
+  md3dDevice.Get(), n, true);
+
+UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+// Address to start of the buffer (0th constant buffer).
+D3D12_GPU_VIRTUAL_ADDRESS cbAddress = mObjectCB->Resource()->GetGPUVirtualAddress();
+
+// Offset to the ith object constant buffer in the buffer.
+int boxCBufIndex = i;
+cbAddress += boxCBufIndex*objCBByteSize;
+
+D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+cbvDesc.BufferLocation = cbAddress;
+cbvDesc.SizeInBytes = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+md3dDevice->CreateConstantBufferView(
+  &cbvDesc,
+  mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+```
+
+`D3D12_CONSTANT_BUFFER_VIEW_DESC` 结构描述要绑定到 HLSL 常量缓冲结构的常量缓冲资源的子集。如前所述，通常一个常量缓冲存储 *n* 个对象的逐对象常量数组，但我们可以通过 `BufferLocation` 和 `SizeInBytes` 得到指向第 *i* 个对象常量数据的视图。由于硬件要求，`D3D12_CONSTANT_BUFFER_VIEW_DESC::SizeInBytes` 和 `D3D12_CONSTANT_BUFFER_VIEW_DESC::OffsetInBytes` 成员必须是 256 字节的倍数。例如，如果你指定 64，就会得到如下调试错误：
+
+```cpp
+D3D12 ERROR: ID3D12Device::CreateConstantBufferView: SizeInBytes of 64 is invalid. Device requires SizeInBytes be a multiple of 256.
+
+D3D12 ERROR: ID3D12Device:: CreateConstantBufferView: OffsetInBytes of 64 is invalid. Device requires OffsetInBytes be a multiple of 256.
+```
+
+<a id="page232"/>
+
+<h3 id="s665">6.6.5 根签名与描述符表</h3>
+
+一般来说，不同的着色器程序在执行绘制调用之前，会期望不同的资源绑定到渲染管线。资源绑定到特定的寄存器槽上，着色器程序可以访问它们。例如，前面的顶点着色器和像素着色器只期望一个常量缓冲绑定到寄存器 b0。本书后面会用到的一组更高级的顶点着色器和像素着色器则期望把多个常量缓冲、纹理和采样器绑定到各个寄存器槽：
+
+```hlsl
+// Texture resource bound to texture register slot 0.
+Texture2D  gDiffuseMap : register(t0);
+
+// Sampler resources bound to sampler register slots 0-5.
+SamplerState gsamPointWrap        : register(s0);
+SamplerState gsamPointClamp       : register(s1);
+SamplerState gsamLinearWrap       : register(s2);
+SamplerState gsamLinearClamp      : register(s3);
+SamplerState gsamAnisotropicWrap  : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+
+// cbuffer resource bound to cbuffer register slots 0-2
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+  float4x4 gTexTransform;
+};
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gProj;
+  […] // Other fields omitted for brevity.
+};
+
+cbuffer cbMaterial : register(b2)
+{
+  float4  gDiffuseAlbedo;
+  float3  gFresnelR0;
+  float  gRoughness;
+  float4x4 gMatTransform;
+};
+```
+
+*根签名*（root signature）定义了应用程序在执行绘制调用之前会绑定到渲染管线的资源，以及这些资源映射到着色器输入寄存器的位置。根签名必须与它所配合的着色器兼容（也就是说，根签名必须提供着色器期望在执行绘制调用之前绑定到渲染管线的全部资源）；这将在创建管线状态对象时进行验证（§6.9）。不同的绘制调用可能使用不同<a id="page233"/>的着色器程序集合，这就需要不同的根签名。
+
+**注意**：如果我们把着色器程序看作函数，把着色器期望的输入资源看作函数参数，那么根签名可以看作定义了一个函数签名（root signature 由此得名）。绑定不同的资源作为实参，着色器的输出就会不同。例如，顶点着色器既依赖于输入到着色器的实际顶点，也依赖于绑定的资源。
+
+在 Direct3D 中，根签名由 `ID3D12RootSignature` 接口表示。它由一个根参数数组定义，这些根参数描述着色器在一次绘制调用中期望的资源。*根参数*（root parameter）可以是*根常量*（root constant）、*根描述符*（root descriptor）或*描述符表*（descriptor table）。我们将在下一章讨论根常量和根描述符；本章只使用描述符表。描述符表指定描述符堆中一段连续的描述符范围。
+
+下面的代码创建了一个根签名，它有一个根参数，该参数是一个足以存储 1 个 CBV（常量缓冲视图）的描述符表：
+
+```cpp
+// Root parameter can be a table, root descriptor or root constants.
+CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+
+// Create a single descriptor table of CBVs.
+CD3DX12_DESCRIPTOR_RANGE cbvTable;
+cbvTable.Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_CBV,  1, // Number of descriptors in table
+  0);// base shader register arguments are bound to for this root parameter
+
+slotRootParameter[0].InitAsDescriptorTable(
+  1,     // Number of ranges
+  &cbvTable); // Pointer to array of ranges
+
+// A root signature is an array of root parameters.
+CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr,  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+// create a root signature with a single slot which points to a// descriptor range consisting of a single constant buffer.
+ComPtr<ID3DBlob> serializedRootSig = nullptr;
+ComPtr<ID3DBlob> errorBlob = nullptr;
+HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc,  D3D_ROOT_SIGNATURE_VERSION_1,
+  serializedRootSig.GetAddressOf(),  errorBlob.GetAddressOf());
+
+ThrowIfFailed(md3dDevice->CreateRootSignature(
+  0,
+  serializedRootSig->GetBufferPointer(),
+  serializedRootSig->GetBufferSize(),
+  IID_PPV_ARGS(&mRootSignature)));
+```
+
+我们将在下一章更详细地描述<a id="page234"/> `CD3DX12_ROOT_PARAMETER` 和 `CD3DX12_DESCRIPTOR_RANGE`，但现在只需理解，下面的代码
+
+```cpp
+CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+
+CD3DX12_DESCRIPTOR_RANGE cbvTable;
+cbvTable.Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_CBV, // table type
+  1, // Number of descriptors in table
+  0);// base shader register arguments are bound to for this root parameter
+
+slotRootParameter[0].InitAsDescriptorTable(
+  1,     // Number of ranges
+  &cbvTable); // Pointer to array of ranges
+```
+
+创建了一个根参数，它期望一个包含 1 个 CBV 的描述符表，并绑定到常量缓冲寄存器 0（即 HLSL 代码中的 `register(b0)`）。
+
+**注意**：本章的根签名示例非常简单。本书后面会看到大量根签名的例子，它们会按需逐渐复杂起来。
+
+根签名只定义应用程序会绑定哪些资源到渲染管线；它并不真正执行任何资源绑定。一旦用命令列表设置了根签名，我们就用 `ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable` 把描述符表绑定到管线：
+
+```cpp
+void ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable(  UINT RootParameterIndex,
+  D3D12_GPU_DESCRIPTOR_HANDLE BaseDescriptor);
+```
+
+1. `RootParameterIndex`：我们正在设置的根参数的索引。
+2. `BaseDescriptor`：堆中某个描述符的句柄，它指定正在设置的表中第一个描述符。例如，如果根签名规定这个表有五个描述符，那么 `BaseDescriptor` 以及堆中接下来的四个描述符就会被设置到这个根表。
+
+下面的代码把根签名和 CBV 堆设置到命令列表，并设置标识我们要绑定到管线的资源的描述符表：
+
+```cpp
+mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+// Offset the CBV we want to use for this draw call.
+CD3DX12_GPU_DESCRIPTOR_HANDLE cbv(mCbvHeap ->GetGPUDescriptorHandleForHeapStart());
+cbv.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
+
+mCommandList->SetGraphicsRootDescriptorTable(0, cbv);
+```
+
+<a id="page235"/>
+
+**注意**：为了性能，应让根签名尽可能小，并尽量减少每个渲染帧内更改根签名的次数。
+
+**注意**：当应用程序绑定的根签名内容（描述符表、根常量和根描述符）在绘制/调度调用之间发生任何变化时，D3D12 驱动会自动为这些内容做版本管理。因此每次绘制/调度都会获得一整套唯一的根签名状态。
+
+**注意**：如果你更改了根签名，就会丢失所有现有绑定。也就是说，你需要把新根签名期望的所有资源重新绑定到管线。
+
+</section>
+
+<section className="lesson-section" id="s67">
+<h2>6.7 编译着色器</h2>
+
+在 Direct3D 中，着色器程序必须先编译成可移植的字节码。然后图形驱动会取得这份字节码，再次编译成针对系统 GPU 的最优本机指令 [ATI1]。在运行时，我们可以用下面的函数编译着色器：
+
+```cpp
+HRESULT D3DCompileFromFile(
+  LPCWSTR pFileName,
+  const D3D_SHADER_MACRO *pDefines,
+  ID3DInclude *pInclude,
+  LPCSTR pEntrypoint,
+  LPCSTR pTarget,
+  UINT Flags1,
+  UINT Flags2,
+  ID3DBlob **ppCode,
+  ID3DBlob **ppErrorMsgs);
+```
+
+1. `pFileName:` 包含我们要编译的 HLSL 源代码的 .hlsl 文件的名称。
+2. `pDefines:` 我们不用的高级选项；<a id="page236"/>参见 SDK 文档。本书中我们始终指定 null。
+3. `pInclude`：我们不用的高级选项；参见 SDK 文档。本书中我们始终指定 null。
+4. `pEntrypoint`：着色器入口点的函数名。一个 .hlsl 文件可以包含多个着色器程序（例如一个顶点着色器和一个像素着色器），所以我们需要指定要编译的那个着色器的入口点。
+5. `pTarget`：一个字符串，指定我们使用的着色器程序类型和版本。本书以 5.0 和 5.1 版本为目标。
+   a) `vs_5_0` 和 `vs_5_1`：分别是顶点着色器 5.0 和 5.1。
+   b) `hs_5_0` 和 `hs_5_1`：分别是外壳着色器 5.0 和 5.1。
+   c) `ds_5_0` 和 `ds_5_1`：分别是域着色器 5.0 和 5.1。
+   d) `gs_5_0` 和 `gs_5_1`：分别是几何着色器 5.0 和 5.1。
+   e) `ps_5_0` 和 `ps_5_1`：分别是像素着色器 5.0 和 5.1。
+   f) `cs_5_0` 和 `cs_5_1`：分别是计算着色器 5.0 和 5.1。
+6. `Flags1`：指定着色器代码应如何编译的标志。SDK 文档中列出了相当多的这类标志，但本书只用其中两个：
+   a) `D3DCOMPILE_DEBUG:` 以调试模式编译着色器。
+   b) `D3DCOMPILE_SKIP_OPTIMIZATION:` 指示编译器跳过优化（对调试很有用）。
+7. `Flags2:` 我们不使用的高级效果编译选项；参见 SDK 文档。
+8. `ppCode:` 返回一个指向 `ID3DBlob` 数据结构的指针，其中存储了编译后的着色器对象字节码。
+9. `ppErrorMsgs:` 返回一个指向 `ID3DBlob` 数据结构的指针，其中存储了包含编译错误（如果有）的字符串。
+
+类型 `ID3DBlob` 只是一块通用内存，它有两个方法：
+
+1. `LPVOID GetBufferPointer`：返回指向数据的 void*，因此使用前必须把它转换成适当的类型（见下面的示例）。
+2. `SIZE_T GetBufferSize`：返回缓冲的字节大小。
+
+为支持错误输出，我们在 *d3dUtil.h/.cpp* 中实现了下面这个辅助函数，用于在运行时编译着色器：
+
+```cpp
+ComPtr<ID3DBlob> d3dUtil::CompileShader(
+    const std::wstring& filename,
+    const D3D_SHADER_MACRO* defines,
+    const std::string& entrypoint,
+    const std::string& target)
+{
+  // Use debug flags in debug mode.
+  UINT compileFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)  compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+  HRESULT hr = S_OK;
+
+  ComPtr<ID3DBlob> byteCode = nullptr;
+  ComPtr<ID3DBlob> errors;
+  hr = D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+    entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors);
+
+  // Output errors to debug window.
+  if(errors != nullptr)
+    OutputDebugStringA((char*)errors->GetBufferPointer());
+
+  ThrowIfFailed(hr);
+
+  return byteCode;
+}
+```
+
+下面是调用这个函数的示例：
+
+```cpp
+ComPtr<ID3DBlob> mvsByteCode = nullptr;
+ComPtr<ID3DBlob> mpsByteCode = nullptr;
+mvsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl",
+  nullptr, "VS", "vs_5_0");
+mpsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl",  nullptr, "PS", "ps_5_0");
+```
+
+HLSL 的错误和警告会通过<a id="page237"/> `ppErrorMsgs` 参数返回。例如，如果我们把 `mul` 函数拼错了，调试窗口就会输出如下错误：
+
+```cpp
+Shaders\color.hlsl(29,14-55): error X3004: undeclared identifier 'mu'
+```
+
+编译着色器并不会把它绑定到渲染管线供使用。我们将在 §6.9 中看到如何做到这一点。
+
+<h3 id="s671">6.7.1 离线编译</h3>
+
+我们也可以不在运行时编译着色器，而是在单独的步骤中离线编译（例如构建步骤，或作为资产内容管线流程的一部分）。这样做有几个理由：
+
+1. 对于复杂的着色器，编译可能耗时很长。因此，离线编译会让你的加载时间更短。
+2. 在构建过程的早期就能看到着色器编译错误，比在运行时才看到要方便。
+3. Windows 8 商店应用必须使用离线编译。
+
+把编译后的着色器命名为 .cso（compiled shader object，编译后的着色器对象）扩展名是常见的做法。<a id="page238"/>
+
+为了离线编译着色器，我们使用 DirectX 自带的 *FXC* 工具。这是一个命令行工具。要以 VS 和 PS 分别作为入口点、以调试方式编译存储在 *color.hlsl* 中的顶点着色器和像素着色器，可以这样写：
+
+```bash
+fxc "color.hlsl" /Od /Zi /T vs_5_0 /E "VS" /Fo "color_vs.cso" /Fc "color_vs.asm"
+fxc "color.hlsl" /Od /Zi /T ps_5_0 /E "PS" /Fo "color_ps.cso" /Fc "color_ps.asm"
+```
+
+要以 VS 和 PS 分别作为入口点、为*发布*（release）版本编译存储在 *color.hlsl* 中的顶点着色器和像素着色器，可以这样写：
+
+```bash
+fxc "color.hlsl" /T vs_5_0 /E "VS" /Fo "color_vs.cso" /Fc "color_vs.asm"
+fxc "color.hlsl" /T ps_5_0 /E "PS" /Fo "color_ps.cso" /Fc "color_ps.asm"
+```
+
+FXC 的一些常用参数如下（上表为原图，下表为中文对照）：
+
+| 参数 | 说明 |
+|---|---|
+| /Od | 禁用优化（对调试有用）。 |
+| /Zi | 启用调试信息。 |
+| /T \<string\> | 着色器类型和目标版本。 |
+| /E \<string\> | 着色器入口点。 |
+| /Fo \<string\> | 编译后的着色器对象字节码。 |
+| /Fc \<string\> | 输出汇编文件清单（可用于调试、检查指令数、查看生成了什么样的代码）。 |
+
+<Figure src="images/tbl272.jpg" alt="FXC 常用命令行参数及其说明的英文原表" caption="FXC 常用参数英文原表；各行中文对照见上表。" />
+
+如果你尝试编译带有语法错误的着色器，FXC 会把错误/警告输出到命令窗口。例如，如果我们在 color.hlsl 效果文件中把一个变量名写错了：
+
+```cpp
+// Should be gWorldViewProj, not worldViewProj!
+vout.PosH = mul(float4(vin.Pos, 1.0f), worldViewProj);
+```
+
+那么仅这一个错误就会让我们在调试输出窗口得到相当多的错误（最上面的错误是要修复的关键）：
+
+```cpp
+color.hlsl(29,42-54): error X3004: undeclared identifier 'worldViewProj'
+color.hlsl(29,14-55): error X3013: 'mul': no matching 2 parameter intrinsic function
+color.hlsl(29,14-55): error X3013: Possible intrinsic functions are:
+color.hlsl(29,14-55): error X3013:   mul(float|half…
+```
+
+在编译期拿到错误信息比在运行时拿到方便得多。
+
+我们已经展示了如何把顶点着色器和像素着色器离线编译成 .cso 文件。因此，我们不再需要在运行时编译（也就是说，不再需要调用 D3DCompileFromFile）。但我们仍然需要把编译后的着色器对象字节码从<a id="page239"/> .cso 文件加载到应用程序中。这可以用标准 C++ 文件输入机制完成，如下所示：
+
+```cpp
+ComPtr<ID3DBlob> d3dUtil::LoadBinary(const std::wstring& filename)
+{
+  std::ifstream fin(filename, std::ios::binary);
+
+  fin.seekg(0, std::ios_base::end);
+  std::ifstream::pos_type size = (int)fin.tellg();
+  fin.seekg(0, std::ios_base::beg);
+
+  ComPtr<ID3DBlob> blob;
+  ThrowIfFailed(D3DCreateBlob(size, blob.GetAddressOf()));
+
+  fin.read((char*)blob->GetBufferPointer(), size);
+  fin.close();
+
+  return blob;
+}
+…
+ComPtr<ID3DBlob> mvsByteCode = d3dUtil::LoadBinary(L"Shaders\\color_vs.cso");
+ComPtr<ID3DBlob> mpsByteCode = d3dUtil::LoadBinary(L"Shaders\\color_ps.cso");
+```
+
+<h3 id="s672">6.7.2 生成的汇编代码</h3>
+
+FXC 的 /Fc 可选参数会生成可移植的汇编代码。时不时查看自己着色器的汇编很有用：可以检查着色器指令数，并看看生成了什么样的代码——有时它可能与你的预期不同。例如，如果你的 HLSL 代码中有一个条件语句，你可能预期汇编代码中会出现一条分支指令。在可编程 GPU 的早期，着色器中的分支开销很大，所以编译器有时会通过求值两个分支然后在两者之间插值来"摊平"（flatten）条件语句，从而选出正确答案。也就是说，下面两种写法会给出相同的结果：
+
+| 条件写法（Conditional） | 摊平写法（Flattened） |
+|---|---|
+| `float x = 0;`<br /><br />`// s == 1 (true) or s == 0 (false)`<br />`if( s )`<br />`  x = sqrt(y);`<br />`else`<br />`  x = 2*y;` | `float a = 2*y;`<br />`float b = sqrt(y);`<br />`float x = a + s*(b-a);`<br /><br />`// s == 1: x = a + b - a = b = sqrt(y)`<br /><br />`// s == 0: x = a + 0*(b-a) = a = 2*y` |
+
+<Figure src="images/tbl273.jpg" alt="条件语句与其摊平等价形式的英文原表" caption="条件写法与摊平写法对照的英文原表；中文对照见上表。" />
+
+所以摊平的方法不需要任何分支就能得到同样的结果；但如果不看汇编代码，我们就不会知道究竟发生了摊平，还是生成了真正的<a id="page240"/>分支指令。重点在于，有时你想查看汇编来了解真正发生了什么。下面是为 color.hlsl 中的顶点着色器生成的汇编示例：
+
+```cpp
+//
+// Generated by Microsoft (R) HLSL Shader Compiler 6.4.9844.0
+//
+//
+// Buffer Definitions://
+// cbuffer cbPerObject
+// {
+//
+//   float4x4 gWorldViewProj;      // Offset:    0 Size:    64
+//
+// }
+//
+//
+// Resource Bindings:
+//
+// Name                                 Type  Format      Dim Slot Elements
+// ------------------------------ ---------- ------- ----------- ---- ---------
+// cbPerObject                       cbuffer      NA        NA   0     1
+//
+//
+//
+// Input signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// POSITION                 0   xyz        0     NONE   float   xyz// COLOR                    0   xyzw       1     NONE   float   xyzw
+//
+//
+// Output signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// SV_POSITION              0   xyzw       0      POS   float   xyzw
+// COLOR                    0   xyzw       1     NONE   float   xyzw
+//
+vs_5_0
+dcl_globalFlags refactoringAllowed | skipOptimization
+dcl_constantbuffer cb0[4], immediateIndexed
+dcl_input v0.xyz
+dcl_input v1.xyzw
+dcl_output_siv o0.xyzw, position
+dcl_output o1.xyzw
+dcl_temps 2
+//
+// Initial variable locations:
+//   v0.x <- vin.PosL.x; v0.y <- vin.PosL.y; v0.z <- vin.PosL.z;//   v1.x <- vin.Color.x; v1.y <- vin.Color.y; v1.z <- vin.Color.z; v1.w <- vin.Color.w;//   o1.x <- <VS return value>.Color.x;//   o1.y <- <VS return value>.Color.y;//   o1.z <- <VS return value>.Color.z;//   o1.w <- <VS return value>.Color.w;//   o0.x <- <VS return value>.PosH.x;//   o0.y <- <VS return value>.PosH.y;//   o0.z <- <VS return value>.PosH.z;//   o0.w <- <VS return value>.PosH.w
+//
+#line 29 "color.hlsl"
+mov r0.xyz, v0.xyzx
+mov r0.w, l(1.000000)
+dp4 r1.x, r0.xyzw, cb0[0].xyzw // r1.x <- vout.PosH.x
+dp4 r1.y, r0.xyzw, cb0[1].xyzw // r1.y <- vout.PosH.y
+dp4 r1.z, r0.xyzw, cb0[2].xyzw // r1.z <- vout.PosH.z
+dp4 r1.w, r0.xyzw, cb0[3].xyzw // r1.w <- vout.PosH.w
+
+#line 32
+mov r0.xyzw, v1.xyzw // r0.x <- vout.Color.x; r0.y <- vout.Color.y;
+                     // r0.z <- vout.Color.z; r0.w <- vout.Color.w
+mov o0.xyzw, r1.xyzw
+mov o1.xyzw, r0.xyzw
+ret// Approximately 10 instruction slots used
+```
+
+<a id="page241"/>
+
+<h3 id="s673">6.7.3 用 Visual Studio 离线编译着色器</h3>
+
+Visual Studio 2013 对编译着色器程序提供了一些集成支持。你可以把 .hlsl 文件添加到工程中，Visual Studio（VS）会识别它们并提供编译选项（见图 6.6）。这些选项为 FXC 参数提供了 UI。<a id="page242"/>把 HLSL 文件添加到 VS 工程后，它将成为构建过程的一部分，着色器会用 FXC 编译。
+
+<Figure src="images/Fig6-6.jpg" alt="在 Visual Studio 工程属性中为 HLSL 文件添加自定义生成工具" figureNumber="图 6.6" caption="向工程添加自定义生成工具。" />
+
+使用 VS 集成 HLSL 支持的一个缺点是，它每个文件只支持一个着色器程序。因此，你不能把顶点着色器和像素着色器存储在同一个文件里。此外，有时我们想用不同的预处理器指令编译同一个着色器程序，以得到着色器的不同变体。同样，使用 VS 集成支持也做不到这一点，因为它对每个 .hlsl 输入只产生一个 .cso 输出。
+
+</section>
+
+<section className="lesson-section" id="s68">
+<h2>6.8 光栅器状态</h2>
+
+渲染管线中有许多部分是可编程的，但也有些部分只能配置。*光栅器状态*（rasterizer state）组由 `D3D12_RASTERIZER_DESC` 结构表示，用于配置渲染管线的光栅化阶段：
+
+```cpp
+typedef struct D3D12_RASTERIZER_DESC {
+  D3D12_FILL_MODE FillMode;   // Default: D3D12_FILL_SOLID
+  D3D12_CULL_MODE CullMode;   // Default: D3D12_CULL_BACK
+  BOOL FrontCounterClockwise; // Default: false
+  INT DepthBias;              // Default: 0
+  FLOAT DepthBiasClamp;       // Default: 0.0f
+  FLOAT SlopeScaledDepthBias; // Default: 0.0f
+  BOOL DepthClipEnable;       // Default: true
+  BOOL ScissorEnable;         // Default: false
+  BOOL MultisampleEnable;     // Default: false
+  BOOL AntialiasedLineEnable; // Default: false
+  UINT ForcedSampleCount;     // Default: 0
+
+  // Default: D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+  D3D12_CONSERVATIVE_RASTERIZATION_MODE ConservativeRaster;
+} D3D12_RASTERIZER_DESC;
+```
+
+这些成员大多数是高级选项或不常使用；因此关于每个成员的描述，请参考 SDK 文档。这里我们只描述其中四个。
+
+1. `FillMode:` 指定 `D3D12_FILL_WIREFRAME` 进行线框渲染，或 `D3D12_FILL_SOLID` 进行实心渲染。实心渲染是默认值。
+2. `CullMode:` 指定 `D3D12_CULL_NONE` 禁用剔除，`D3D12_CULL_BACK` 剔除背面三角形，或 `D3D12_CULL_FRONT` 剔除正面三角形。默认剔除背面三角形。
+3. `FrontCounterClockwise:` 指定 `false` 表示（相对于摄像机的）顺时针三角形被视为正面、逆时针三角形被视为背面<a id="page243"/>；指定 `true` 表示（相对于摄像机的）逆时针三角形被视为正面、顺时针三角形被视为背面。该状态默认为 false。
+4. `ScissorEnable:` 指定 true 启用剪裁矩形测试（§4.3.10），指定 false 禁用它。默认为 false。
+
+下面的代码展示了如何创建一个开启线框模式并禁用背面剔除的光栅器状态：
+
+```cpp
+CD3DX12_RASTERIZER_DESC rsDesc(D3D12_DEFAULT);
+rsDesc.FillMode = D3D12_FILL_WIREFRAME;
+rsDesc.CullMode = D3D12_CULL_NONE;
+```
+
+`CD3DX12_RASTERIZER_DESC` 是一个便捷类，它扩展了 `D3D12_RASTERIZER_DESC` 并添加了一些辅助构造函数。特别是，它有一个接受 `CD3D12_DEFAULT` 类型对象的构造函数；`CD3D12_DEFAULT` 只是一个用于重载的哑类型，表示光栅器状态成员应初始化为默认值。`CD3D12_DEFAULT` 和 `D3D12_DEFAULT` 的定义如下：
+
+```cpp
+struct CD3D12_DEFAULT {};
+extern const DECLSPEC_SELECTANY CD3D12_DEFAULT D3D12_DEFAULT;
+```
+
+`D3D12_DEFAULT` 用于多个 Direct3D 便捷类中。
+
+</section>
+
+<section className="lesson-section" id="s69">
+<h2>6.9 管线状态对象</h2>
+
+我们已经展示过如何描述输入布局描述、如何创建顶点着色器和像素着色器，以及如何配置光栅器状态组。然而，我们还没有展示如何把这些对象中的任何一个绑定到图形管线供实际使用。控制图形管线状态的大多数对象被指定为一个称为*管线状态对象*（pipeline state object，PSO）的聚合，由 `ID3D12PipelineState` 接口表示。要创建 PSO，我们首先通过填写一个 `D3D12_GRAPHICS_PIPELINE_STATE_DESC` 实例来描述它：
+
+```cpp
+typedef struct D3D12_GRAPHICS_PIPELINE_STATE_DESC
+{  ID3D12RootSignature *pRootSignature;
+  D3D12_SHADER_BYTECODE VS;
+  D3D12_SHADER_BYTECODE PS;
+  D3D12_SHADER_BYTECODE DS;
+  D3D12_SHADER_BYTECODE HS;
+  D3D12_SHADER_BYTECODE GS;
+  D3D12_STREAM_OUTPUT_DESC StreamOutput;
+  D3D12_BLEND_DESC BlendState;
+  UINT SampleMask;
+  D3D12_RASTERIZER_DESC RasterizerState;
+  D3D12_DEPTH_STENCIL_DESC DepthStencilState;
+  D3D12_INPUT_LAYOUT_DESC InputLayout;
+  D3D12_PRIMITIVE_TOPOLOGY_TYPE PrimitiveTopologyType;
+  UINT NumRenderTargets;
+  DXGI_FORMAT RTVFormats[8];
+  DXGI_FORMAT DSVFormat;
+  DXGI_SAMPLE_DESC SampleDesc;
+} D3D12_GRAPHICS_PIPELINE_STATE_DESC;
+```
+
+1. `pRootSignature:` 指向要随此 PSO 绑定<a id="page244"/>的根签名的指针。根签名必须与此 PSO 指定的着色器兼容。
+2. `VS:` 要绑定的顶点着色器。它由 `D3D12_SHADER_BYTECODE` 结构指定，该结构包含指向编译后字节码数据的指针以及字节码数据的大小（以字节为单位）。
+
+   ```cpp
+     typedef struct D3D12_SHADER_BYTECODE {
+      const BYTE *pShaderBytecode;
+      SIZE_T  BytecodeLength;
+    } D3D12_SHADER_BYTECODE;
+   ```
+
+3. `PS:` 要绑定的像素着色器。
+4. `DS:` 要绑定的域着色器（我们将在后面的章节讨论这类着色器）。
+5. `HS:` 要绑定的外壳着色器（我们将在后面的章节讨论这类着色器）。
+6. `GS:` 要绑定的几何着色器（我们将在后面的章节讨论这类着色器）。
+7. `StreamOutput:` 用于一种称为流输出（stream-out）的高级技术。目前我们把这个字段清零。
+8. `BlendState:` 指定配置混合的混合状态。我们将在后面的章节讨论这个状态组；目前指定默认的 `CD3DX12_BLEND_DESC(D3D12_DEFAULT)`。
+9. `SampleMask:` 多重采样最多可采 32 个样本。这个 32 位整数值用于启用/禁用这些样本。例如，如果你关掉第 5 位，那么第 5 个样本就不会被采集。当然，只有当你实际使用的多重采样至少有 5 个样本时，禁用第 5 个样本才有意义。如果应用程序使用单采样，那么只有此参数的第一位是重要的。通常使用默认值 0xffffffff，它不禁用任何样本。
+10. `RasterizerState:` 指定配置光栅器的光栅化状态。
+11. `DepthStencilState:` 指定配置深度/模板测试的深度/模板状态<a id="page245"/>。我们将在后面的章节讨论这个状态组；目前指定默认的 `CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT)`。
+12. `InputLayout:` 输入布局描述，它就是一个 `D3D12_INPUT_ELEMENT_DESC` 元素数组以及数组中的元素个数。
+
+    ```cpp
+      typedef struct D3D12_INPUT_LAYOUT_DESC
+      {
+        const D3D12_INPUT_ELEMENT_DESC *pInputElementDescs;
+        UINT NumElements;
+      } D3D12_INPUT_LAYOUT_DESC;
+    ```
+
+13. `PrimitiveTopologyType:` 指定图元拓扑类型。
+
+    ```cpp
+      typedef enum D3D12_PRIMITIVE_TOPOLOGY_TYPE {       D3D12_PRIMITIVE_TOPOLOGY_TYPE_UNDEFINED = 0,
+       D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT    = 1,
+       D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE     = 2,
+       D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE = 3,
+       D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH    = 4
+      } D3D12_PRIMITIVE_TOPOLOGY_TYPE;
+    ```
+
+14. `NumRenderTargets:` 我们同时使用的渲染目标的数量。
+15. `RTVFormats:` 渲染目标格式。这是一个数组，以支持同时写入多个渲染目标。它应当与我们配合 PSO 使用的渲染目标的设置相匹配。
+16. `DSVFormat:` 深度/模板缓冲的格式。它应当与我们配合 PSO 使用的深度/模板缓冲的设置相匹配。
+17. `SampleDesc:` 描述多重采样计数和质量级别。它应当与我们使用的渲染目标的设置相匹配。
+
+填写完 `D3D12_GRAPHICS_PIPELINE_STATE_DESC` 实例之后，我们用 `ID3D12Device::CreateGraphicsPipelineState` 方法创建 ID3D12PipelineState 对象：
+
+```cpp
+ComPtr<ID3D12RootSignature> mRootSignature;
+std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
+ComPtr<ID3DBlob> mvsByteCode;
+ComPtr<ID3DBlob> mpsByteCode;
+…
+D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+psoDesc.InputLayout = { mInputLayout.data(), (UINT)mInputLayout.size() };
+psoDesc.pRootSignature = mRootSignature.Get();
+psoDesc.VS ={  reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),  mvsByteCode->GetBufferSize()};
+psoDesc.PS ={  reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),  mpsByteCode->GetBufferSize()};
+psoDesc.RasterizerState = CD3D12_RASTERIZER_DESC(D3D12_DEFAULT);
+psoDesc.BlendState = CD3D12_BLEND_DESC(D3D12_DEFAULT);
+psoDesc.DepthStencilState = CD3D12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+psoDesc.SampleMask = UINT_MAX;
+psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+psoDesc.NumRenderTargets = 1;
+psoDesc.RTVFormats[0] = mBackBufferFormat;
+psoDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
+psoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+psoDesc.DSVFormat = mDepthStencilFormat;
+
+ComPtr<ID3D12PipelineState> mPSO;
+md3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)));
+```
+
+这是一个聚合在<a id="page246"/>同一个 `ID3D12PipelineState` 对象中的相当多的状态。我们把这些对象作为一个聚合指定给图形管线，是为了性能。通过把它们指定为一个聚合，Direct3D 可以验证所有状态是否彼此兼容，驱动程序也可以预先生成配置硬件状态所需的全部代码。在 Direct3D 11 的状态模型中，这些渲染状态是分开设置的。然而，这些状态是相互关联的；如果其中一个状态发生改变，可能还需要驱动程序为另一块相关的状态重新配置硬件。随着配置管线的状态不断改变，硬件状态可能被冗余地重新配置。为避免这种冗余，驱动程序通常会推迟配置硬件状态，直到发出绘制调用、整个管线状态都已知晓之时。但这种推迟需要驱动程序在运行时做额外的记录工作；它需要跟踪哪些状态发生了变化，然后在运行时生成配置硬件状态的代码。在新的 Direct3D 12 模型中，由于我们把大多数管线状态作为一个聚合来指定，驱动程序可以在初始化时就生成配置管线状态所需的全部代码。
+
+**注意**：由于 PSO 的验证和创建可能很耗时，PSO 应在初始化时生成。一个可能的例外是：在运行时按需创建第一次被引用的 PSO；然后把它存储在诸如哈希表之类的集合中，以便今后能快速取用。
+
+并非所有渲染状态都封装在 PSO 中。像视口和剪裁矩形这样的一些状态是独立于 PSO 指定的。这类状态可以高效地独立于<a id="page247"/>其他管线状态进行设置，因此把它们包含在 PSO 中并没有什么好处。
+
+Direct3D 基本上是一台状态机。一切都会保持当前状态，直到我们改变它。如果你正在绘制的一些对象使用某个 PSO，而另一些对象需要另一个 PSO，那么你需要像这样组织代码：
+
+```cpp
+// Reset specifies initial PSO.
+mCommandList->Reset(mDirectCmdListAlloc.Get(), mPSO1.Get())
+/* …draw objects using PSO 1… */
+
+// Change PSO
+mCommandList->SetPipelineState(mPSO2.Get());
+/* …draw objects using PSO 2… */
+
+// Change PSO
+mCommandList->SetPipelineState(mPSO3.Get());
+/* …draw objects using PSO 3… */
+```
+
+换句话说，当 PSO 绑定到命令列表后，它不会改变，直到你覆盖它（或命令列表被重置）。
+
+**注意**：出于性能考虑，应把 PSO 状态的更改保持在最少。把能使用同一 PSO 的对象放在一起绘制。不要每次绘制调用都更改 PSO！
+
+</section>
+
+<section className="lesson-section" id="s610">
+<h2>6.10 几何辅助结构</h2>
+
+创建一个把顶点缓冲和索引缓冲组合在一起、定义一组几何体的结构会很有帮助。此外，这个结构还可以在系统内存中保留顶点和索引数据的备份，以便 CPU 读取。CPU 需要访问几何数据来做拾取、碰撞检测等事情。另外，该结构还缓存顶点缓冲和索引缓冲的重要属性（如格式和 strike），并提供返回这些缓冲视图的方法。本书中每当定义一块几何体时，我们都使用下面这个 `MeshGeometry` 结构（定义在 *d3dUtil.h* 中）。
+
+**译者注**：原书上一段中的"strike"应为"stride"（步幅），此处按原文照录。
+
+```cpp
+// Defines a subrange of geometry in a MeshGeometry. This is for when
+// multiple geometries are stored in one vertex and index buffer. It
+// provides the offsets and data needed to draw a subset of geometry// stores in the vertex and index buffers so that we can implement the// technique described by Figure 6.3.
+struct SubmeshGeometry
+{
+  UINT IndexCount = 0;
+  UINT StartIndexLocation = 0;
+  INT BaseVertexLocation = 0;
+
+  // Bounding box of the geometry defined by this submesh.  // This is used in later chapters of the book.
+  DirectX::BoundingBox Bounds;
+};
+
+struct MeshGeometry
+{
+  // Give it a name so we can look it up by name.
+  std::string Name;
+
+  // System memory copies. Use Blobs because the vertex/index format can  // be generic.
+  // It is up to the client to cast appropriately.  Microsoft::WRL::ComPtr<ID3DBlob> VertexBufferCPU = nullptr;
+  Microsoft::WRL::ComPtr<ID3DBlob> IndexBufferCPU = nullptr;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+  Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+
+  Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
+  Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferUploader = nullptr;
+
+  // Data about the buffers.
+  UINT VertexByteStride = 0;
+  UINT VertexBufferByteSize = 0;
+  DXGI_FORMAT IndexFormat = DXGI_FORMAT_R16_UINT;
+  UINT IndexBufferByteSize = 0;
+
+  // A MeshGeometry may store multiple geometries in one vertex/index  // buffer.
+  // Use this container to define the Submesh geometries so we can draw
+  // the Submeshes individually.
+  std::unordered_map<std::string, SubmeshGeometry> DrawArgs;
+
+  D3D12_VERTEX_BUFFER_VIEW VertexBufferView()const
+  {
+    D3D12_VERTEX_BUFFER_VIEW vbv;
+    vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
+    vbv.StrideInBytes = VertexByteStride;
+    vbv.SizeInBytes = VertexBufferByteSize;
+
+    return vbv;
+  }
+
+  D3D12_INDEX_BUFFER_VIEW IndexBufferView()const
+  {
+    D3D12_INDEX_BUFFER_VIEW ibv;
+    ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
+    ibv.Format = IndexFormat;
+    ibv.SizeInBytes = IndexBufferByteSize;
+
+    return ibv;
+  }
+
+  // We can free this memory after we finish upload to the GPU.
+  void DisposeUploaders()
+  {
+    VertexBufferUploader = nullptr;
+    IndexBufferUploader = nullptr;
+  }
+};
+```
+
+<a id="page249"/>
+
+</section>
+
+<section className="lesson-section" id="s611">
+<h2>6.11 Box 演示</h2>
+
+至此，我们已经介绍了足够的材料，可以给出一个简单的演示程序了，它渲染一个彩色的盒子。这个例子本质上把本章目前为止讨论的全部内容放进了一个程序。读者应当研读这些代码，并回看本章前面的各节，直到理解每一行为止。注意，该程序使用了 *Shaders\color.hlsl*，它已在 §6.5 末尾给出。
+
+```cpp
+//*********************************************************************
+// BoxApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
+//
+// Shows how to draw a box in Direct3D 12.
+//
+// Controls:
+//   Hold the left mouse button down and move the mouse to rotate.
+//   Hold the right mouse button down and move the mouse to zoom in and//   out.
+//*********************************************************************
+
+#include "../../Common/d3dApp.h"
+#include "../../Common/MathHelper.h"
+#include "../../Common/UploadBuffer.h"
+
+using Microsoft::WRL::ComPtr;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+};
+
+struct ObjectConstants
+{
+  XMFLOAT4X4 WorldViewProj = MathHelper::Identity4x4();
+};
+
+class BoxApp : public D3DApp
+{
+public:
+  BoxApp(HINSTANCE hInstance);
+  BoxApp(const BoxApp& rhs) = delete;
+  BoxApp& operator=(const BoxApp& rhs) = delete;
+  ~BoxApp();
+
+  virtual bool Initialize()override;
+
+private:
+  virtual void OnResize()override;
+  virtual void Update(const GameTimer& gt)override;
+  virtual void Draw(const GameTimer& gt)override;
+
+  virtual void OnMouseDown(WPARAM btnState, int x, int y)override;
+  virtual void OnMouseUp(WPARAM btnState, int x, int y)override;
+  virtual void OnMouseMove(WPARAM btnState, int x, int y)override;
+
+  void BuildDescriptorHeaps();
+  void BuildConstantBuffers();
+  void BuildRootSignature();
+  void BuildShadersAndInputLayout();
+  void BuildBoxGeometry();
+  void BuildPSO();
+
+private:
+  ComPtr<ID3D12RootSignature> mRootSignature = nullptr;
+  ComPtr<ID3D12DescriptorHeap> mCbvHeap = nullptr;
+
+  std::unique_ptr<UploadBuffer<ObjectConstants>> mObjectCB = nullptr;
+
+  std::unique_ptr<MeshGeometry> mBoxGeo = nullptr;
+
+  ComPtr<ID3DBlob> mvsByteCode = nullptr;
+  ComPtr<ID3DBlob> mpsByteCode = nullptr;
+
+  std::vector<D3D12_INPUT_ELEMENT_DESC> mInputLayout;
+
+  ComPtr<ID3D12PipelineState> mPSO = nullptr;
+
+  XMFLOAT4X4 mWorld = MathHelper::Identity4x4();
+  XMFLOAT4X4 mView = MathHelper::Identity4x4();
+  XMFLOAT4X4 mProj = MathHelper::Identity4x4();
+
+  float mTheta = 1.5f*XM_PI;
+  float mPhi = XM_PIDIV4;
+  float mRadius = 5.0f;
+
+  POINT mLastMousePos;
+};
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
+              PSTR cmdLine, int showCmd)
+{
+   // Enable run-time memory check for debug builds.
+#if defined(DEBUG) | defined(_DEBUG)
+   _CrtSetDbgFlag( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
+#endif
+
+  try
+  {
+    BoxApp theApp(hInstance);
+    if(!theApp.Initialize())
+      return 0;
+
+    return theApp.Run();
+  }
+  catch(DxException& e)
+  {
+    MessageBox(nullptr, e.ToString().c_str(), L"HR Failed", MB_OK);
+    return 0;
+  }
+}
+
+BoxApp::BoxApp(HINSTANCE hInstance)
+: D3DApp(hInstance){
+}
+
+BoxApp::~BoxApp()
+{
+}
+
+bool BoxApp::Initialize()
+{
+  if(!D3DApp::Initialize())
+    return false;
+  // Reset the command list to prep for initialization commands.
+  ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
+
+  BuildDescriptorHeaps();
+  BuildConstantBuffers();
+  BuildRootSignature();
+  BuildShadersAndInputLayout();
+  BuildBoxGeometry();
+  BuildPSO();
+
+  // Execute the initialization commands.
+  ThrowIfFailed(mCommandList->Close());
+  ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+  mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+  // Wait until initialization is complete.
+  FlushCommandQueue();
+
+  return true;
+}
+
+void BoxApp::OnResize()
+{
+  D3DApp::OnResize();
+
+  // The window resized, so update the aspect ratio and recompute the  // projection matrix.
+  XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
+  XMStoreFloat4x4(&mProj, P);
+}
+
+void BoxApp::Update(const GameTimer& gt)
+{
+  // Convert Spherical to Cartesian coordinates.
+  float x = mRadius*sinf(mPhi)*cosf(mTheta);
+  float z = mRadius*sinf(mPhi)*sinf(mTheta);
+  float y = mRadius*cosf(mPhi);
+
+  // Build the view matrix.
+  XMVECTOR pos = XMVectorSet(x, y, z, 1.0f);
+  XMVECTOR target = XMVectorZero();
+  XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+  XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+  XMStoreFloat4x4(&mView, view);
+
+  XMMATRIX world = XMLoadFloat4x4(&mWorld);
+  XMMATRIX proj = XMLoadFloat4x4(&mProj);
+  XMMATRIX worldViewProj = world*view*proj;
+
+  // Update the constant buffer with the latest worldViewProj matrix.
+  ObjectConstants objConstants;
+  XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(worldViewProj));
+  mObjectCB->CopyData(0, objConstants);
+}
+
+void BoxApp::Draw(const GameTimer& gt)
+{
+  // Reuse the memory associated with command recording.
+  // We can only reset when the associated command lists have finished  // execution on the GPU.
+  ThrowIfFailed(mDirectCmdListAlloc->Reset());
+
+  // A command list can be reset after it has been added to the  // command queue via ExecuteCommandList. Reusing the command
+  // list reuses memory.
+  ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), mPSO.Get()));
+
+  mCommandList->RSSetViewports(1, &mScreenViewport);
+  mCommandList->RSSetScissorRects(1, &mScissorRect);
+
+  // Indicate a state transition on the resource usage.
+  mCommandList->ResourceBarrier(1,
+    &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+  // Clear the back buffer and depth buffer.
+  mCommandList->ClearRenderTargetView(CurrentBackBufferView(),
+    Colors::LightSteelBlue, 0, nullptr);
+  mCommandList->ClearDepthStencilView(DepthStencilView(),    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,    1.0f, 0, 0, nullptr);
+  // Specify the buffers we are going to render to.
+  mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(),
+    true, &DepthStencilView());
+
+  ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+  mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+  mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
+  mCommandList->IASetVertexBuffers(0, 1, &mBoxGeo->VertexBufferView());
+  mCommandList->IASetIndexBuffer(&mBoxGeo->IndexBufferView());
+  mCommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  mCommandList->SetGraphicsRootDescriptorTable(
+    0, mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+
+  mCommandList->DrawIndexedInstanced(
+    mBoxGeo->DrawArgs["box"].IndexCount,    1, 0, 0, 0);
+  // Indicate a state transition on the resource usage.
+  mCommandList->ResourceBarrier(1,
+    &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+
+  // Done recording commands.
+  ThrowIfFailed(mCommandList->Close());
+
+  // Add the command list to the queue for execution.
+  ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+  mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+  // swap the back and front buffers
+  ThrowIfFailed(mSwapChain->Present(0, 0));
+  mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+
+  // Wait until frame commands are complete. This waiting is
+  // inefficient and is done for simplicity. Later we will show how to  // organize our rendering code so we do not have to wait per frame.
+  FlushCommandQueue();
+}
+
+void BoxApp::OnMouseDown(WPARAM btnState, int x, int y)
+{
+  mLastMousePos.x = x;
+  mLastMousePos.y = y;
+
+  SetCapture(mhMainWnd);
+}
+
+void BoxApp::OnMouseUp(WPARAM btnState, int x, int y)
+{
+  ReleaseCapture();
+}
+
+void BoxApp::OnMouseMove(WPARAM btnState, int x, int y)
+{
+  if((btnState & MK_LBUTTON) != 0)
+  {
+    // Make each pixel correspond to a quarter of a degree.
+    float dx = XMConvertToRadians(0.25f*static_cast<float>(x - mLastMousePos.x));
+    float dy = XMConvertToRadians(0.25f*static_cast<float>(y - mLastMousePos.y));
+
+    // Update angles based on input to orbit camera around box.
+    mTheta += dx;
+    mPhi += dy;
+
+    // Restrict the angle mPhi.
+    mPhi = MathHelper::Clamp(mPhi, 0.1f, MathHelper::Pi - 0.1f);
+  }
+  else if((btnState & MK_RBUTTON) != 0)
+  {
+    // Make each pixel correspond to 0.005 unit in the scene.
+    float dx = 0.005f*static_cast<float>(x - mLastMousePos.x);
+    float dy = 0.005f*static_cast<float>(y - mLastMousePos.y);
+
+    // Update the camera radius based on input.
+    mRadius += dx - dy;
+
+    // Restrict the radius.
+    mRadius = MathHelper::Clamp(mRadius, 3.0f, 15.0f);
+  }
+
+  mLastMousePos.x = x;
+  mLastMousePos.y = y;
+}
+
+void BoxApp::BuildDescriptorHeaps()
+{
+  D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+  cbvHeapDesc.NumDescriptors = 1;
+  cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    cbvHeapDesc.NodeMask = 0;
+  ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&cbvHeapDesc,
+    IID_PPV_ARGS(&mCbvHeap)));
+}
+
+void BoxApp::BuildConstantBuffers()
+{
+  mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(md3dDevice.Get(), 1, true);
+
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+  D3D12_GPU_VIRTUAL_ADDRESS cbAddress = mObjectCB->Resource()->GetGPUVirtualAddress();
+  // Offset to the ith object constant buffer in the buffer.
+  // Here our i = 0.
+  int boxCBufIndex = 0;
+  cbAddress += boxCBufIndex*objCBByteSize;
+
+  D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+  cbvDesc.BufferLocation = cbAddress;
+  cbvDesc.SizeInBytes = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+  md3dDevice->CreateConstantBufferView(
+    &cbvDesc,
+    mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+}
+
+
+void BoxApp::BuildRootSignature()
+{
+  // Shader programs typically require resources as input (constant
+  // buffers, textures, samplers). The root signature defines the
+  // resources the shader programs expect. If we think of the shader
+  // programs as a function, and the input resources as function  // parameters, then the root signature can be thought of as defining  // the function signature.
+  // Root parameter can be a table, root descriptor or root constants.
+  CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+
+  // Create a single descriptor table of CBVs.
+  CD3DX12_DESCRIPTOR_RANGE cbvTable;
+  cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+  slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+
+  // A root signature is an array of root parameters.
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr,    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+  // create a root signature with a single slot which points to a
+  // descriptor range consisting of a single constant buffer
+  ComPtr<ID3DBlob> serializedRootSig = nullptr;
+  ComPtr<ID3DBlob> errorBlob = nullptr;
+  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+    serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+  if(errorBlob != nullptr)
+  {
+    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+  }
+  ThrowIfFailed(hr);
+
+  ThrowIfFailed(md3dDevice->CreateRootSignature(
+    0,
+    serializedRootSig->GetBufferPointer(),
+    serializedRootSig->GetBufferSize(),
+    IID_PPV_ARGS(&mRootSignature)));
+}
+
+void BoxApp::BuildShadersAndInputLayout()
+{
+  HRESULT hr = S_OK;
+  mvsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "VS", "vs_5_0");
+  mpsByteCode = d3dUtil::CompileShader(L"Shaders\\color.hlsl", nullptr, "PS", "ps_5_0");
+
+  mInputLayout =
+  {
+    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
+      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+  };
+}
+
+void BoxApp::BuildBoxGeometry()
+{
+  std::array<Vertex, 8> vertices =
+  {
+    Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
+    Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
+    Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
+    Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+    Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
+    Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
+    Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
+    Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
+  };
+
+  std::array<std::uint16_t, 36> indices =
+  {
+    // front face
+    0, 1, 2,
+    0, 2, 3,
+
+    // back face
+    4, 6, 5,
+    4, 7, 6,
+
+    // left face
+    4, 5, 1,
+    4, 1, 0,
+
+    // right face
+    3, 2, 6,
+    3, 6, 7,
+
+    // top face
+    1, 5, 6,
+    1, 6, 2,
+
+    // bottom face
+    4, 0, 3,
+    4, 3, 7
+  };
+
+  const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+  const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+  mBoxGeo = std::make_unique<MeshGeometry>();
+  mBoxGeo->Name = "boxGeo";
+
+  ThrowIfFailed(D3DCreateBlob(vbByteSize, &mBoxGeo->VertexBufferCPU));
+  CopyMemory(mBoxGeo->VertexBufferCPU->GetBufferPointer(),    vertices.data(), vbByteSize);
+
+  ThrowIfFailed(D3DCreateBlob(ibByteSize, &mBoxGeo->IndexBufferCPU));
+  CopyMemory(mBoxGeo->IndexBufferCPU->GetBufferPointer(),    indices.data(), ibByteSize);
+
+  mBoxGeo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+    md3dDevice.Get(), mCommandList.Get(),    vertices.data(), vbByteSize,    mBoxGeo->VertexBufferUploader);
+
+  mBoxGeo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+    md3dDevice.Get(), mCommandList.Get(),    indices.data(), ibByteSize,    mBoxGeo->IndexBufferUploader);
+
+  mBoxGeo->VertexByteStride = sizeof(Vertex);
+  mBoxGeo->VertexBufferByteSize = vbByteSize;
+  mBoxGeo->IndexFormat = DXGI_FORMAT_R16_UINT;
+  mBoxGeo->IndexBufferByteSize = ibByteSize;
+
+  SubmeshGeometry submesh;
+  submesh.IndexCount = (UINT)indices.size();
+  submesh.StartIndexLocation = 0;
+  submesh.BaseVertexLocation = 0;
+
+  mBoxGeo->DrawArgs["box"] = submesh;
+}
+
+void BoxApp::BuildPSO()
+{
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+  ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+  psoDesc.InputLayout = { mInputLayout.data(), (UINT)mInputLayout.size() };
+  psoDesc.pRootSignature = mRootSignature.Get();
+  psoDesc.VS =    {      reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),      mvsByteCode->GetBufferSize()    };
+  psoDesc.PS =    {      reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),      mpsByteCode->GetBufferSize()    };
+  psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+  psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+  psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+  psoDesc.SampleMask = UINT_MAX;
+  psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+  psoDesc.NumRenderTargets = 1;
+  psoDesc.RTVFormats[0] = mBackBufferFormat;
+  psoDesc.SampleDesc.Count = m4xMsaaState ? 4 : 1;
+  psoDesc.SampleDesc.Quality = m4xMsaaState ? (m4xMsaaQuality - 1) : 0;
+  psoDesc.DSVFormat = mDepthStencilFormat;
+  ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPSO)));
+}
+```
+
+<a id="page258"/>
+
+<Figure src="images/Fig6-7.jpg" alt="Box 演示的运行截图：一个旋转的彩色立方体" figureNumber="图 6.7" caption="“Box”演示的截图。" />
+
+<a id="page259"/>
+
+</section>
+
+<section className="lesson-section" id="s612">
+<h2>6.12 本章小结</h2>
+
+1. Direct3D 中的顶点除空间位置外还可以包含额外数据。要创建自定义顶点格式，我们首先定义一个结构来保存我们选择的顶点数据。定义好顶点结构之后，我们通过定义输入布局描述（`D3D12_INPUT_LAYOUT_DESC`）向 Direct3D 描述它；输入布局描述是一个 `D3D12_INPUT_ELEMENT_DESC` 元素数组以及数组中的元素个数。`D3D12_INPUT_ELEMENT_DESC` 数组中的每个元素描述并对应顶点结构中的一个分量。输入布局描述被设置为 `D3D12_GRAPHICS_PIPELINE_STATE_DESC` 结构中的一个字段，从而成为 PSO 的一部分，并与顶点着色器输入签名一起得到验证。当输入布局所属的 PSO 被绑定时，输入布局也就随之绑定到 IA 阶段。
+2. 为了让 GPU 访问顶点/索引数组，需要把它们放在一种称为*缓冲*（buffer）的资源中，这种资源由 `ID3D12Resource` 接口表示。存储顶点的缓冲称为*顶点缓冲*（vertex buffer），存储索引的缓冲称为*索引缓冲*（index buffer）。缓冲资源通过填写 `D3D12_RESOURCE_DESC` 结构然后调用 `ID3D12Device::CreateCommittedResource` 方法来创建。顶点缓冲的视图由 `D3D12_VERTEX_BUFFER_VIEW` 结构表示，索引缓冲的视图由 `D3D12_INDEX_BUFFER_VIEW` 结构表示。顶点缓冲用 `ID3D12GraphicsCommandList::IASetVertexBuffers` 方法绑定到 IA 阶段，索引缓冲用 `ID3D12GraphicsCommandList::IASetIndexBuffer` 方法绑定到 IA 阶段。非索引几何体可以用 `ID3D12GraphicsCommandList::DrawInstanced` 绘制，索引几何体可以用 `ID3D12GraphicsCommandList::DrawIndexedInstanced` 绘制。
+3. 顶点着色器是用 HLSL 编写、在 GPU 上执行的程序，它输入一个顶点并输出一个顶点。每个被绘制的顶点都会经过顶点着色器。这使程序员能够针对每个顶点做专门的处理，以实现各种渲染效果。顶点着色器输出的值会传给管线中的下一个阶段。
+4. 常量缓冲是一种 GPU 资源（`ID3D12Resource`），其数据内容可以在着色器程序中引用。它们创建在上传堆而不是默认堆中，这样应用程序就能通过把系统内存复制到 GPU 内存来更新常量缓冲数据。这样，C++ 应用程序就可以与着色器通信，更新着色器所使用的常量缓冲中的值；例如，C++ 应用程序可以改变着色器使用的世界-视图-投影矩阵。一般的建议是按更新内容的频率来创建常量缓冲<a id="page260"/>。这样划分常量缓冲的动机是效率。更新一个常量缓冲时，它的所有变量都必须更新；因此，按更新频率把它们分组以尽量减少冗余更新是高效的做法。
+5. 像素着色器是用 HLSL 编写、在 GPU 上执行的程序，它输入插值后的顶点数据并输出一个颜色值。作为一种硬件优化，像素片段可能在到达像素着色器之前就被管线拒绝（例如 early-z 拒绝）。像素着色器使程序员能够针对每个像素做专门的处理，以实现各种渲染效果。像素着色器输出的值会传给管线中的下一个阶段。
+6. 控制图形管线状态的大多数 Direct3D 对象被指定为一个称为管线状态对象（PSO）的聚合，由 `ID3D12PipelineState` 接口表示。我们把这些对象作为一个聚合指定给图形管线，是为了性能。通过把它们指定为聚合，Direct3D 可以验证所有状态是否兼容，驱动程序也可以预先生成配置硬件状态所需的全部代码。
+
+</section>
+
+<section className="lesson-section" id="s613">
+<h2>6.13 习题</h2>
+
+1. 写出下面顶点结构对应的 `D3D12_INPUT_ELEMENT_DESC` 数组：
+
+   ```cpp
+   struct Vertex
+   {
+      XMFLOAT3 Pos;
+      XMFLOAT3 Tangent;
+      XMFLOAT3 Normal;
+      XMFLOAT2 Tex0;
+      XMFLOAT2 Tex1;
+      XMCOLOR Color;
+   };
+   ```
+
+2. 重做 Colored Cube 演示，但这次使用两个顶点缓冲（以及两个输入槽）向管线送入顶点：一个存储位置元素，另一个存储颜色元素。为此，你要用两个顶点结构来存储拆分后的数据：
+
+   ```cpp
+   struct VPosData
+   {
+     XMFLOAT3 Pos;
+   };
+
+   struct VColorData
+   {
+     XMFLOAT4 Color;
+   };
+   ```
+
+   你的 `D3D12_INPUT_ELEMENT_DESC` 数组将如下所示：
+
+   ```cpp
+   D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
+   {
+     {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,       D3D12_INPUT_PER_VERTEX_DATA, 0},
+     {"COLOR",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,       D3D12_INPUT_PER_VERTEX_DATA, 0}
+   };
+   ```
+
+   位置元素连接到输入槽 0，颜色元素连接到输入槽 1。<a id="page261"/>另外要注意，两个元素的 `D3D12_INPUT_ELEMENT_DESC::AlignedByteOffset` 都是 0；这是因为位置元素和颜色元素不再交错存放在同一个输入槽中。然后用 `ID3D12CommandList::IASetVertexBuffers` 把两个顶点缓冲绑定到槽 0 和槽 1。Direct3D 随后会用来自不同输入槽的元素来装配顶点。这可以作为一种优化。例如，在阴影贴图算法中，我们需要每帧把场景绘制两次：一次从光源的视角（阴影 pass），一次从主摄像机的视角（主 pass）。阴影 pass 只需要位置数据和纹理坐标（用于做 alpha 测试的几何体）。所以我们可以把顶点数据拆到两个槽中：一个槽包含位置和纹理坐标，另一个槽包含其他顶点属性（如法线和切线向量）。这样，阴影 pass 就可以方便地只流入它需要的顶点数据（位置和纹理坐标），从而为阴影 pass 节省数据带宽。主渲染 pass 则会使用两个顶点输入槽来获取它需要的全部顶点数据。出于性能考虑，建议把使用的输入槽数量控制在不超过 3 的较小数目。
+
+3. 绘制：
+
+   a. 如图 5.13*a* 所示的点列表。
+   b. 如图 5.13*b* 所示的线条带。
+   c. 如图 5.13*c* 所示的线列表。
+   d. 如图 5.13*d* 所示的三角形带。
+   e. 如图 5.14*a* 所示的三角形列表。
+
+4. 构造出如图 6.8 所示金字塔的顶点列表和索引列表，并把它绘制出来。把底面顶点着为绿色，把塔尖顶点着为红色。
+
+   <Figure src="images/Fig6-8.jpg" alt="金字塔（四棱锥）的各个三角形" figureNumber="图 6.8" caption="金字塔的三角形。" />
+
+5. 运行"Box"演示，并回顾我们只在顶点上指定了颜色<a id="page262"/>。解释三角形上每个像素的颜色是如何得到的。
+
+6. 修改 Box 演示，在变换到世界空间之前，对顶点着色器中的每个顶点施加如下变换：
+
+   ```cpp
+     vin.PosL.xy += 0.5f*sin(vinL.Pos.x)*sin(3.0f*gTime);
+
+     vin.PosL.z *= 0.6f + 0.4f*sin(2.0f*gTime);
+   ```
+
+   **译者注**：原书第一行中的 `vinL.Pos.x` 应为 `vin.PosL.x`，此处按原文照录。
+
+   你需要添加一个 `gTime` 常量缓冲变量；这个变量对应当前的 `GameTimer::TotalTime()` 值。这将通过正弦函数周期性地扭曲顶点，使顶点随时间产生动画效果。
+
+7. 把盒子与金字塔（习题 4）的顶点合并成一个大的顶点缓冲，同时把盒子和金字塔的索引合并成一个大的索引缓冲（但不要更新索引值）。然后用 `ID3D12CommandList::DrawIndexedInstanced` 的参数逐一绘制盒子和金字塔。使用世界变换矩阵，使盒子和金字塔在世界空间中互不重叠。
+
+8. 修改 Box 演示，以线框模式渲染立方体。
+
+9. 修改 Box 演示，禁用背面剔除 `(D3D12_CULL_NONE)`；再试试改为剔除正面而不是背面 `(D3D12_CULL_FRONT)`。以线框模式输出你的结果，以便更容易看出差别。
+
+10. 如果顶点内存占用很可观，那么把 128 位颜色值降为 32 位颜色值可能是值得的。修改"Box"演示，在顶点结构中使用 32 位颜色值而不是 128 位颜色值。你的顶点结构和相应的顶点输入描述将如下所示：
+
+    ```cpp
+    struct Vertex
+    {
+      XMFLOAT3 Pos;
+      XMCOLOR Color;
+    };
+
+    D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
+    {
+      {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+        D3D12_INPUT_PER_VERTEX_DATA, 0},
+      {"COLOR",  0, DXGI_FORMAT_B8G8R8A8_UNORM, 0, 12,        D3D12_INPUT_PER_VERTEX_DATA, 0}
+    };
+    ```
+
+    我们使用 `DXGI_FORMAT_B8G8R8A8_UNORM` 格式（红、绿、蓝和 alpha 各 8 位）。这种格式对应于常见的 32 位图形颜色格式 ARGB，<a id="page263"/>但 `DXGI_FORMAT` 符号按*小端*（little-endian）记法列出各字节在内存中的排列顺序。在小端记法中，多字节数据字的字节从最低有效字节写到最高有效字节，这就是为什么 ARGB 在内存中呈现为 BGRA——最低有效字节位于最小的内存地址，最高有效字节位于最高的内存地址。
+
+11. 考虑下面的 C++ 顶点结构：
+
+    ```cpp
+    struct Vertex
+    {
+      XMFLOAT3 Pos;
+      XMFLOAT4 Color;
+    };
+    ```
+
+    a. 输入布局描述的顺序需要与顶点结构的顺序一致吗？也就是说，下面的顶点声明对这个顶点结构来说是正确的吗？做一个实验来找出答案。然后说明你认为它能（或不能）工作的理由。
+
+       ```cpp
+       D3D11_INPUT_ELEMENT_DESC vertexDesc[] =
+       {
+         {"COLOR",  0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,           D3D11_INPUT_PER_VERTEX_DATA, 0},
+         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,           D3D11_INPUT_PER_VERTEX_DATA, 0},
+       };
+       ```
+
+    b. 顶点着色器结构的顺序需要与 C++ 顶点结构的顺序一致吗？也就是说，下面的顶点着色器结构能否与上面的 C++ 顶点结构配合工作？做一个实验来找出答案。然后说明你认为它能（或不能）工作的理由。
+
+       ```cpp
+       struct VertexIn
+       {
+         float4 Color : COLOR;
+         float3 Pos  : POSITION;
+       };
+       ```
+
+12. 把视口设置为后缓冲的左半部分。
+
+13. 使用剪裁矩形测试剔除所有位于以下矩形之外的像素：该矩形以缓冲为中心，宽度为 `mClientWidth/2`，高度为 `mClientHeight/2`。记住还需要在光栅器状态组中启用剪裁矩形测试。
+
+14. 像素着色器颜色染色。<a id="page264"/>使用常量缓冲让颜色随时间产生动画。使用平滑的缓动函数。在顶点着色器和像素着色器中各实现一遍。
+
+15. 把 Box 演示中的像素着色器修改为：
+
+    ```cpp
+    float4 PS(VertexOut pin) : SV_Target
+    {
+      clip(pin.Color.r - 0.5f);
+      return pin.Color;
+    }
+    ```
+
+    运行演示，并就内置的 `clip` 函数的作用提出你的猜想。
+
+16. 修改 Box 演示中的像素着色器，让它在插值后的顶点颜色与通过常量缓冲指定的 `gPulseColor` 之间平滑脉动。你还需要在应用程序一侧更新常量缓冲。HLSL 代码中的常量缓冲和像素着色器应如下所示：
+
+    ```cpp
+    cbuffer cbPerObject : register(b0)
+    {
+      float4x4 gWorldViewProj;      float4 gPulseColor;
+      float gTime;
+    };
+
+    float4 PS(VertexOut pin) : SV_Target
+    {
+      const float pi = 3.14159;
+
+      // Oscillate a value in [0,1] over time using a sine function.
+      float s = 0.5f*sin(2*gTime - 0.25f*pi)+0.5f;
+
+      // Linearly interpolate between pin.Color and gPulseColor based on      // parameter s.      float4 c = lerp(pin.Color, gPulseColor, s);
+      return c;
+    }
+    ```
+
+    `gTime` 变量对应当前的 `GameTimer::TotalTime()` 值。
 
 </section>

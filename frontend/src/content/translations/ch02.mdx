@@ -1,4 +1,4 @@
-<div className="translation-progress"><b>本章译文进度</b><span>2.1–2.10 已按 EPUB 逐段核对；全部公式图片已识图转为 LaTeX 并经上下文核验。</span></div>
+<div className="translation-progress"><b>本章译文进度</b><span>2.1–2.10 译文均已录入。本轮已逐张核对公式图并补全 4×4 行列式展开；正文与 DirectXMath 代码的逐段忠实度审校仍待完成。</span></div>
 
 在三维计算机图形学中，我们用矩阵紧凑地描述缩放、旋转和平移等几何变换，也用矩阵把点或向量的坐标从一个坐标系转换到另一个坐标系。本章讨论矩阵数学。
 
@@ -258,7 +258,18 @@ $$
 对于 $4\times4$ 矩阵，则沿第一行展开为四个 $3\times3$ 余子式的带符号和（符号依次为 $+,-,+,-$）：
 
 $$
-\det A=A_{11}\det\bar A_{11}-A_{12}\det\bar A_{12}+A_{13}\det\bar A_{13}-A_{14}\det\bar A_{14},
+\begin{aligned}
+\det\begin{bmatrix}
+A_{11}&A_{12}&A_{13}&A_{14}\\
+A_{21}&A_{22}&A_{23}&A_{24}\\
+A_{31}&A_{32}&A_{33}&A_{34}\\
+A_{41}&A_{42}&A_{43}&A_{44}
+\end{bmatrix}
+={}&A_{11}\det\begin{bmatrix}A_{22}&A_{23}&A_{24}\\A_{32}&A_{33}&A_{34}\\A_{42}&A_{43}&A_{44}\end{bmatrix}
+-A_{12}\det\begin{bmatrix}A_{21}&A_{23}&A_{24}\\A_{31}&A_{33}&A_{34}\\A_{41}&A_{43}&A_{44}\end{bmatrix}\\
+&+A_{13}\det\begin{bmatrix}A_{21}&A_{22}&A_{24}\\A_{31}&A_{32}&A_{34}\\A_{41}&A_{42}&A_{44}\end{bmatrix}
+-A_{14}\det\begin{bmatrix}A_{21}&A_{22}&A_{23}\\A_{31}&A_{32}&A_{33}\\A_{41}&A_{42}&A_{43}\end{bmatrix}.
+\end{aligned}
 $$
 
 其中 $\bar A_{1j}$ 是删除 $A$ 的第一行和第 $j$ 列得到的 $3\times3$ 余子式矩阵。三维图形学主要使用 $4\times4$ 矩阵，因此不必继续为 $n>4$ 生成显式公式。

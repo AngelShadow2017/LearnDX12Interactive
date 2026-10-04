@@ -65,8 +65,10 @@ typedef struct D3D12_INPUT_ELEMENT_DESC
 3. `Format`：`DXGI_FORMAT` 枚举类型的一个成员，向 Direct3D 指定该顶点元素的格式（即数据类型）；下面是一些常用格式示例：
 
    ```cpp
-   DXGI_FORMAT_R32_FLOAT     // 1D 32-bit float scalar   DXGI_FORMAT_R32G32_FLOAT  // 2D 32-bit float vector
-   DXGI_FORMAT_R32G32B32_FLOAT    // 3D 32-bit float vector   DXGI_FORMAT_R32G32B32A32_FLOAT // 4D 32-bit float vector
+   DXGI_FORMAT_R32_FLOAT          // 1D 32-bit float scalar
+   DXGI_FORMAT_R32G32_FLOAT       // 2D 32-bit float vector
+   DXGI_FORMAT_R32G32B32_FLOAT    // 3D 32-bit float vector
+   DXGI_FORMAT_R32G32B32A32_FLOAT // 4D 32-bit float vector
 
    DXGI_FORMAT_R8_UINT       // 1D 8-bit unsigned integer scalar
    DXGI_FORMAT_R16G16_SINT   // 2D 16-bit signed integer vector
@@ -129,10 +131,16 @@ D3D12_INPUT_ELEMENT_DESC desc2[] =
 正如 §4.3.8 中所做的，我们通过填写描述缓冲资源的 `D3D12_RESOURCE_DESC` 结构，然后调用 `ID3D12Device::CreateCommittedResource` 方法来创建 `ID3D12Resource` 对象。`D3D12_RESOURCE_DESC` 结构所有成员的描述参见 §4.3.8。Direct3D 12 提供了一个 C++ 包装类 `CD3DX12_RESOURCE_DESC`，它派生自 `D3D12_RESOURCE_DESC`，并提供了一些便捷的构造函数和方法。特别是，它提供了下面这个方法，简化了构造描述缓冲的 `D3D12_RESOURCE_DESC` 的过程：
 
 ```cpp
-static inline CD3DX12_RESOURCE_DESC Buffer(    UINT64 width,    D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE,
-    UINT64 alignment = 0 )
+static inline CD3DX12_RESOURCE_DESC Buffer(
+    UINT64 width,
+    D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE,
+    UINT64 alignment = 0)
 {
-  return CD3DX12_RESOURCE_DESC( D3D12_RESOURCE_DIMENSION_BUFFER,    alignment, width, 1, 1, 1,    DXGI_FORMAT_UNKNOWN, 1, 0,    D3D12_TEXTURE_LAYOUT_ROW_MAJOR, flags );
+  return CD3DX12_RESOURCE_DESC(
+    D3D12_RESOURCE_DIMENSION_BUFFER,
+    alignment, width, 1, 1, 1,
+    DXGI_FORMAT_UNKNOWN, 1, 0,
+    D3D12_TEXTURE_LAYOUT_ROW_MAJOR, flags);
 }
 ```
 
@@ -187,18 +195,25 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
   subResourceData.RowPitch = byteSize;
   subResourceData.SlicePitch = subResourceData.RowPitch;
 
-  // Schedule to copy the data to the default buffer resource.  // At a high level, the helper function UpdateSubresources
+  // Schedule to copy the data to the default buffer resource.
+  // At a high level, the helper function UpdateSubresources
   // will copy the CPU memory into the intermediate upload heap.
   // Then, using ID3D12CommandList::CopySubresourceRegion,
   // the intermediate upload heap data will be copied to mBuffer.
-  cmdList->ResourceBarrier(1,    &CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),    D3D12_RESOURCE_STATE_COMMON,    D3D12_RESOURCE_STATE_COPY_DEST));
-  UpdateSubresources<1>(cmdList,    defaultBuffer.Get(), uploadBuffer.Get(),
+  cmdList->ResourceBarrier(1,
+    &CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),
+      D3D12_RESOURCE_STATE_COMMON,
+      D3D12_RESOURCE_STATE_COPY_DEST));
+  UpdateSubresources<1>(cmdList,
+    defaultBuffer.Get(), uploadBuffer.Get(),
     0, 0, 1, &subResourceData);
   cmdList->ResourceBarrier(1,
     &CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),
-    D3D12_RESOURCE_STATE_COPY_DEST,    D3D12_RESOURCE_STATE_GENERIC_READ));
+      D3D12_RESOURCE_STATE_COPY_DEST,
+      D3D12_RESOURCE_STATE_GENERIC_READ));
 
-  // Note: uploadBuffer has to be kept alive after the above function  // calls because the command list has not been executed yet that
+  // Note: uploadBuffer has to be kept alive after the above function
+  // calls because the command list has not been executed yet that
   // performs the actual copy.
   // The caller can Release the uploadBuffer after it knows the copy
   // has been executed.
@@ -314,6 +329,8 @@ mCommandList->IASetVertexBuffers(0, 1, &mVBView2);
 /* …draw objects using vertex buffer 2… */
 ```
 
+**译者注**：原书这里把已声明的 `mVBView1` 写成了 `VBView1`，少了成员名前缀 `m`；此处按原文照录。
+
 把顶点缓冲设置<a id="page212"/>到输入槽并不会进行绘制；它只是让顶点准备好送入管线。真正绘制这些顶点的最后一步由 `ID3D12GraphicsCommandList::DrawInstanced` 方法完成：
 
 ```cpp
@@ -357,7 +374,7 @@ typedef struct D3D12_INDEX_BUFFER_VIEW
 } D3D12_INDEX_BUFFER_VIEW;
 ```
 
-1. `BufferLocation`：我们要创建视图的顶点缓冲资源的虚拟地址。可以用 `ID3D12Resource::GetGPUVirtualAddress` 方法来获取。
+1. `BufferLocation`：我们要创建视图的索引缓冲资源的虚拟地址。可以用 `ID3D12Resource::GetGPUVirtualAddress` 方法来获取。
 2. `SizeInBytes`：从 `BufferLocation` 开始要在索引缓冲中查看的字节数。
 3. `Format`：索引的格式，必须是表示 16 位索引的 `DXGI_FORMAT_R16_UINT`，或表示 32 位索引的 `DXGI_FORMAT_R32_UINT`。应当使用 16 位索引来减少内存和带宽占用；只有当索引值确实需要 32 位才能表示时才使用 32 位索引。
 
@@ -463,9 +480,12 @@ mCmdList->DrawIndexedInstanced(
 ```hlsl
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;};
+  float4x4 gWorldViewProj;
+};
 
-void VS(float3 iPosL : POSITION,    float4 iColor : COLOR,    out float4 oPosH : SV_POSITION,
+void VS(float3 iPosL : POSITION,
+    float4 iColor : COLOR,
+    out float4 oPosH : SV_POSITION,
     out float4 oColor : COLOR)
 {
   // Transform to homogeneous clip space.
@@ -503,7 +523,8 @@ void VS(float3 iPosL : POSITION,    float4 iColor : COLOR,    out float4 oPosH :
 ```hlsl
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;};
+  float4x4 gWorldViewProj;
+};
 
 struct VertexIn
 {
@@ -676,9 +697,11 @@ D3D12 WARNING: ID3D11Device::CreateInputLayout: The provided input signature exp
 ```hlsl
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;};
+  float4x4 gWorldViewProj;
+};
 
-void VS(float3 iPos : POSITION, float4 iColor : COLOR,    out float4 oPosH : SV_POSITION,
+void VS(float3 iPos : POSITION, float4 iColor : COLOR,
+    out float4 oPosH : SV_POSITION,
    out float4 oColor : COLOR)
 {
   // Transform to homogeneous clip space.
@@ -702,7 +725,8 @@ float4 PS(float4 posH : SV_POSITION, float4 color : COLOR) : SV_Target
 ```hlsl
 cbuffer cbPerObject : register(b0)
 {
-   float4x4 gWorldViewProj;};
+   float4x4 gWorldViewProj;
+};
 
 struct VertexIn
 {
@@ -747,10 +771,13 @@ float4 PS(VertexOut pin) : SV_Target
 ```hlsl
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;};
+  float4x4 gWorldViewProj;
+};
 ```
 
 这段代码引用了一个名为 `cbPerObject` 的 `cbuffer` 对象（常量缓冲）。在本例中，该常量缓冲存储一个名为 `gWorldViewProj` 的 4×4 矩阵，表示把点从局部空间变换到齐次裁剪空间所用的世界矩阵、<a id="page225"/>视图矩阵和投影矩阵的组合。在 HLSL 中，4×4 矩阵用内置的 `float4x4` 类型声明；例如，要声明 3×4 矩阵和 2×4 矩阵，你会分别使用 `float3x4` 和 `float2x2` 类型。
+
+**译者注**：原书将 2×4 矩阵的类型写作 `float2x2`；按 HLSL 的行数×列数命名规则应为 `float2x4`。这里保留原文，并标出这一处笔误。
 
 与顶点缓冲和索引缓冲不同，常量缓冲通常由 CPU 每帧更新一次。例如，如果摄像机每帧都在移动，常量缓冲就需要每帧用新的视图矩阵更新。因此，我们在上传堆而不是默认堆中创建常量缓冲，以便能从 CPU 更新其内容。
 
@@ -804,12 +831,14 @@ UINT d3dUtil::CalcConstantBufferByteSize(UINT byteSize)
 // Implicitly padded to 256 bytes.
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;};
+  float4x4 gWorldViewProj;
+};
 
 // Explicitly padded to 256 bytes.
 cbuffer cbPerObject : register(b0)
 {
-  float4x4 gWorldViewProj;  float4x4 Pad0;
+  float4x4 gWorldViewProj;
+  float4x4 Pad0;
   float4x4 Pad1;
   float4x4 Pad1;
 };
@@ -825,7 +854,8 @@ Direct3D 12 引入了着色器模型 5.1。着色器模型 5.1 引入了一种�
 struct ObjectConstants
 {
   float4x4 gWorldViewProj;
-  uint matIndex;};
+  uint matIndex;
+};
 ConstantBuffer<ObjectConstants> gObjConstants : register(b0);
 ```
 
@@ -847,6 +877,8 @@ mUploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mMappedData));
 ```
 
 第一个参数是标识要映射的子资源的子资源索引。对缓冲而言，唯一的子资源就是缓冲本身，所以我们直接把它设为 0。第二个参数是可选的指向 `D3D12_RANGE` 结构的指针，描述要映射的内存范围；指定 null 表示映射整个资源。第二个参数返回一个指向映射数据的指针。要把数据从系统内存复制到常量缓冲，直接做一次 memcpy 即可：
+
+**译者注**：原书误把返回数据指针的参数也称为第二个参数。上面的调用中，`Map` 的第三个参数才是接收映射地址的输出参数；此处保留原文说法并加以说明。
 
 ```cpp
 memcpy(mMappedData, &data, dataSizeInBytes);
@@ -877,7 +909,9 @@ public:
     mElementByteSize = sizeof(T);
 
     // Constant buffer elements need to be multiples of 256 bytes.
-    // This is because the hardware can only view constant data    // at m*256 byte offsets and of n*256 byte lengths.    // typedef struct D3D12_CONSTANT_BUFFER_VIEW_DESC {
+    // This is because the hardware can only view constant data
+    // at m*256 byte offsets and of n*256 byte lengths.
+    // typedef struct D3D12_CONSTANT_BUFFER_VIEW_DESC {
     // UINT64 OffsetInBytes; // multiple of 256
     // UINT   SizeInBytes;   // multiple of 256
     // } D3D12_CONSTANT_BUFFER_VIEW_DESC;
@@ -1043,6 +1077,8 @@ md3dDevice->CreateConstantBufferView(
 
 `D3D12_CONSTANT_BUFFER_VIEW_DESC` 结构描述要绑定到 HLSL 常量缓冲结构的常量缓冲资源的子集。如前所述，通常一个常量缓冲存储 *n* 个对象的逐对象常量数组，但我们可以通过 `BufferLocation` 和 `SizeInBytes` 得到指向第 *i* 个对象常量数据的视图。由于硬件要求，`D3D12_CONSTANT_BUFFER_VIEW_DESC::SizeInBytes` 和 `D3D12_CONSTANT_BUFFER_VIEW_DESC::OffsetInBytes` 成员必须是 256 字节的倍数。例如，如果你指定 64，就会得到如下调试错误：
 
+**译者注**：原书此处把 `OffsetInBytes` 列为 `D3D12_CONSTANT_BUFFER_VIEW_DESC` 的成员；该结构实际包含 `BufferLocation` 和 `SizeInBytes`，没有 `OffsetInBytes` 字段。此处保留原文说法以便对照，阅读时应以实际结构定义为准。
+
 ```cpp
 D3D12 ERROR: ID3D12Device::CreateConstantBufferView: SizeInBytes of 64 is invalid. Device requires SizeInBytes be a multiple of 256.
 
@@ -1116,7 +1152,8 @@ slotRootParameter[0].InitAsDescriptorTable(
 // A root signature is an array of root parameters.
 CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr,  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-// create a root signature with a single slot which points to a// descriptor range consisting of a single constant buffer.
+// create a root signature with a single slot which points to a
+// descriptor range consisting of a single constant buffer.
 ComPtr<ID3DBlob> serializedRootSig = nullptr;
 ComPtr<ID3DBlob> errorBlob = nullptr;
 HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc,  D3D_ROOT_SIGNATURE_VERSION_1,
@@ -1368,7 +1405,8 @@ FXC 的 /Fc 可选参数会生成可移植的汇编代码。时不时查看自�
 // Generated by Microsoft (R) HLSL Shader Compiler 6.4.9844.0
 //
 //
-// Buffer Definitions://
+// Buffer Definitions:
+
 // cbuffer cbPerObject
 // {
 //
@@ -1389,7 +1427,8 @@ FXC 的 /Fc 可选参数会生成可移植的汇编代码。时不时查看自�
 //
 // Name                 Index   Mask Register SysValue  Format   Used
 // -------------------- ----- ------ -------- -------- ------- ------
-// POSITION                 0   xyz        0     NONE   float   xyz// COLOR                    0   xyzw       1     NONE   float   xyzw
+// POSITION                 0   xyz        0     NONE   float   xyz
+// COLOR                    0   xyzw       1     NONE   float   xyzw
 //
 //
 // Output signature:
@@ -1409,7 +1448,16 @@ dcl_output o1.xyzw
 dcl_temps 2
 //
 // Initial variable locations:
-//   v0.x <- vin.PosL.x; v0.y <- vin.PosL.y; v0.z <- vin.PosL.z;//   v1.x <- vin.Color.x; v1.y <- vin.Color.y; v1.z <- vin.Color.z; v1.w <- vin.Color.w;//   o1.x <- <VS return value>.Color.x;//   o1.y <- <VS return value>.Color.y;//   o1.z <- <VS return value>.Color.z;//   o1.w <- <VS return value>.Color.w;//   o0.x <- <VS return value>.PosH.x;//   o0.y <- <VS return value>.PosH.y;//   o0.z <- <VS return value>.PosH.z;//   o0.w <- <VS return value>.PosH.w
+//   v0.x <- vin.PosL.x; v0.y <- vin.PosL.y; v0.z <- vin.PosL.z;
+//   v1.x <- vin.Color.x; v1.y <- vin.Color.y; v1.z <- vin.Color.z; v1.w <- vin.Color.w;
+//   o1.x <- <VS return value>.Color.x;
+//   o1.y <- <VS return value>.Color.y;
+//   o1.z <- <VS return value>.Color.z;
+//   o1.w <- <VS return value>.Color.w;
+//   o0.x <- <VS return value>.PosH.x;
+//   o0.y <- <VS return value>.PosH.y;
+//   o0.z <- <VS return value>.PosH.z;
+//   o0.w <- <VS return value>.PosH.w
 //
 #line 29 "color.hlsl"
 mov r0.xyz, v0.xyzx
@@ -1628,14 +1676,17 @@ mCommandList->SetPipelineState(mPSO3.Get());
 ```cpp
 // Defines a subrange of geometry in a MeshGeometry. This is for when
 // multiple geometries are stored in one vertex and index buffer. It
-// provides the offsets and data needed to draw a subset of geometry// stores in the vertex and index buffers so that we can implement the// technique described by Figure 6.3.
+// provides the offsets and data needed to draw a subset of geometry
+// stores in the vertex and index buffers so that we can implement the
+// technique described by Figure 6.3.
 struct SubmeshGeometry
 {
   UINT IndexCount = 0;
   UINT StartIndexLocation = 0;
   INT BaseVertexLocation = 0;
 
-  // Bounding box of the geometry defined by this submesh.  // This is used in later chapters of the book.
+  // Bounding box of the geometry defined by this submesh.
+  // This is used in later chapters of the book.
   DirectX::BoundingBox Bounds;
 };
 
@@ -1644,7 +1695,8 @@ struct MeshGeometry
   // Give it a name so we can look it up by name.
   std::string Name;
 
-  // System memory copies. Use Blobs because the vertex/index format can  // be generic.
+  // System memory copies. Use Blobs because the vertex/index format can
+  // be generic.
   // It is up to the client to cast appropriately.  Microsoft::WRL::ComPtr<ID3DBlob> VertexBufferCPU = nullptr;
   Microsoft::WRL::ComPtr<ID3DBlob> IndexBufferCPU = nullptr;
 
@@ -1660,7 +1712,8 @@ struct MeshGeometry
   DXGI_FORMAT IndexFormat = DXGI_FORMAT_R16_UINT;
   UINT IndexBufferByteSize = 0;
 
-  // A MeshGeometry may store multiple geometries in one vertex/index  // buffer.
+  // A MeshGeometry may store multiple geometries in one vertex/index
+  // buffer.
   // Use this container to define the Submesh geometries so we can draw
   // the Submeshes individually.
   std::unordered_map<std::string, SubmeshGeometry> DrawArgs;
@@ -1711,7 +1764,8 @@ struct MeshGeometry
 //
 // Controls:
 //   Hold the left mouse button down and move the mouse to rotate.
-//   Hold the right mouse button down and move the mouse to zoom in and//   out.
+//   Hold the right mouse button down and move the mouse to zoom in and
+//   out.
 //*********************************************************************
 
 #include "../../Common/d3dApp.h"
@@ -1845,7 +1899,8 @@ void BoxApp::OnResize()
 {
   D3DApp::OnResize();
 
-  // The window resized, so update the aspect ratio and recompute the  // projection matrix.
+  // The window resized, so update the aspect ratio and recompute the
+  // projection matrix.
   XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);
   XMStoreFloat4x4(&mProj, P);
 }
@@ -1878,10 +1933,12 @@ void BoxApp::Update(const GameTimer& gt)
 void BoxApp::Draw(const GameTimer& gt)
 {
   // Reuse the memory associated with command recording.
-  // We can only reset when the associated command lists have finished  // execution on the GPU.
+  // We can only reset when the associated command lists have finished
+  // execution on the GPU.
   ThrowIfFailed(mDirectCmdListAlloc->Reset());
 
-  // A command list can be reset after it has been added to the  // command queue via ExecuteCommandList. Reusing the command
+  // A command list can be reset after it has been added to the
+  // command queue via ExecuteCommandList. Reusing the command
   // list reuses memory.
   ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), mPSO.Get()));
 
@@ -1896,7 +1953,9 @@ void BoxApp::Draw(const GameTimer& gt)
   // Clear the back buffer and depth buffer.
   mCommandList->ClearRenderTargetView(CurrentBackBufferView(),
     Colors::LightSteelBlue, 0, nullptr);
-  mCommandList->ClearDepthStencilView(DepthStencilView(),    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,    1.0f, 0, 0, nullptr);
+  mCommandList->ClearDepthStencilView(DepthStencilView(),
+    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+    1.0f, 0, 0, nullptr);
   // Specify the buffers we are going to render to.
   mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(),
     true, &DepthStencilView());
@@ -1913,7 +1972,8 @@ void BoxApp::Draw(const GameTimer& gt)
     0, mCbvHeap->GetGPUDescriptorHandleForHeapStart());
 
   mCommandList->DrawIndexedInstanced(
-    mBoxGeo->DrawArgs["box"].IndexCount,    1, 0, 0, 0);
+    mBoxGeo->DrawArgs["box"].IndexCount,
+    1, 0, 0, 0);
   // Indicate a state transition on the resource usage.
   mCommandList->ResourceBarrier(1,
     &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -1930,7 +1990,8 @@ void BoxApp::Draw(const GameTimer& gt)
   mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
 
   // Wait until frame commands are complete. This waiting is
-  // inefficient and is done for simplicity. Later we will show how to  // organize our rendering code so we do not have to wait per frame.
+  // inefficient and is done for simplicity. Later we will show how to
+  // organize our rendering code so we do not have to wait per frame.
   FlushCommandQueue();
 }
 
@@ -2017,7 +2078,9 @@ void BoxApp::BuildRootSignature()
   // Shader programs typically require resources as input (constant
   // buffers, textures, samplers). The root signature defines the
   // resources the shader programs expect. If we think of the shader
-  // programs as a function, and the input resources as function  // parameters, then the root signature can be thought of as defining  // the function signature.
+  // programs as a function, and the input resources as function
+  // parameters, then the root signature can be thought of as defining
+  // the function signature.
   // Root parameter can be a table, root descriptor or root constants.
   CD3DX12_ROOT_PARAMETER slotRootParameter[1];
 
@@ -2027,7 +2090,9 @@ void BoxApp::BuildRootSignature()
   slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
 
   // A root signature is an array of root parameters.
-  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr,    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+    1, slotRootParameter, 0, nullptr,
+    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
   // create a root signature with a single slot which points to a
   // descriptor range consisting of a single constant buffer
@@ -2112,16 +2177,22 @@ void BoxApp::BuildBoxGeometry()
   mBoxGeo->Name = "boxGeo";
 
   ThrowIfFailed(D3DCreateBlob(vbByteSize, &mBoxGeo->VertexBufferCPU));
-  CopyMemory(mBoxGeo->VertexBufferCPU->GetBufferPointer(),    vertices.data(), vbByteSize);
+  CopyMemory(mBoxGeo->VertexBufferCPU->GetBufferPointer(),
+    vertices.data(), vbByteSize);
 
   ThrowIfFailed(D3DCreateBlob(ibByteSize, &mBoxGeo->IndexBufferCPU));
-  CopyMemory(mBoxGeo->IndexBufferCPU->GetBufferPointer(),    indices.data(), ibByteSize);
+  CopyMemory(mBoxGeo->IndexBufferCPU->GetBufferPointer(),
+    indices.data(), ibByteSize);
 
   mBoxGeo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-    md3dDevice.Get(), mCommandList.Get(),    vertices.data(), vbByteSize,    mBoxGeo->VertexBufferUploader);
+    md3dDevice.Get(), mCommandList.Get(),
+    vertices.data(), vbByteSize,
+    mBoxGeo->VertexBufferUploader);
 
   mBoxGeo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-    md3dDevice.Get(), mCommandList.Get(),    indices.data(), ibByteSize,    mBoxGeo->IndexBufferUploader);
+    md3dDevice.Get(), mCommandList.Get(),
+    indices.data(), ibByteSize,
+    mBoxGeo->IndexBufferUploader);
 
   mBoxGeo->VertexByteStride = sizeof(Vertex);
   mBoxGeo->VertexBufferByteSize = vbByteSize;
@@ -2142,8 +2213,16 @@ void BoxApp::BuildPSO()
   ZeroMemory(&psoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
   psoDesc.InputLayout = { mInputLayout.data(), (UINT)mInputLayout.size() };
   psoDesc.pRootSignature = mRootSignature.Get();
-  psoDesc.VS =    {      reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),      mvsByteCode->GetBufferSize()    };
-  psoDesc.PS =    {      reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),      mpsByteCode->GetBufferSize()    };
+  psoDesc.VS =
+  {
+    reinterpret_cast<BYTE*>(mvsByteCode->GetBufferPointer()),
+    mvsByteCode->GetBufferSize()
+  };
+  psoDesc.PS =
+  {
+    reinterpret_cast<BYTE*>(mpsByteCode->GetBufferPointer()),
+    mpsByteCode->GetBufferSize()
+  };
   psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
   psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
   psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -2161,6 +2240,8 @@ void BoxApp::BuildPSO()
 <a id="page258"/>
 
 <Figure src="images/Fig6-7.jpg" alt="Box 演示的运行截图：一个旋转的彩色立方体" figureNumber="图 6.7" caption="“Box”演示的截图。" />
+
+**译者注**：此处原书代码把拓扑常量写作 `D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST`；本书的 Direct3D 12 示例通常使用 `D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST`。这里照录原文。
 
 <a id="page259"/>
 
@@ -2325,7 +2406,8 @@ void BoxApp::BuildPSO()
     ```cpp
     cbuffer cbPerObject : register(b0)
     {
-      float4x4 gWorldViewProj;      float4 gPulseColor;
+      float4x4 gWorldViewProj;
+      float4 gPulseColor;
       float gTime;
     };
 
@@ -2336,7 +2418,9 @@ void BoxApp::BuildPSO()
       // Oscillate a value in [0,1] over time using a sine function.
       float s = 0.5f*sin(2*gTime - 0.25f*pi)+0.5f;
 
-      // Linearly interpolate between pin.Color and gPulseColor based on      // parameter s.      float4 c = lerp(pin.Color, gPulseColor, s);
+      // Linearly interpolate between pin.Color and gPulseColor based on
+      // parameter s.
+      float4 c = lerp(pin.Color, gPulseColor, s);
       return c;
     }
     ```

@@ -67,6 +67,18 @@
 | resolve (MSAA) | 解析（resolve） | 指多重采样结果解析；不要按普通动词误译。 |
 | frame rate / frames per second (FPS) | 帧率 / 每秒帧数（FPS） | FPS 首次定义后保留缩写。 |
 | low-poly | 低多边形 | 讨论网格复杂度时使用；不写成“低聚”。 |
+| frame resource | 帧资源 | 第 7 章引入的循环数组资源；不要译成“帧缓冲资源”以免与 framebuffer 混淆。 |
+| render item | 渲染项 | 第 7 章引入；不译“渲染元素/绘制项”。 |
+| pass / rendering pass | pass / 渲染遍 | 目录已定“Pass 常量”；正文保留英文 pass（如“逐 pass 常量”“每次渲染遍（pass）”），不译“通道/趟”。 |
+| root descriptor | 根描述符 | inline descriptor 括注“内联描述符”。 |
+| root constant | 根常量 |  |
+| root argument | 根实参 | 与“根参数”（root parameter）区分：参数是签名定义，实参是传入的值。 |
+| slice / stack | 切片 / 层 | 圆柱、球体网格生成语境（§7.4）；不译“扇区/堆叠”。 |
+| cap | 端盖 | 圆柱顶盖/底盖几何；不译“帽子/盖子”。 |
+| geosphere | 测地球 | 与 icosahedron（二十面体）配套；不译“地球体”。 |
+| base vertex location | 基顶点位置 | DrawIndexedInstanced 参数语境；保持与第 6 章 SubmeshGeometry 译法一致。 |
+| dynamic vertex buffer | 动态顶点缓冲 | 与“静态缓冲”相对；§7.7.5。 |
+| instancing | 实例化 | §7.5.1 “实例化几何”；第 16 章 hardware instancing 沿用“硬件实例化”。 |
 
 ## 术语一致性检查
 

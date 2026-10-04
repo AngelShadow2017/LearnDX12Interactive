@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import chapterFiveSource from '../content/source/ch05.txt?raw';
 import { parseSource } from './OriginalBookText';
 
 describe('parseSource', () => {
@@ -80,5 +81,63 @@ mDirectCmdListAlloc.GetAddressOf()));
     expect(code).toContain('mCommandList->SetGraphicsRootSignature(mRootSignature.Get());');
     expect(code).toContain('D3D12_COMMAND_LIST_TYPE_DIRECT,');
     expect(blocks.some((block) => block.kind === 'paragraph' && block.text.startsWith('Direct3D is a low-level graphics API'))).toBe(true);
+  });
+
+  it('joins C++ structure declarations split into one text node per line', () => {
+    const source = `
+Chapter 5
+
+COLOR REPRESENTATION
+
+The library provides the following structure:
+
+namespace DirectX
+
+{
+
+namespace PackedVector
+
+{
+
+struct XMCOLOR
+
+{
+
+union
+
+{
+
+struct
+
+{
+
+uint8_t b; // Blue component
+
+uint8_t g; // Green component
+
+};
+
+uint32_t c;
+
+XMCOLOR() {}
+
+};
+`;
+    const blocks = parseSource(source, 'ch05');
+    const codeBlocks = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+
+    expect(codeBlocks.join('\n')).toContain('namespace DirectX\n{\nnamespace PackedVector\n{\nstruct XMCOLOR\n{\nunion\n{\nstruct\n{\nuint8_t b; // Blue component\nuint8_t g; // Green component\n};\nuint32_t c;\nXMCOLOR() {}\n};');
+    expect(codeBlocks).toHaveLength(1);
+  });
+
+  it('renders the real Chapter 5 packed color structure as one code block', () => {
+    const blocks = parseSource(chapterFiveSource, 'ch05');
+    const codeBlocks = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+    const packedColor = codeBlocks.find((code) => code.includes('struct XMCOLOR'));
+
+    expect(packedColor).toContain('uint8_t b; // Blue: 0/255 to 255/255');
+    expect(packedColor).toContain('uint32_t c;');
+    expect(packedColor).toContain('XMCOLOR(float _r, float _g, float _b, float _a);');
+    expect(packedColor).toContain('} // end PackedVector namespace');
   });
 });

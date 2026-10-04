@@ -1,0 +1,1995 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：7.1–7.9 全部小节（含 Shapes 与 Land and Waves 演示代码、习题 1–3），依据 EPUB ch07.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
+
+本章介绍多种绘制模式，本书其余部分都会用到它们。本章首先介绍一种绘制优化，我们称之为"帧资源"（frame resources）。借助帧资源，我们修改渲染循环，使它不必每帧都清空命令队列，从而提高 CPU 和 GPU 的利用率。接着我们介绍渲染项（render item）的概念，并解释如何按更新频率划分常量数据。此外，我们还会更深入地考察根签名，学习另外两种根参数类型：根描述符和根常量。最后，我们展示如何绘制一些更复杂的物体；到本章结束时，你将能够绘制一片形似山丘与低谷的曲面、圆柱、球体，以及一个动态的波浪模拟。
+
+本章目标：
+
+- 理解对渲染过程的一种修改，它不要求我们每帧都清空命令队列，从而提高性能。
+- 学习另外两种根签名参数类型：根描述符和根常量。
+- 了解如何以程序化方式生成并绘制网格、圆柱和球体等常见几何形状。
+- 了解如何在 CPU 上让顶点产生动画，并用动态顶点缓冲把新的顶点位置上传到 GPU。<a id="page266"/>
+
+<section className="lesson-section lesson-section--intro" id="s71">
+<h2>7.1 帧资源</h2>
+
+回顾 §4.2，CPU 和 GPU 是并行工作的。CPU 构建并提交命令列表（此外还有其他 CPU 工作），GPU 则处理命令队列中的命令。目标是让 CPU 和 GPU 都保持忙碌，以充分利用系统上可用的硬件资源。到目前为止，在我们的演示程序中，我们每帧同步一次 CPU 和 GPU。之所以必须这样做，举两个例子：
+
+1. 命令分配器要等 GPU 执行完命令之后才能重置。假如我们不同步，让 CPU 在 GPU 还没处理完当前第 *n* 帧之前就继续进入下一第 *n*+1 帧：如果 CPU 在第 *n*+1 帧重置了命令分配器，而 GPU 还在处理第 *n* 帧的命令，那么我们就会把 GPU 仍在处理的命令清掉。
+2. 常量缓冲要等 GPU 执行完引用它的绘制命令之后才能由 CPU 更新。这个例子对应 §4.2.2 和图 4.7 描述的情形。假如我们不同步，让 CPU 在 GPU 还没处理完当前第 *n* 帧之前就继续进入第 *n* + 1 帧：如果 CPU 在第 *n*+1 帧改写了常量缓冲数据，而 GPU 还没有执行第 *n* 帧中引用该常量缓冲的绘制调用，那么当 GPU 执行第 *n* 帧的绘制调用时，常量缓冲里装的就是错误的数据。
+
+因此，我们一直在每帧结束时调用 `D3DApp::FlushCommandQueue`，以确保 GPU 已执行完该帧的所有命令。这种方案可行，但出于以下原因效率不高：
+
+1. 在一帧开始时，GPU 没有任何命令可处理，因为我们等待清空了命令队列。GPU 必须等 CPU 构建并提交一些命令供执行。
+2. 在一帧结束时，CPU 在等待 GPU 处理完命令。
+
+所以每一帧里，CPU 和 GPU 都会有某段时间处于空闲。
+
+这个问题的一种解决方案是创建一个由 CPU 每帧都需要修改的资源组成的循环数组。我们把这类资源称为*帧资源*（frame resources），并且通常使用一个含有三个帧资源元素的循环数组。其思路是：对于第 *n* 帧，CPU 循环遍历帧资源数组，取下一个可用的（即 GPU 未占用的）帧资源。然后 CPU 做所需的资源更新，并为第 *n* 帧构建和提交命令列表，与此同时 GPU 处理之前的帧。之后 CPU 继续进入第 *n*+1 帧并重复这一过程。如果帧资源数组<a id="page267"/>有三个元素，这就让 CPU 最多可以领先 GPU 两帧，保证 GPU 一直有活干。下面是本章"Shapes"演示所用的帧资源类示例。由于这个演示中 CPU 只需要修改常量缓冲，所以帧资源类只包含常量缓冲。
+
+```cpp
+// Stores the resources needed for the CPU to build the command lists
+// for a frame. The contents here will vary from app to app based on
+// the needed resources.
+struct FrameResource
+{
+public:
+  
+  FrameResource(ID3D12Device* device, UINT passCount,  UINT objectCount);
+  FrameResource(const FrameResource& rhs) = delete;
+  FrameResource& operator=(const FrameResource& rhs) = delete;
+  ~FrameResource();
+
+  // We cannot reset the allocator until the GPU is done processing the 
+  // commands. So each frame needs their own allocator.
+  Microsoft::WRL::ComPtr<ID3D12CommandAllocator> CmdListAlloc;
+
+  // We cannot update a cbuffer until the GPU is done processing the
+  // commands that reference it. So each frame needs their own cbuffers.
+  std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
+  std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
+
+  // Fence value to mark commands up to this fence point. This lets us
+  // check if these frame resources are still in use by the GPU.
+  UINT64 Fence = 0;
+};
+
+FrameResource::FrameResource(ID3D12Device* device, UINT passCount, UINT 
+  objectCount)
+{
+  ThrowIfFailed(device->CreateCommandAllocator(
+    D3D12_COMMAND_LIST_TYPE_DIRECT,
+    IID_PPV_ARGS(CmdListAlloc.GetAddressOf())));
+
+  PassCB = std::make_unique<UploadBuffer<PassConstants>>(device, passCount, true);
+  ObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(device, objectCount, true);
+}
+FrameResource::~FrameResource() { }
+```
+
+接下来，我们的应用程序类会实例化一个由三个帧资源组成的 vector，并用成员变量来跟踪当前帧资源：
+
+```cpp
+static const int NumFrameResources = 3;
+std::vector<std::unique_ptr<FrameResource>> mFrameResources;
+FrameResource* mCurrFrameResource = nullptr;
+int mCurrFrameResourceIndex = 0;
+
+void ShapesApp::BuildFrameResources()
+{
+  for(int i = 0; i < gNumFrameResources; ++i)
+  {
+    mFrameResources.push_back(std::make_unique<FrameResource>(
+      md3dDevice.Get(), 1, (UINT)mAllRitems.size()));
+  }
+}
+```
+
+现在，对于 CPU 的第<a id="page268"/> *n* 帧，算法工作方式如下：
+
+```cpp
+void ShapesApp::Update(const GameTimer& gt)
+{
+  // Cycle through the circular frame resource array.
+  mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % NumFrameResources;
+  mCurrFrameResource = mFrameResources[mCurrFrameResourceIndex];
+
+  // Has the GPU finished processing the commands of the current frame 
+  // resource. If not, wait until the GPU has completed commands up to
+  // this fence point.
+  if(mCurrFrameResource->Fence != 0 && 
+    mCommandQueue->GetLastCompletedFence() < mCurrFrameResource->Fence)
+  {
+    HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+    ThrowIfFailed(mCommandQueue->SetEventOnFenceCompletion(
+      mCurrFrameResource->Fence, eventHandle));
+    WaitForSingleObject(eventHandle, INFINITE);
+    CloseHandle(eventHandle);
+  }
+
+  // […] Update resources in mCurrFrameResource (like cbuffers).
+}
+
+void ShapesApp::Draw(const GameTimer& gt)
+{ 
+  // […] Build and submit command lists for this frame.
+
+  // Advance the fence value to mark commands up to this fence point.
+  mCurrFrameResource->Fence = ++mCurrentFence;
+
+  // Add an instruction to the command queue to set a new fence point. 
+  // Because we are on the GPU timeline, the new fence point won't be 
+  // set until the GPU finishes processing all the commands prior to
+  // this Signal().
+  mCommandQueue->Signal(mFence.Get(), mCurrentFence);
+
+  // Note that GPU could still be working on commands from previous
+  // frames, but that is okay, because we are not touching any frame
+  // resources associated with those frames. 
+}
+```
+
+注意，这个方案并不能消<a id="page269"/>除等待。如果一个处理器处理帧的速度远快于另一个，那么较快的那个处理器最终仍要等待另一个赶上来，因为我们不能让一个领先太多。如果 GPU 处理命令的速度快于 CPU 提交工作的速度，GPU 就会空闲。一般来说，如果我们想逼近图形性能的极限，就要避免这种情况，因为我们没有充分利用 GPU。另一方面，如果 CPU 处理帧的速度总是快于 GPU，那么 CPU 在某个时刻就必须等待。这才是期望的情形，因为 GPU 得到了充分利用；多出来的 CPU 周期总可以用于游戏的其他部分，例如 AI、物理和游戏逻辑。
+
+既然多个帧资源并不能消除任何等待，它对我们有什么帮助呢？它帮助我们"喂饱"GPU。当 GPU 在处理第 *n* 帧的命令时，它允许 CPU 继续为第 *n*+1 帧和第 *n*+2 帧构建并提交命令。这有助于让命令队列保持非空，使 GPU 总有工作可做。
+
+</section>
+
+<section className="lesson-section" id="s72">
+<h2>7.2 渲染项</h2>
+
+绘制一个对象需要设置多个参数，例如绑定顶点缓冲和索引缓冲、绑定对象常量、设置图元类型，以及指定 `DrawIndexedInstanced` 的参数。随着场景中要绘制的对象越来越多，创建一个轻量级结构来存储绘制对象所需的数据会很有帮助；随着我们添加需要不同绘制数据的新特性，这些数据会因应用而异。我们把把一次完整绘制调用提交给渲染管线所需的那组数据称为*渲染项*（render item）。本演示中，我们的 `RenderItem` 结构如下：
+
+```cpp
+// Lightweight structure stores parameters to draw a shape. This will
+// vary from app-to-app.
+struct RenderItem
+{
+  RenderItem() = default;
+
+  // World matrix of the shape that describes the object's local space
+  // relative to the world space, which defines the position, 
+  // orientation, and scale of the object in the world.
+  XMFLOAT4X4 World = MathHelper::Identity4x4();
+
+  // Dirty flag indicating the object data has changed and we need
+  // to update the constant buffer. Because we have an object
+  // cbuffer for each FrameResource, we have to apply the
+  // update to each FrameResource. Thus, when we modify obect data we
+  // should set
+  //   NumFramesDirty = gNumFrameResources so that each frame resource
+  // gets the update.
+  int NumFramesDirty = gNumFrameResources;
+
+  // Index into GPU constant buffer corresponding to the ObjectCB 
+  // for this render item.
+  UINT ObjCBIndex = -1;
+
+  // Geometry associated with this render-item. Note that multiple
+  // render-items can share the same geometry.
+  MeshGeometry* Geo = nullptr;
+
+  // Primitive topology.
+  D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+  // DrawIndexedInstanced parameters.
+  UINT IndexCount = 0;
+  UINT StartIndexLocation = 0;
+  int BaseVertexLocation = 0;
+};
+```
+
+**译者注**：上面注释中的 "obect data" 为原书笔误（应为 object data），此处按原文照录。
+
+我们的应用会按渲染项的绘制方式为它们维护不同的列表<a id="page270"/>；也就是说，需要不同 PSO 的渲染项保存在不同的列表中。
+
+```cpp
+// List of all the render items.
+std::vector<std::unique_ptr<RenderItem>> mAllRitems;
+
+// Render items divided by PSO.
+std::vector<RenderItem*> mOpaqueRitems;
+std::vector<RenderItem*> mTransparentRitems;
+```
+
+</section>
+
+<section className="lesson-section" id="s73">
+<h2>7.3 Pass 常量</h2>
+
+从上一节可以看到，我们在 `FrameResource` 类中引入了一个新的常量缓冲：
+
+```cpp
+std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
+```
+
+在接下来的演示程序中，这个缓冲存储在一次给定渲染遍（pass）内固定不变的常量数据，例如眼睛位置、视图矩阵和投影矩阵，以及屏幕（渲染目标）尺寸等信息；它还包括游戏计时信息，这些数据在着色器程序中很有用。注意，我们的演示程序不一定用到所有这些常量数据，但把它们放在手边很方便，而且提供额外数据的代价也很小。例如，虽然我们现在还不需要渲染目标尺寸，但等实现某些后处理效果时就会需要这些信息。
+
+```hlsl
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerObjectPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+};
+```
+
+我们还修改了逐<a id="page271"/>对象常量缓冲，让它只存储与对象关联的常量。到目前为止，与绘制相关的对象常量数据只有它的世界矩阵：
+
+```hlsl
+cbuffer cbPerObject : register(b0)
+{
+    float4x4 gWorld; 
+};
+```
+
+这些改动的思路是按更新频率为常量分组。逐 pass 常量每次渲染遍只需更新一次，而对象常量只在对象的世界矩阵变化时才需要更新。如果场景中有一个静态物体，比如一棵树，我们只需把它的世界矩阵设置到常量缓冲一次，之后再也不用更新该常量缓冲。在演示程序中，我们实现下面两个方法来处理逐 pass 常量缓冲和逐对象常量缓冲的更新。这两个方法在 `Update` 方法中每帧调用一次。
+
+```cpp
+void ShapesApp::UpdateObjectCBs(const GameTimer& gt)
+{
+  auto currObjectCB = mCurrFrameResource->ObjectCB.get();
+  for(auto& e : mAllRitems)
+  {
+    // Only update the cbuffer data if the constants have changed. 
+    // This needs to be tracked per frame resource.
+    if(e->NumFramesDirty > 0)
+    {
+      XMMATRIX world = XMLoadFloat4x4(&e->World);
+
+      ObjectConstants objConstants;
+      XMStoreFloat4x4(&objConstants.World, XMMatrixTranspose(world));
+
+      currObjectCB->CopyData(e->ObjCBIndex, objConstants);
+
+      // Next FrameResource need to be updated too.
+      e->NumFramesDirty--;
+    }
+  }
+}
+
+void ShapesApp::UpdateMainPassCB(const GameTimer& gt)
+{
+  XMMATRIX view = XMLoadFloat4x4(&mView);
+  XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+  XMMATRIX viewProj = XMMatrixMultiply(view, proj);
+  XMMATRIX invView = XMMatrixInverse(&XMMatrixDeterminant(view), view);
+  XMMATRIX invProj = XMMatrixInverse(&XMMatrixDeterminant(proj), proj);
+  XMMATRIX invViewProj = XMMatrixInverse(&XMMatrixDeterminant(viewProj), viewProj);
+
+  XMStoreFloat4x4(&mMainPassCB.View, XMMatrixTranspose(view));
+  XMStoreFloat4x4(&mMainPassCB.InvView, XMMatrixTranspose(invView));
+  XMStoreFloat4x4(&mMainPassCB.Proj, XMMatrixTranspose(proj));
+  XMStoreFloat4x4(&mMainPassCB.InvProj, XMMatrixTranspose(invProj));
+  XMStoreFloat4x4(&mMainPassCB.ViewProj, XMMatrixTranspose(viewProj));
+  XMStoreFloat4x4(&mMainPassCB.InvViewProj, XMMatrixTranspose(invViewProj));
+  mMainPassCB.EyePosW = mEyePos;
+  mMainPassCB.RenderTargetSize = XMFLOAT2((float)mClientWidth, (float)mClientHeight);
+  mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);
+  mMainPassCB.NearZ = 1.0f;
+  mMainPassCB.FarZ = 1000.0f;
+  mMainPassCB.TotalTime = gt.TotalTime();
+  mMainPassCB.DeltaTime = gt.DeltaTime();
+
+  auto currPassCB = mCurrFrameResource->PassCB.get();
+  currPassCB->CopyData(0, mMainPassCB);
+}
+```
+
+我们相应地更新顶点着色器<a id="page272"/>，以支持这些常量缓冲改动：
+
+```hlsl
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout;
+   
+  // Transform to homogeneous clip space.
+  float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+  vout.PosH = mul(posW, gViewProj);
+   
+  // Just pass vertex color into the pixel shader.
+  vout.Color = vin.Color;
+
+  return vout;
+}
+```
+
+这一调整让每个顶点多了一次向量-矩阵乘法，在算力充裕的现代 GPU 上这点开销可以忽略不计。
+
+着色器期望的资源变了<a id="page273"/>；因此我们需要相应地更新根签名，改为使用两个描述符表（需要两个表是因为这些 CBV 要以不同的频率设置——逐 pass CBV 每次渲染遍只需设置一次，而逐对象 CBV 需要为每个渲染项设置）：
+
+```cpp
+CD3DX12_DESCRIPTOR_RANGE cbvTable0;
+cbvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+
+CD3DX12_DESCRIPTOR_RANGE cbvTable1;
+cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+
+// Root parameter can be a table, root descriptor or root constants.
+CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+
+// Create root CBVs.
+slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable0);
+slotRootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
+
+// A root signature is an array of root parameters.
+CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr, 
+  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+```
+
+**注意**：不要在着色器中滥用常量缓冲。[Thibieroz13] 建议出于性能考虑，数量最好控制在 5 个以内。
+
+</section>
+
+<section className="lesson-section" id="s74">
+<h2>7.4 形状几何</h2>
+
+本节展示如何创建椭球、球体、圆柱和圆锥的几何体。这些形状对绘制天空穹顶、调试、可视化碰撞检测和延迟渲染很有用。例如，在调试测试时，你可能想把所有游戏角色都渲染成球体。
+
+我们把程序化几何生成代码放在 `GeometryGenerator` 类中（GeometryGenerator.h/.cpp）。`GeometryGenerator` 是一个用于生成网格、球体、圆柱和盒子等简单几何形状的工具类，本书的演示程序全程会用到它。这个类在系统内存中生成数据，之后我们必须把想要的数据复制到顶点缓冲和索引缓冲。`GeometryGenerator` 会创建一些将在后续章节用到的顶点数据；当前演示不需要这些数据，因此我们*不*把它们复制到顶点缓冲。`MeshData` 结构是嵌套在 `GeometryGenerator` 内部的一个简单结构，用于存储顶点列表和索引列表：<a id="page274"/>
+
+```cpp
+class GeometryGenerator
+{
+public:
+
+  using uint16 = std::uint16_t;
+  using uint32 = std::uint32_t;
+
+  struct Vertex
+  {
+    Vertex(){}
+    Vertex(
+      const DirectX::XMFLOAT3& p, 
+      const DirectX::XMFLOAT3& n, 
+      const DirectX::XMFLOAT3& t, 
+      const DirectX::XMFLOAT2& uv) :
+      Position(p), 
+      Normal(n), 
+      TangentU(t), 
+      TexC(uv){}
+    Vertex(
+      float px, float py, float pz, 
+      float nx, float ny, float nz,
+      float tx, float ty, float tz,
+      float u, float v) : 
+      Position(px,py,pz), 
+      Normal(nx,ny,nz),
+      TangentU(tx, ty, tz), 
+      TexC(u,v){}
+
+    DirectX::XMFLOAT3 Position;
+    DirectX::XMFLOAT3 Normal;
+    DirectX::XMFLOAT3 TangentU;
+    DirectX::XMFLOAT2 TexC;
+  };
+  struct MeshData
+  {
+    std::vector<Vertex> Vertices;
+    std::vector<uint32> Indices32;
+
+    std::vector<uint16>& GetIndices16()
+    {
+      if(mIndices16.empty())
+      {
+        mIndices16.resize(Indices32.size());
+        for(size_t i = 0; i < Indices32.size(); ++i)
+          mIndices16[i] = static_cast<uint16>(Indices32[i]);
+      }
+
+      return mIndices16;
+    }
+
+    private:
+      std::vector<uint16> mIndices16;
+  };
+
+…
+  
+};<a id="page275"/>
+```
+
+<h3 id="s741">7.4.1 生成圆柱网格</h3>
+
+我们通过指定底半径和顶半径、高度以及切片数和层数来定义一个圆柱，如图 7.1 所示。我们把圆柱拆成三部分：1）侧面几何，2）顶盖几何，3）底盖几何。
+
+<Figure src="images/Fig7-1.jpg" alt="两个由切片和层构成的圆柱线框：左为 8 切片 4 层，右为 16 切片 8 层" figureNumber="图 7.1" caption="图中左侧圆柱有 8 个切片和 4 个层，右侧圆柱有 16 个切片和 8 个层。切片和层控制三角形的密度。注意顶半径和底半径可以不同，这样我们就能创建圆锥形状的物体，而不仅仅是“纯”圆柱。" />
+
+<h4 id="s7411">7.4.1.1 圆柱侧面几何</h4>
+
+我们生成以原点为中心、平行于 *y* 轴的圆柱。由图 7.1 可知，所有顶点都位于圆柱的"环"上：共有 *stackCount* + 1 个环，每个环有 *sliceCount* 个不同顶点。相邻两环的半径差为 $\Delta r = (\text{topRadius} - \text{bottomRadius})/\text{stackCount}$。如果从索引为 0 的底环开始，那么第 *i* 个环的半径为 $r_i = \text{bottomRadius} + i\Delta r$，第 *i* 个环的高度为 $h_i = -\dfrac{h}{2} + i\Delta h$，其中 $\Delta h$ 是层高，$h$ 是圆柱高度。所以基本思路是：遍历每个环，生成位于该环上的顶点。由此得到如下实现：
+
+```cpp
+GeometryGenerator::MeshData 
+GeometryGenerator::CreateCylinder(
+  float bottomRadius, float topRadius, 
+  float height, uint32 sliceCount, uint32 stackCount)
+{
+  MeshData meshData;
+
+  //
+  // Build Stacks.
+  // 
+
+  float stackHeight = height / stackCount;
+
+  // Amount to increment radius as we move up each stack level from
+  // bottom to top.
+  float radiusStep = (topRadius - bottomRadius) / stackCount;
+
+  uint32 ringCount = stackCount+1;
+<a id="page276"/>
+  // Compute vertices for each stack ring starting at the bottom and 
+  // moving up.
+  for(uint32 i = 0; i < ringCount; ++i)
+  {
+    float y = -0.5f*height + i*stackHeight;
+    float r = bottomRadius + i*radiusStep;
+
+    // vertices of ring
+    float dTheta = 2.0f*XM_PI/sliceCount;
+    for(uint32 j = 0; j <= sliceCount; ++j)
+    {
+      Vertex vertex;
+
+      float c = cosf(j*dTheta);
+      float s = sinf(j*dTheta);
+
+      vertex.Position = XMFLOAT3(r*c, y, r*s);
+
+      vertex.TexC.x = (float)j/sliceCount;
+      vertex.TexC.y = 1.0f - (float)i/stackCount;
+
+      // Cylinder can be parameterized as follows, where we introduce v
+      // parameter that goes in the same direction as the v tex-coord
+      // so that the bitangent goes in the same direction as the 
+      // v tex-coord.
+      //   Let r0 be the bottom radius and let r1 be the top radius.
+      //   y(v) = h - hv for v in [0,1].
+      //   r(v) = r1 + (r0-r1)v
+      //
+      //   x(t, v) = r(v)*cos(t)
+      //   y(t, v) = h - hv
+      //   z(t, v) = r(v)*sin(t)
+      // 
+      // dx/dt = -r(v)*sin(t)
+      // dy/dt = 0
+      // dz/dt = +r(v)*cos(t)
+      //
+      // dx/dv = (r0-r1)*cos(t)
+      // dy/dv = -h
+      // dz/dv = (r0-r1)*sin(t)
+
+      // This is unit length.
+      vertex.TangentU = XMFLOAT3(-s, 0.0f, c);
+
+      float dr = bottomRadius-topRadius;
+      XMFLOAT3 bitangent(dr*c, -height, dr*s);
+
+      XMVECTOR T = XMLoadFloat3(&vertex.TangentU);
+      XMVECTOR B = XMLoadFloat3(&bitangent);
+      XMVECTOR N = XMVector3Normalize(XMVector3Cross(T, B));
+      XMStoreFloat3(&vertex.Normal, N);
+
+      meshData.Vertices.push_back(vertex);
+    }
+  }<a id="page277"/>
+```
+
+**注意**：注意，每个环的第一个和最后一个顶点在位置上是重复的，但纹理坐标不重复。我们必须这样做，才能正确地对圆柱应用纹理。
+
+**注意**：实际的 `GeometryGenerator::CreateCylinder` 方法还会创建法向量和纹理坐标等额外的顶点数据，这些数据对以后的演示有用。现在不必关心这些量。
+
+从图 7.2 可以看到，每一层的每个切片对应一个四边形（两个三角形）。图 7.2 显示，第 *i* 层第 *j* 个切片的索引由下式给出：
+
+$$\Delta ABC = \left(i\cdot n + j,\; (i+1)\cdot n + j,\; (i+1)\cdot n + j + 1\right)$$
+
+$$\Delta ACD = \left(i\cdot n + j,\; (i+1)\cdot n + j + 1,\; i\cdot n + j + 1\right)$$
+
+其中 *n* 是每个环的顶点数。所以关键思路是：遍历每一层的每个切片，并应用上面的公式。
+
+```cpp
+  // Add one because we duplicate the first and last vertex per ring
+  // since the texture coordinates are different.
+  uint32 ringVertexCount = sliceCount+1;
+
+  // Compute indices for each stack.
+  for(uint32 i = 0; i < stackCount; ++i)
+  {
+    for(uint32 j = 0; j < sliceCount; ++j)
+    {
+      meshData.Indices32.push_back(i*ringVertexCount + j);
+      meshData.Indices32.push_back((i+1)*ringVertexCount + j);
+      meshData.Indices32.push_back((i+1)*ringVertexCount + j+1);
+
+      meshData.Indices32.push_back(i*ringVertexCount + j);
+      meshData.Indices32.push_back((i+1)*ringVertexCount + j+1);
+      meshData.Indices32.push_back(i*ringVertexCount + j+1);
+    }
+  }
+
+  BuildCylinderTopCap(bottomRadius, topRadius, height, 
+    sliceCount, stackCount, meshData);
+  BuildCylinderBottomCap(bottomRadius, topRadius, height,
+    sliceCount, stackCount, meshData);
+
+  return meshData;
+}
+```
+
+<Figure src="images/Fig7-2.jpg" alt="圆柱侧面索引示意图：标注第 i 环与第 i+1 环上 A、B、C、D 四个顶点构成的四边形" figureNumber="图 7.2" caption="位于第 i 环与第 i + 1 环、第 j 个切片中的顶点 A、B、C、D。" />
+
+<h4 id="s7412">7.4.1.2 端盖几何</h4>
+
+生成端盖几何，就是生成顶环和底环的切片三角形来近似一个圆：<a id="page278"/>
+
+```cpp
+void GeometryGenerator::BuildCylinderTopCap(
+  float bottomRadius, float topRadius, float height,
+  uint32 sliceCount, uint32 stackCount, MeshData& meshData)
+{
+  uint32 baseIndex = (uint32)meshData.Vertices.size();
+
+  float y = 0.5f*height;
+  float dTheta = 2.0f*XM_PI/sliceCount;
+
+  // Duplicate cap ring vertices because the texture coordinates and 
+  // normals differ.
+  for(uint32 i = 0; i <= sliceCount; ++i)
+  {
+    float x = topRadius*cosf(i*dTheta);
+    float z = topRadius*sinf(i*dTheta);
+
+    // Scale down by the height to try and make top cap texture coord
+    // area proportional to base.
+    float u = x/height + 0.5f;
+    float v = z/height + 0.5f;
+
+    meshData.Vertices.push_back( 
+      Vertex(x, y, z, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, u, v) );
+  }
+
+  // Cap center vertex.
+  meshData.Vertices.push_back( 
+    Vertex(0.0f, y, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.5f, 0.5f) );
+
+  // Index of center vertex.
+  uint32 centerIndex = (uint32)meshData.Vertices.size()-1;
+
+  for(uint32 i = 0; i < sliceCount; ++i)
+  {
+    meshData.Indices32.push_back(centerIndex);
+    meshData.Indices32.push_back(baseIndex + i+1);
+    meshData.Indices32.push_back(baseIndex + i);
+  }
+}
+```
+
+底盖的代码是类似的。<a id="page279"/>
+
+<h3 id="s742">7.4.2 生成球体网格</h3>
+
+我们通过指定半径以及切片数和层数来定义一个球体，如图 7.3 所示。生成球体的算法与圆柱非常相似，只是每个环的半径按基于三角函数的非线性方式变化。我们留给读者去研读 `GeometryGenerator::CreateSphere` 的代码。注意，我们可以施加一个非均匀缩放的世界变换把球体变成椭球体。
+
+<Figure src="images/Fig7-3.jpg" alt="用切片和层控制的球体线框" figureNumber="图 7.3" caption="切片和层的概念同样适用于球体，用来控制曲面细分的程度。" />
+
+<h3 id="s743">7.4.3 生成测地球网格</h3>
+
+从图 7.3 可以看到，球体上各个三角形的面积并不相等。这在某些情形下可能不理想。测地球（geosphere）用面积几乎相等、边长也相等的三角形来逼近球体（见图 7.4）。
+
+<Figure src="images/Fig7-4.jpg" alt="二十面体经反复细分并投影到球面形成的测地球" figureNumber="图 7.4" caption="通过反复细分并重新投影到球面上来逼近一个测地球。" />
+
+要生成测地球，我们先从一个二十面体（icosahedron）出发，细分三角形，然后把新顶点投影到给定半径的球面上。我们可以重复这个过程来改善细分程度。
+
+图 7.5 展示了如何把一个三角形细分成四个大小相等的三角形。新顶点只需取原三角形各条边上的中点即可得到。然后把新顶点投影到半径为 *r* 的球面上：先把顶点投影到单位球上<a id="page280"/>，再标量乘以 $r:\ \mathbf{v}\,' = r\,\mathbf{v}/\lVert\mathbf{v}\rVert$。
+
+<Figure src="images/Fig7-5.jpg" alt="一个三角形被细分为四个等面积三角形" figureNumber="图 7.5" caption="把一个三角形细分成四个等面积的三角形。" />
+
+代码如下：
+
+```cpp
+GeometryGenerator::MeshData 
+GeometryGenerator::CreateGeosphere(float radius, uint32 numSubdivisions)
+{
+  MeshData meshData;
+
+  // Put a cap on the number of subdivisions.
+  numSubdivisions = std::min<uint32>(numSubdivisions, 6u);
+
+  // Approximate a sphere by tessellating an icosahedron.
+
+  const float X = 0.525731f; 
+  const float Z = 0.850651f;
+
+  XMFLOAT3 pos[12] = 
+  {
+    XMFLOAT3(-X, 0.0f, Z), XMFLOAT3(X, 0.0f, Z), 
+    XMFLOAT3(-X, 0.0f, -Z), XMFLOAT3(X, 0.0f, -Z),  
+    XMFLOAT3(0.0f, Z, X),  XMFLOAT3(0.0f, Z, -X), 
+    XMFLOAT3(0.0f, -Z, X), XMFLOAT3(0.0f, -Z, -X),  
+    XMFLOAT3(Z, X, 0.0f),  XMFLOAT3(-Z, X, 0.0f), 
+    XMFLOAT3(Z, -X, 0.0f), XMFLOAT3(-Z, -X, 0.0f)
+  };
+
+  uint32 k[60] =
+  {
+    1,4,0, 4,9,0, 4,5,9, 8,5,4, 1,8,4,  
+    1,10,8, 10,3,8, 8,3,5, 3,2,5, 3,7,2,  
+    3,10,7, 10,6,7, 6,11,7, 6,0,11, 6,1,0, 
+    10,1,6, 11,0,9, 2,11,9, 5,2,9, 11,2,7 
+  };
+
+  meshData.Vertices.resize(12);
+  meshData.Indices32.assign(&k[0], &k[60]);
+
+  for(uint32 i = 0; i < 12; ++i)
+    meshData.Vertices[i].Position = pos[i];
+
+  for(uint32 i = 0; i < numSubdivisions; ++i)
+    Subdivide(meshData);
+
+  // Project vertices onto sphere and scale.
+  for(uint32 i = 0; i < meshData.Vertices.size(); ++i)
+  {
+    // Project onto unit sphere.
+    XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&meshData.Vertices[i].Position));
+
+    // Project onto sphere.
+    XMVECTOR p = radius*n;
+
+    XMStoreFloat3(&meshData.Vertices[i].Position, p);
+    XMStoreFloat3(&meshData.Vertices[i].Normal, n);
+
+    // Derive texture coordinates from spherical coordinates.
+    float theta = atan2f(meshData.Vertices[i].Position.z, 
+                meshData.Vertices[i].Position.x);
+
+    // Put in [0, 2pi].
+    if(theta < 0.0f)
+      theta += XM_2PI;
+
+    float phi = acosf(meshData.Vertices[i].Position.y / radius);
+
+    meshData.Vertices[i].TexC.x = theta/XM_2PI;
+    meshData.Vertices[i].TexC.y = phi/XM_PI;
+
+    // Partial derivative of P with respect to theta
+    meshData.Vertices[i].TangentU.x = -radius*sinf(phi)*sinf(theta);
+    meshData.Vertices[i].TangentU.y = 0.0f;
+    meshData.Vertices[i].TangentU.z = +radius*sinf(phi)*cosf(theta);
+
+    XMVECTOR T = XMLoadFloat3(&meshData.Vertices[i].TangentU);
+    XMStoreFloat3(&meshData.Vertices[i].TangentU, XMVector3Normalize(T));
+  }
+
+  return meshData;
+}<a id="page281"/>
+```
+
+</section>
+
+<section className="lesson-section" id="s75">
+<h2>7.5 Shapes 演示</h2>
+
+为了演示球体和圆柱的生成代码，我们实现图 7.6 所示的"Shapes"演示。此外，你还将获得在场景中定位并绘制多个对象的经验（即创建多个世界变换矩阵）。而且，我们把所有场景几何都放进一个大的顶点缓冲和索引缓冲，然后用 `DrawIndexedInstanced` 方法一次绘制一个对象（因为对象之间需要改变世界矩阵）；所以你会看到一个使用 `DrawIndexedInstanced` 的 `StartIndexLocation` 和 `BaseVertexLocation` 参数的例子。<a id="page282"/>
+
+<Figure src="images/Fig7-6.jpg" alt="Shapes 演示截图：一个盒子、地面网格、两列圆柱和成对的球体" figureNumber="图 7.6" caption="“Shapes”演示的截图。" />
+
+<h3 id="s751">7.5.1 顶点缓冲和索引缓冲</h3>
+
+如图 7.6 所示，本演示绘制一个盒子、一个网格、若干圆柱和球体。虽然我们绘制了多个球体和圆柱，但只需要一份球体和圆柱几何。我们只是用不同的世界矩阵把同一个球体和圆柱网格重绘多次；这是*实例化*（instancing）几何的一个例子，可以节省内存。
+
+我们把所有网格的顶点和索引打包进一个顶点缓冲和一个索引缓冲。做法就是把顶点数组和索引数组拼接起来。这意味着绘制某个对象时，我们只绘制顶点缓冲和索引缓冲的一个子集。要用 `ID3D12CommandList::DrawIndexedInstanced` 只绘制几何的一个子集，需要知道三个量（回忆图 6.3 及第 6 章关于它的讨论）：我们需要知道该对象在拼接后的索引缓冲中的起始索引、它的索引数量，还需要知道基顶点位置（base vertex location）——对象第一个顶点相对于拼接后顶点缓冲的索引。回忆一下，基顶点位置是一个整数值，在取顶点之前加到绘制调用中的索引上，使这些索引指向拼接后顶点缓冲中的正确子集。（另见第 5 章习题 2。）
+
+下面的代码展示了如何创建几<a id="page283"/>何缓冲、如何缓存必要的绘制量，以及如何绘制这些对象。
+
+```cpp
+void ShapesApp::BuildShapeGeometry()
+{
+  GeometryGenerator geoGen;
+  GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);
+  GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.0f, 30.0f, 60, 40);
+  GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 20, 20);
+  GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f,  3.0f, 20, 20);
+
+  //
+  // We are concatenating all the geometry into one big vertex/index
+  // buffer. So define the regions in the buffer each submesh covers.
+  //
+
+  // Cache the vertex offsets to each object in the concatenated vertex 
+  // buffer.
+  UINT boxVertexOffset = 0;
+  UINT gridVertexOffset = (UINT)box.Vertices.size();
+  UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
+  UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
+
+  // Cache the starting index for each object in the concatenated index
+  // buffer.
+  UINT boxIndexOffset = 0;
+  UINT gridIndexOffset = (UINT)box.Indices32.size();
+  UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
+  UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
+
+  // Define the SubmeshGeometry that cover different 
+  // regions of the vertex/index buffers.
+
+  SubmeshGeometry boxSubmesh;
+  boxSubmesh.IndexCount = (UINT)box.Indices32.size();
+  boxSubmesh.StartIndexLocation = boxIndexOffset;
+  boxSubmesh.BaseVertexLocation = boxVertexOffset;
+
+  SubmeshGeometry gridSubmesh;
+  gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
+  gridSubmesh.StartIndexLocation = gridIndexOffset;
+  gridSubmesh.BaseVertexLocation = gridVertexOffset;
+
+  SubmeshGeometry sphereSubmesh;
+  sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
+  sphereSubmesh.StartIndexLocation = sphereIndexOffset;
+  sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
+
+  SubmeshGeometry cylinderSubmesh;
+  cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
+  cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
+  cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
+
+  //<a id="page284"/>
+  // Extract the vertex elements we are interested in and pack the
+  // vertices of all the meshes into one vertex buffer.
+  //
+
+  auto totalVertexCount =
+    box.Vertices.size() +
+    grid.Vertices.size() +
+    sphere.Vertices.size() +
+    cylinder.Vertices.size();
+
+  std::vector<Vertex> vertices(totalVertexCount);
+
+  UINT k = 0;
+  for(size_t i = 0; i < box.Vertices.size(); ++i, ++k)
+  {
+    vertices[k].Pos = box.Vertices[i].Position;
+    vertices[k].Color = XMFLOAT4(DirectX::Colors::DarkGreen);
+  }
+
+  for(size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+  {
+    vertices[k].Pos = grid.Vertices[i].Position;
+    vertices[k].Color = XMFLOAT4(DirectX::Colors::ForestGreen);
+  }
+
+  for(size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
+  {
+    vertices[k].Pos = sphere.Vertices[i].Position;
+    vertices[k].Color = XMFLOAT4(DirectX::Colors::Crimson);
+  }
+
+  for(size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
+  {
+    vertices[k].Pos = cylinder.Vertices[i].Position;
+    vertices[k].Color = XMFLOAT4(DirectX::Colors::SteelBlue);
+  }
+
+  std::vector<std::uint16_t> indices;
+  indices.insert(indices.end(), 
+    std::begin(box.GetIndices16()), 
+    std::end(box.GetIndices16()));
+  indices.insert(indices.end(), 
+    std::begin(grid.GetIndices16()), 
+    std::end(grid.GetIndices16()));
+  indices.insert(indices.end(), 
+    std::begin(sphere.GetIndices16()), 
+    std::end(sphere.GetIndices16()));
+  indices.insert(indices.end(), 
+    std::begin(cylinder.GetIndices16()), 
+    std::end(cylinder.GetIndices16()));
+
+  const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+  const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+  auto geo = std::make_unique<MeshGeometry>();
+  geo->Name = "shapeGeo";
+
+  ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+  CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), 
+    vbByteSize);
+
+  ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+  CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), 
+    ibByteSize);
+
+  geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+  geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+
+  geo->VertexByteStride = sizeof(Vertex);
+  geo->VertexBufferByteSize = vbByteSize;
+  geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+  geo->IndexBufferByteSize = ibByteSize;
+
+  geo->DrawArgs["box"] = boxSubmesh;
+  geo->DrawArgs["grid"] = gridSubmesh;
+  geo->DrawArgs["sphere"] = sphereSubmesh;
+  geo->DrawArgs["cylinder"] = cylinderSubmesh;
+
+  mGeometries[geo->Name] = std::move(geo);
+}
+```
+
+上面方法最后一行用到的<a id="page285"/> `mGeometries` 变量定义如下：
+
+```cpp
+std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> mGeometries;
+```
+
+这是本书后面反复使用的一种常见模式。为每个几何体、PSO、纹理、着色器等创建一个新的变量名很麻烦，所以我们使用无序映射（unordered map）来做常数时间查找，并按名字引用对象。再举几个例子：
+
+```cpp
+std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> mGeometries;
+std::unordered_map<std::string, ComPtr<ID3DBlob>> mShaders;
+std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> mPSOs;<a id="page286"/>
+```
+
+<h3 id="s752">7.5.2 渲染项</h3>
+
+现在定义场景的渲染项。注意所有渲染项如何共享同一个 `MeshGeometry`，以及我们如何用 `DrawArgs` 取得 `DrawIndexedInstanced` 参数，以绘制顶点/索引缓冲的一个子区域。
+
+```cpp
+// ShapesApp member variable.
+std::vector<std::unique_ptr<RenderItem>> mAllRitems;
+std::vector<RenderItem*> mOpaqueRitems;
+
+void ShapesApp::BuildRenderItems()
+{
+  auto boxRitem = std::make_unique<RenderItem>();
+  XMStoreFloat4x4(&boxRitem->World, 
+    XMMatrixScaling(2.0f, 2.0f, 2.0f)*XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+  boxRitem->ObjCBIndex = 0;
+  boxRitem->Geo = mGeometries["shapeGeo"].get();
+  boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+  boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
+  boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"]. 
+   StartIndexLocation;
+  boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].
+   BaseVertexLocation;
+  mAllRitems.push_back(std::move(boxRitem));
+
+  auto gridRitem = std::make_unique<RenderItem>();
+  gridRitem->World = MathHelper::Identity4x4();
+  gridRitem->ObjCBIndex = 1;
+  gridRitem->Geo = mGeometries["shapeGeo"].get();
+  gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+  gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
+  gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"]. 
+   StartIndexLocation;
+  gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].
+   BaseVertexLocation;
+  mAllRitems.push_back(std::move(gridRitem));
+
+  // Build the columns and spheres in rows as in Figure 7.6.
+  UINT objCBIndex = 2;
+  for(int i = 0; i < 5; ++i)
+  {
+    auto leftCylRitem = std::make_unique<RenderItem>();
+    auto rightCylRitem = std::make_unique<RenderItem>();
+    auto leftSphereRitem = std::make_unique<RenderItem>();
+    auto rightSphereRitem = std::make_unique<RenderItem>();
+
+    XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i*5.0f);
+    XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i*5.0f);
+
+    XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i*5.0f);<a id="page287"/>
+    XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f 
+      + i*5.0f);
+
+    XMStoreFloat4x4(&leftCylRitem->World, rightCylWorld);
+    leftCylRitem->ObjCBIndex = objCBIndex++;
+    leftCylRitem->Geo = mGeometries["shapeGeo"].get();
+    leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].
+    IndexCount;
+    leftCylRitem->StartIndexLocation = 
+      leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+    leftCylRitem->BaseVertexLocation = 
+      leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+    XMStoreFloat4x4(&rightCylRitem->World, leftCylWorld);
+    rightCylRitem->ObjCBIndex = objCBIndex++;
+    rightCylRitem->Geo = mGeometries["shapeGeo"].get();
+    rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    rightCylRitem->IndexCount = rightCylRitem-> Geo->DrawArgs["cylinder"].
+    IndexCount;
+    rightCylRitem->StartIndexLocation = 
+      rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+    rightCylRitem->BaseVertexLocation = 
+      rightCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+    XMStoreFloat4x4(&leftSphereRitem->World, leftSphereWorld);
+    leftSphereRitem->ObjCBIndex = objCBIndex++;
+    leftSphereRitem->Geo = mGeometries["shapeGeo"].get();
+    leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].
+      IndexCount;
+    leftSphereRitem->StartIndexLocation = 
+      leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+    leftSphereRitem->BaseVertexLocation = 
+      leftSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+    XMStoreFloat4x4(&rightSphereRitem->World, rightSphereWorld);
+    rightSphereRitem->ObjCBIndex = objCBIndex++;
+    rightSphereRitem->Geo = mGeometries["shapeGeo"].get();
+    rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].
+      IndexCount;
+    rightSphereRitem->StartIndexLocation = 
+      rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+    rightSphereRitem->BaseVertexLocation = 
+      rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+    mAllRitems.push_back(std::move(leftCylRitem));
+    mAllRitems.push_back(std::move(rightCylRitem));
+    mAllRitems.push_back(std::move(leftSphereRitem));
+    mAllRitems.push_back(std::move(rightSphereRitem));
+  }
+
+  // All the render items are opaque in this demo.
+  for(auto& e : mAllRitems)
+    mOpaqueRitems.push_back(e.get());
+}<a id="page288"/>
+```
+
+**译者注**：原书上面两处语句有误：`XMStoreFloat4x4(&leftCylRitem->World, rightCylWorld);` 把右侧圆柱的世界矩阵存进了左侧圆柱的渲染项，`XMStoreFloat4x4(&rightCylRitem->World, leftCylWorld);` 则把左侧圆柱的世界矩阵存进了右侧圆柱的渲染项（两个实参互换，与变量名相反）；另外 `rightCylRitem-> Geo->DrawArgs` 中 `>` 后多了一个空格。均按原文照录。
+
+<h3 id="s753">7.5.3 帧资源与常量缓冲视图</h3>
+
+回忆一下，我们有一个 `FrameResource` 的 vector，每个 `FrameResource` 都有一个上传缓冲，用于存储场景中每个渲染项的 pass 常量和常量缓冲。
+
+```cpp
+std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
+std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr; 
+```
+
+如果有 3 个帧资源和 *n* 个渲染项，那么我们就有 3*n* 个对象常量缓冲和 3 个 pass 常量缓冲。因此我们需要 3(*n*+1) 个常量缓冲视图（CBV）。于是我们需要修改 CBV 堆，把额外的描述符包括进来：
+
+**译者注**：原书上一句写作 "we have three 3*n* object constant buffers"（“三个 3n 个对象常量缓冲”），按其数值含义应指 3*n* 个，译文取 3*n*；原书文字照录于此备查。
+
+```cpp
+void ShapesApp::BuildDescriptorHeaps()
+{
+  UINT objCount = (UINT)mOpaqueRitems.size();
+
+  // Need a CBV descriptor for each object for each frame resource,
+  // +1 for the perPass CBV for each frame resource.
+  UINT numDescriptors = (objCount+1) * gNumFrameResources;
+
+  // Save an offset to the start of the pass CBVs. These are the last 3 descriptors.
+  mPassCbvOffset = objCount * gNumFrameResources;
+
+  D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+  cbvHeapDesc.NumDescriptors = numDescriptors;
+  cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  cbvHeapDesc.NodeMask = 0;
+  ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&cbvHeapDesc,
+    IID_PPV_ARGS(&mCbvHeap)));
+}
+```
+
+现在，我们可以用下面的代码填充 CBV 堆：描述符 0 到 *n*−1 存放第 0 个帧资源的对象 CBV，描述符 *n* 到 2*n*−1 存放第 1 个帧资源的对象 CBV，描述符 2*n* 到 3*n*−1 存放第 2 个帧资源的对象 CBV，而描述符 3*n*、3*n*+1 和 3*n*+2 分别存放第 0、1、2 个帧资源的 pass CBV：<a id="page289"/>
+
+```cpp
+void ShapesApp::BuildConstantBufferViews()
+{
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof
+   (ObjectConstants));
+
+  UINT objCount = (UINT)mOpaqueRitems.size();
+
+  // Need a CBV descriptor for each object for each frame resource.
+  for(int frameIndex = 0; frameIndex < gNumFrameResources; ++frameIndex)
+  {
+    auto objectCB = mFrameResources[frameIndex]->ObjectCB->Resource();
+    for(UINT i = 0; i < objCount; ++i)
+    {
+      D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objectCB->GetGPUVirtualAddress();
+
+      // Offset to the ith object constant buffer in the current buffer.
+      cbAddress += i*objCBByteSize;
+
+      // Offset to the object CBV in the descriptor heap.
+      int heapIndex = frameIndex*objCount + i;
+      auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+        mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+      handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
+
+      D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+      cbvDesc.BufferLocation = cbAddress;
+      cbvDesc.SizeInBytes = objCBByteSize;
+
+      md3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+    }
+  }
+
+  UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof
+   (PassConstants));
+
+  // Last three descriptors are the pass CBVs for each frame resource.
+  for(int frameIndex = 0; frameIndex < gNumFrameResources; ++frameIndex)
+  {
+    auto passCB = mFrameResources[frameIndex]->PassCB->Resource();
+
+    // Pass buffer only stores one cbuffer per frame resource.
+    D3D12_GPU_VIRTUAL_ADDRESS cbAddress = passCB->GetGPUVirtualAddress();
+
+    // Offset to the pass cbv in the descriptor heap.
+    int heapIndex = mPassCbvOffset + frameIndex;
+    auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+      mCbvHeap->GetCPUDescriptorHandleForHeapStart());
+    handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+    cbvDesc.BufferLocation = cbAddress;
+    cbvDesc.SizeInBytes = passCBByteSize;
+    
+    md3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+  }
+}
+```
+
+回忆一下，我们可以用<a id="page290"/> `ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart` 方法获得堆中第一个描述符的句柄。然而，现在堆里不止一个描述符，这个方法就不够用了。我们需要能偏移到堆中的其他描述符。为此，我们需要知道在堆中要递增多少才能到达下一个描述符。这是硬件相关的，所以我们必须从设备查询这一信息，而且它取决于堆的类型。回忆一下，我们的 `D3DApp` 类缓存了这些信息：
+
+```cpp
+mRtvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+  D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+mDsvDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+  D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+mCbvSrvUavDescriptorSize = md3dDevice->GetDescriptorHandleIncrementSize(
+  D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+```
+
+知道了描述符递增大小之后，我们就可以用两个 `CD3DX12_CPU_DESCRIPTOR_HANDLE::Offset` 方法之一把句柄偏移 *n* 个描述符：
+
+```cpp
+// Specify the number of descriptors to offset times the descriptor
+// Offset by n descriptors:
+CD3DX12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap->GetCPUDescriptorHandleForHeapStart();
+handle.Offset(n * mCbvSrvDescriptorSize);
+
+// Or equivalently, specify the number of descriptors to offset, 
+// followed by the descriptor increment size:
+CD3DX12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap->GetCPUDescriptorHandleForHeapStart();
+handle.Offset(n, mCbvSrvDescriptorSize);
+```
+
+**注意**：`CD3DX12_GPU_DESCRIPTOR_HANDLE` 也有同样的 `Offset` 方法。
+
+<h3 id="s754">7.5.4 绘制场景</h3>
+
+终于可以绘制渲染项了。唯一有点棘手的地方大概是为要绘制的对象偏移到堆中正确的 CBV。注意渲染项如何存储与之关联的那个常量缓冲的索引。
+
+```cpp
+void ShapesApp::DrawRenderItems(
+  ID3D12GraphicsCommandList* cmdList, 
+  const std::vector<RenderItem*>& ritems)
+{
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+  auto objectCB = mCurrFrameResource->ObjectCB->Resource();
+
+  // For each render item…
+  for(size_t i = 0; i < ritems.size(); ++i)
+  {
+    auto ri = ritems[i];
+
+    cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+    cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+    // Offset to the CBV in the descriptor heap for this object and
+    // for this frame resource.
+    UINT cbvIndex = mCurrFrameResourceIndex*(UINT)mOpaqueRitems.size() 
+      + ri->ObjCBIndex;
+    auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(
+      mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+    cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);
+
+    cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
+
+    cmdList->DrawIndexedInstanced(ri->IndexCount, 1, 
+      ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+  }
+}
+```
+
+`DrawRenderItems` 方法在主 <a id="page291"/> `Draw` 调用中被调用：
+
+```cpp
+void ShapesApp::Draw(const GameTimer& gt)
+{
+  auto cmdListAlloc = mCurrFrameResource->CmdListAlloc;
+
+  // Reuse the memory associated with command recording.
+  // We can only reset when the associated command lists have 
+  // finished execution on the GPU.
+  ThrowIfFailed(cmdListAlloc->Reset());
+
+  // A command list can be reset after it has been added to the
+  // command queue via ExecuteCommandList.
+  // Reusing the command list reuses memory.
+  if(mIsWireframe)
+  {
+    ThrowIfFailed(mCommandList->Reset(
+      cmdListAlloc.Get(), mPSOs["opaque_wireframe"].Get()));
+  }
+  else
+  {
+    ThrowIfFailed(mCommandList->Reset(cmdListAlloc.Get(), mPSOs["opaque"].Get()));
+  }
+
+  mCommandList->RSSetViewports(1, &mScreenViewport);
+  mCommandList->RSSetScissorRects(1, &mScissorRect);
+
+  // Indicate a state transition on the resource usage.
+  mCommandList->ResourceBarrier(1, 
+    &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_PRESENT, 
+    D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+  // Clear the back buffer and depth buffer.
+  mCommandList->ClearRenderTargetView(CurrentBackBufferView(), 
+    Colors::LightSteelBlue, 0, nullptr);
+  mCommandList->ClearDepthStencilView(DepthStencilView(), 
+    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 
+    1.0f, 0, 0, nullptr);
+
+  // Specify the buffers we are going to render to.
+  mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), 
+    true, &DepthStencilView());
+
+  ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };
+  mCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+  mCommandList->SetGraphicsRootSignature(mRootSignature.Get());
+
+  int passCbvIndex = mPassCbvOffset + mCurrFrameResourceIndex;
+  auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(
+    mCbvHeap->GetGPUDescriptorHandleForHeapStart());
+  passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);
+  mCommandList->SetGraphicsRootDescriptorTable(1, passCbvHandle);
+
+  DrawRenderItems(mCommandList.Get(), mOpaqueRitems);
+
+  // Indicate a state transition on the resource usage.
+  mCommandList->ResourceBarrier(1, 
+    &CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_RENDER_TARGET, 
+    D3D12_RESOURCE_STATE_PRESENT));
+
+  // Done recording commands.
+  ThrowIfFailed(mCommandList->Close());
+
+  // Add the command list to the queue for execution.
+  ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+  mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+  // Swap the back and front buffers
+  ThrowIfFailed(mSwapChain->Present(0, 0));
+  mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+
+  // Advance the fence value to mark commands up to this fence point.
+  mCurrFrameResource->Fence = ++mCurrentFence;
+
+  // Add an instruction to the command queue to set a new fence point. 
+  // Because we are on the GPU timeline, the new fence point won't be 
+  // set until the GPU finishes processing all the commands prior to this Signal().
+  mCommandQueue->Signal(mFence.Get(), mCurrentFence);
+}<a id="page293"/>
+```
+
+</section>
+
+<section className="lesson-section" id="s76">
+<h2>7.6 根签名进阶</h2>
+
+我们在上一章 §6.6.5 中介绍过根签名。根签名定义了在发出绘制调用之前需要把哪些资源绑定到管线，以及这些资源如何映射到着色器输入寄存器。需要绑定哪些资源，取决于当前着色器程序期望什么资源。创建 PSO 时，会对根签名与着色器程序的组合进行验证。
+
+<h3 id="s761">7.6.1 根参数</h3>
+
+回忆一下，根签名由一个根参数数组定义。到目前为止，我们只创建过存储描述符表的根参数。但实际上，根参数可以是三种类型之一：
+
+1. *描述符表*（descriptor table）：期望一个描述符表，它引用堆中一段连续的范围，用于标识要绑定的资源。
+2. *根描述符*（root descriptor，内联描述符）：期望直接设置一个描述符来标识要绑定的资源；该描述符不必位于堆中。只有指向常量缓冲的 CBV，以及指向缓冲的 SRV/UAV 可以作为根描述符绑定。特别地，这意味着指向纹理的 SRV 不能作为根描述符绑定。
+3. *根常量*（root constant）：期望直接绑定一个 32 位常量值列表。
+
+出于性能考虑，根签名中最多只能放 64 个 DWORD。三种根参数的开销如下：
+
+1. 描述符表：1 个 DWORD
+2. 根描述符：2 个 DWORD
+3. 根常量：每 32 位常量 1 个 DWORD
+
+只要不超过 64 个 DWORD 的限制，我们可以创建任意的根签名。根常量非常方便，但它们的开销增长很快。例如，如果我们需要的常量数据只是一个世界-视图-投影矩阵，可以用 16 个根常量来存储它，这样就不用费心去搞常量缓冲和 CBV 堆。但这会吃掉根签名预算的四分之一。使用根描述符只需 2 个 DWORD，而描述符表只需 1 个 DWORD。随着应用程序越来越复杂，常量缓冲数据会越来越大，仅靠根常量恐怕行不通。在真实世界的应用中，你很可能会把三种根参数组合使用。
+
+在代码中，根参数通过填写一个 <a id="page294"/> `CD3DX12_ROOT_PARAMETER` 结构来描述。正如我们在 CD3DX 代码中看到的，`CD3DX12_ROOT_PARAMETER` 扩展了 `D3D12_ROOT_PARAMETER`，并添加了一些辅助初始化函数。
+
+```cpp
+typedef struct D3D12_ROOT_PARAMETER
+{
+  D3D12_ROOT_PARAMETER_TYPE ParameterType;
+  union 
+  {
+    D3D12_ROOT_DESCRIPTOR_TABLE DescriptorTable;
+    D3D12_ROOT_CONSTANTS Constants;
+    D3D12_ROOT_DESCRIPTOR Descriptor;
+  };
+  D3D12_SHADER_VISIBILITY ShaderVisibility;
+}D3D12_ROOT_PARAMETER;
+```
+
+1. `ParameterType`：下列枚举类型的一个成员，指示根参数的类型（描述符表、根常量、CBV 根描述符、SRV 根描述符、UAV 根描述符）。
+
+   ```cpp
+     enum D3D12_ROOT_PARAMETER_TYPE
+     {
+       D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE = 0,
+       D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS= 1,
+       D3D12_ROOT_PARAMETER_TYPE_CBV    = 2,
+       D3D12_ROOT_PARAMETER_TYPE_SRV    = 3 ,
+       D3D12_ROOT_PARAMETER_TYPE_UAV    = 4 
+     }     D3D12_ROOT_PARAMETER_TYPE;
+   ```
+
+2. `DescriptorTable`/`Constants`/`Descriptor`：描述根参数的结构。填写联合中的哪个成员取决于根参数类型。§7.6.2、§7.6.3 和 §7.6.4 讨论这些结构。
+3. `ShaderVisibility`：下列枚举的一个成员，指定该根参数对哪些着色器程序可见。本书中我们通常指定 `D3D12_SHADER_VISIBILITY_ALL`。不过，如果我们知道某个资源只会在像素着色器中使用，就可以指定 `D3D12_SHADER_VISIBILITY_PIXEL`。限制根参数的可见性有可能带来一些优化。
+
+   ```cpp
+     enum D3D12_SHADER_VISIBILITY
+     {
+       D3D12_SHADER_VISIBILITY_ALL    = 0,
+       D3D12_SHADER_VISIBILITY_VERTEX    = 1,
+       D3D12_SHADER_VISIBILITY_HULL    = 2,
+       D3D12_SHADER_VISIBILITY_DOMAIN    = 3,
+       D3D12_SHADER_VISIBILITY_GEOMETRY    = 4,
+       D3D12_SHADER_VISIBILITY_PIXEL    = 5
+     }     D3D12_SHADER_VISIBILITY;<a id="page295"/>
+   ```
+
+<h3 id="s762">7.6.2 描述符表</h3>
+
+描述符表根参数还要通过填写 `D3D12_ROOT_PARAMETER` 的 `DescriptorTable` 成员来进一步定义。
+
+```cpp
+typedef struct D3D12_ROOT_DESCRIPTOR_TABLE
+{
+  UINT NumDescriptorRanges;
+  const D3D12_DESCRIPTOR_RANGE *pDescriptorRanges;
+}     D3D12_ROOT_DESCRIPTOR_TABLE;
+```
+
+它只是指定一个 `D3D12_DESCRIPTOR_RANGE` 数组，以及数组中范围的数量。
+
+`D3D12_DESCRIPTOR_RANGE` 结构定义如下：
+
+```cpp
+typedef struct D3D12_DESCRIPTOR_RANGE
+{
+  D3D12_DESCRIPTOR_RANGE_TYPE RangeType;
+  UINT NumDescriptors;
+  UINT BaseShaderRegister;
+  UINT RegisterSpace;
+  UINT OffsetInDescriptorsFromTableStart;
+}     D3D12_DESCRIPTOR_RANGE;
+```
+
+1. `RangeType`：下列枚举类型的一个成员，指示该范围中描述符的类型：
+
+   ```cpp
+     enum D3D12_DESCRIPTOR_RANGE_TYPE
+     {
+       D3D12_DESCRIPTOR_RANGE_TYPE_SRV    = 0,
+       D3D12_DESCRIPTOR_RANGE_TYPE_UAV    = 1,
+       D3D12_DESCRIPTOR_RANGE_TYPE_CBV    = 2 ,
+       D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER = 3 
+     }     D3D12_DESCRIPTOR_RANGE_TYPE;
+   ```
+
+   **注意**：采样器描述符将在纹理一章中讨论。
+
+2. `NumDescriptors`：该范围中的描述符数量。
+3. `BaseShaderRegister`：参数绑定到的基着色器寄存器。例如，如果你把 NumDescriptors 设为 3、把 BaseShaderRegister 设为 1，且范围类型是 CBV（常量缓冲），那么就会绑定到 HLSL 寄存器
+
+   ```cpp
+     cbuffer cbA : register(b1) {…};
+     cbuffer cbB : register(b2) {…};
+     cbuffer cbC : register(b3) {…};
+   ```
+
+4. `RegisterSpace:` 这个属性为你提供了指定着色器寄存器的另一个维度。例如，下面两个寄存器看似都占用寄存器槽 t0，但它们是不同的寄存器<a id="page296"/>，因为它们位于不同的空间：   Texture2D gDiffuseMap : register(t0, space0);
+
+   ```cpp
+     Texture2D gNormalMap : register(t0, space1);
+   ```
+
+   如果着色器中没有显式指定空间寄存器，它会自动默认为 space0。我们通常使用 space0，但对资源数组来说，使用多个空间很有用；而且如果数组大小未知，就必须使用多个空间。
+5. `OffsetInDescriptorsFromTableStart`：该描述符范围相对于表起点的偏移。见下面的例子。
+
+初始化为描述符表的槽参数接受一个 `D3D12_DESCRIPTOR_RANGE` 实例数组，因为我们可以在一个表中混用各种类型的描述符。假设我们按如下三个范围的顺序定义一个包含六个描述符的表：两个 CBV、三个 SRV 和一个 UAV。这个表将这样定义：
+
+```cpp
+// Create a table with 2 CBVs, 3 SRVs and 1 UAV.
+CD3DX12_DESCRIPTOR_RANGE descRange[3];
+descRange[0].Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_CBV, // descriptor type
+  2, // descriptor count
+  0, // base shader register arguments are bound to for this root 
+     // parameter
+  0, // register space
+  0);// offset from start of table
+descRange[1].Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_SRV, // descriptor type
+  3, // descriptor count
+  0, // base shader register arguments are bound to for this root 
+     // parameter
+  0, // register space
+  2);// offset from start of table
+descRange[2].Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_UAV, // descriptor type
+  1, // descriptor count
+  0, // base shader register arguments are bound to for this root 
+     // parameter
+  0, // register space
+  5);// offset from start of table
+
+slotRootParameter[0].InitAsDescriptorTable(
+  3, descRange, D3D12_SHADER_VISIBILITY_ALL);
+```
+
+照例，有一个继承自 `D3D12_DESCRIPTOR_RANGE` 的 `CD3DX12_DESCRIPTOR_RANGE` 变体，我们使用下面的初始化函数：
+
+```cpp
+void CD3DX12_DESCRIPTOR_RANGE::Init(
+    D3D12_DESCRIPTOR_RANGE_TYPE rangeType,
+    UINT numDescriptors,
+    UINT baseShaderRegister,
+    UINT registerSpace = 0,
+    UINT offsetInDescriptorsFromTableStart =
+    D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);
+```
+
+这个表覆盖六个描述符，<a id="page297"/>应用程序应绑定描述符堆中一段连续的描述符范围，其中包含两个 CBV，后跟三个 SRV，再跟一个 UAV。我们看到所有范围的类型都从寄存器 0 开始，但没有"重叠"冲突，因为 CBV、SRV 和 UAV 各自绑定到不同的寄存器类型，而每种类型都从寄存器 0 开始。
+
+我们可以指定 `D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;` 让 Direct3D 为我们计算 `OffsetInDescriptorsFromTableStart` 的值；这会指示 Direct3D 用表中前面各范围的描述符数量来计算偏移。注意，`CD3DX12_DESCRIPTOR_RANGE::Init` 方法默认把寄存器空间设为 0，并把 `OffsetInDescriptorsFromTableStart` 默认为 `D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND.`
+
+<h3 id="s763">7.6.3 根描述符</h3>
+
+根描述符根参数还要通过填写 `D3D12_ROOT_PARAMETER` 的 `Descriptor` 成员来进一步定义。
+
+```cpp
+typedef struct D3D12_ROOT_DESCRIPTOR
+{
+  UINT ShaderRegister;
+  UINT RegisterSpace;
+}D3D12_ROOT_DESCRIPTOR;
+```
+
+1. `ShaderRegister`：描述符将绑定到的着色器寄存器。例如，如果你指定 2，且该根参数是一个 CBV，那么该参数就映射到 `register(b2):` 中的常量缓冲
+
+   ```cpp
+     cbuffer cbPass : register(b2) {…};
+   ```
+
+2. `RegisterSpace`：见 `D3D12_DESCRIPTOR_RANGE::RegisterSpace`。
+
+与描述符表要求我们在描述符堆中设置描述符句柄不同，设置根描述符只需直接绑定资源的虚拟地址。
+
+```cpp
+UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof
+  (ObjectConstants));
+
+D3D12_GPU_VIRTUAL_ADDRESS objCBAddress =  objectCB->GetGPUVirtualAddress();
+
+// Offset to the constants for this object in the buffer.
+objCBAddress += ri->ObjCBIndex*objCBByteSize;
+
+cmdList->SetGraphicsRootConstantBufferView(
+   0, // root parameter index
+   objCBAddress);<a id="page298"/>
+```
+
+<h3 id="s764">7.6.4 根常量</h3>
+
+根常量根参数还要通过填写 `D3D12_ROOT_PARAMETER` 的 `Constants` 成员来进一步定义。
+
+**译者注**：原书此句开头写作 "A descriptor table root parameter…"（描述符表根参数），按本节主题应为根常量根参数，此处按原文照录。
+
+```cpp
+  typedef struct D3D12_ROOT_CONSTANTS
+  {
+    UINT ShaderRegister;
+    UINT RegisterSpace;
+    UINT Num32BitValues;
+  }     D3D12_ROOT_CONSTANTS;
+```
+
+1. `ShaderRegister`：见 `D3D12_ROOT_DESCRIPTOR::ShaderRegister`。
+2. `RegisterSpace`：见 `D3D12_DESCRIPTOR_RANGE::RegisterSpace`。
+3. `Num32BitValues`：该根参数期望的 32 位常量的数量。
+
+从着色器的角度看，设置根常量仍然把数据映射到一个常量缓冲。下面的例子说明了这一点：
+
+```cpp
+// Application code: Root signature definition.
+CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+slotRootParameter[0].InitAsConstants(12, 0);
+
+// A root signature is an array of root parameters.
+CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter,
+  0, nullptr,
+  D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+// Application code: to set the constants to register b0.
+auto weights = CalcGaussWeights(2.5f);
+int blurRadius = (int)weights.size() / 2;
+
+cmdList->SetGraphicsRoot32BitConstants(0, 1, &blurRadius, 0);
+cmdList->SetGraphicsRoot32BitConstants(0, (UINT)weights.size(), weights.data(), 1);
+
+// HLSL code.
+cbuffer cbSettings : register(b0)
+{
+    // We cannot have an array entry in a constant buffer that gets
+    // mapped onto root constants, so list each element. 
+    
+    int gBlurRadius;
+
+    // Support up to 11 blur weights.
+    float w0;
+    float w1;
+    float w2;
+    float w3;
+    float w4;
+    float w5;
+    float w6;
+    float w7;
+    float w8;
+    float w9;
+    float w10;
+};
+```
+
+`ID3D12GraphicsCommandList::SetGraphicsRoot32BitConstants` 方法有如下原型：<a id="page299"/>
+
+```cpp
+void ID3D12GraphicsCommandList::SetGraphicsRoot32BitConstants( 
+  UINT RootParameterIndex,
+  UINT Num32BitValuesToSet,
+  const void *pSrcData,
+  UINT DestOffsetIn32BitValues);
+```
+
+1. `RootParameterIndex`：我们正在设置的根参数的索引。
+2. `Num32BitValuesToSet`：要设置的 32 位值的数量。
+3. `pSrcData`：指向要设置的 32 位值数组的指针。
+4. `DestOffsetIn32BitValues`：常量缓冲中以 32 位值为单位的偏移。
+
+与根描述符一样，设置根常量就不再需要描述符堆了。
+
+<h3 id="s765">7.6.5 一个更复杂的根签名例子</h3>
+
+考虑一个期望下列资源的着色器：
+
+```hlsl
+Texture2D gDiffuseMap : register(t0);
+
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+  float4x4 gTexTransform;
+};
+
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerObjectPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+  float4 gAmbientLight;
+  Light gLights[MaxLights];
+};
+
+cbuffer cbMaterial : register(b2)
+{
+  float4  gDiffuseAlbedo;
+  float3  gFresnelR0;
+  float  gRoughness;
+  float4x4 gMatTransform;
+};
+```
+
+这个着色器的根签名<a id="page300"/>可以这样描述：
+
+```cpp
+CD3DX12_DESCRIPTOR_RANGE texTable;
+  texTable.Init(
+  D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 
+  1, // number of descriptors
+  0); // register t0
+
+  // Root parameter can be a table, root descriptor or root constants.
+  CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+
+  // Perfomance TIP: Order from most frequent to least frequent.
+  slotRootParameter[0].InitAsDescriptorTable(1, 
+    &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+  slotRootParameter[1].InitAsConstantBufferView(0); // register b0
+  slotRootParameter[2].InitAsConstantBufferView(1); // register b1
+  slotRootParameter[3].InitAsConstantBufferView(2); // register b2
+
+  // A root signature is an array of root parameters.
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,
+    0, nullptr,
+    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+```
+
+**译者注**：上面代码注释中的 "Perfomance" 为原书拼写笔误（应为 Performance），此处按原文照录。
+
+<h3 id="s766">7.6.6 根参数版本管理</h3>
+
+*根实参*（root arguments）指我们传给根参数的实际值。考虑下面的代码，其中我们在绘制调用之间更改根实参（本例中只有一个描述符表）：
+
+```cpp
+for(size_t i = 0; i < mRitems.size(); ++i)
+{
+  const auto& ri = mRitems[i];
+
+  …
+
+  // Offset to the CBV for this frame and this render item.
+  int cbvOffset = mCurrFrameResourceIndex*(int)mRitems.size();
+  cbvOffset += ri.CbIndex;
+  cbvHandle.Offset(cbvOffset, mCbvSrvDescriptorSize);
+
+  // Identify descriptors to use for this draw call.
+  cmdList->SetGraphicsRootDescriptorTable(0, cbvHandle);
+
+  cmdList->DrawIndexedInstanced(
+    ri.IndexCount, 1, 
+    ri.StartIndexLocation, 
+    ri.BaseVertexLocation, 0);
+}
+```
+
+每个绘制调用都会以<a id="page301"/>绘制调用时刻已设置的根实参状态来执行。这之所以可行，是因为硬件会为每个绘制调用自动保存一份当前根实参状态的快照。换句话说，根实参对每个绘制调用都是自动做版本管理的。
+
+注意，根签名提供的字段可以多于着色器实际使用的字段。例如，如果根签名在根参数 2 中指定了一个根 CBV，但着色器并没有使用那个常量缓冲，那么只要根签名确实提供了着色器使用的全部资源，这个组合就是有效的。
+
+出于性能考虑，我们应尽量让根签名保持小。原因之一是每个绘制调用对根实参的自动版本管理：根签名越大，根实参的这些快照就越大。此外，SDK 文档建议根参数在根签名中应按从最常更改到最不常更改的顺序排列。Direct3D 12 文档还建议尽量避免切换根签名，所以在你创建的多个 PSO 之间共享同一个根签名是个好主意。特别是，使用一个能配合多个着色器程序的"超级"根签名可能有益，即使并非所有着色器都用到了根签名定义的全部参数。另一方面，这也取决于这个"超级"根签名需要有多大才能起作用；如果它太大，可能会抵消掉不切换根签名带来的收益。
+
+</section>
+
+<section className="lesson-section" id="s77">
+<h2>7.7 Land 与 Waves 演示</h2>
+
+本节展示如何构建图 7.7 所示的"Land and Waves"演示。这个演示以程序化方式构造一个三角形网格，并偏移顶点高度来创建地形。此外，它还用另一个三角形网格表示水面，并对顶点高度做动画来产生波浪。这个演示还改用根描述符来处理常量缓冲，这让我们可以不再使用 CBV 描述符堆。
+
+<Figure src="images/Fig7-7.jpg" alt="Land and Waves 演示截图：彩色山丘地形与蓝色波浪水面" figureNumber="图 7.7" caption="“Lands and Waves”演示的截图。由于我们还没有光照，很难看出波浪的形状。按住数字键“1”以线框模式查看场景，可以更清楚地看到波浪。" />
+
+一个"漂亮的"实值函数 <a id="page302"/> $y = f(x,z)$ 的图像是一个曲面。我们可以这样近似这个曲面：在 *xz* 平面中构造一个网格，其中每个四边形由两个三角形构成，然后对每个网格点应用该函数；见图 7.8。
+
+<Figure src="images/Fig7-8.jpg" alt="上图：xz 平面上的网格；下图：对网格点应用高度函数得到山丘曲面" figureNumber="图 7.8" caption="（上）在 xz 平面上铺设一个网格。（下）对每个网格点应用函数 f(x, z) 求出 y 坐标。把点 (x, f(x, z), z) 描出来，就得到一个曲面的图像。" />
+
+<h3 id="s771">7.7.1 生成网格顶点</h3>
+
+所以主要任务是如何在 *xz* 平面中构建网格。一个 *m* × *n* 个顶点的网格产生 (*m* – 1) × (*n* – 1) 个四边形（或称单元格），如图 7.9 所示。每个单元格由两个三角形覆盖，所以总共有 2 (*m* – 1) × (*n* – 1) 个三角形。如果网格宽度为 *w*、深度为 *d*，那么沿 *x* 轴的单元格间距为 $dx = w/(n - 1)$，沿 *z* 轴的单元格间距为 $dz = d/(m - 1)$。生成顶点时，我们从左上角开始，逐行递增地计算顶点坐标。*xz* 平面中第 *ij* 个网格顶点的坐标由下式给出：<a id="page303"/>
+
+$$\mathbf{v}_{ij} = \left[-0.5w + j\cdot dx,\quad 0.0,\quad 0.5d - i\cdot dz\right]$$
+
+<Figure src="images/Fig7-9.jpg" alt="网格构造示意图：标注行、列与单元格" figureNumber="图 7.9" caption="网格的构造。" />
+
+下面的代码生成网格顶点：
+
+```cpp
+GeometryGenerator::MeshData 
+GeometryGenerator::CreateGrid(float width, float depth, uint32 m, uint32 n)
+{
+  MeshData meshData;
+
+  uint32 vertexCount = m*n;
+  uint32 faceCount   = (m-1)*(n-1)*2;
+
+  float halfWidth = 0.5f*width;
+  float halfDepth = 0.5f*depth;
+
+  float dx = width / (n-1);
+  float dz = depth / (m-1);
+
+  float du = 1.0f / (n-1);
+  float dv = 1.0f / (m-1);
+
+  meshData.Vertices.resize(vertexCount);
+  for(uint32 i = 0; i < m; ++i)
+  {
+    float z = halfDepth - i*dz;
+    for(uint32 j = 0; j < n; ++j)
+    {
+      float x = -halfWidth + j*dx;
+
+      meshData.Vertices[i*n+j].Position = XMFLOAT3(x, 0.0f, z);
+      meshData.Vertices[i*n+j].Normal   = XMFLOAT3(0.0f, 1.0f, 0.0f);
+      meshData.Vertices[i*n+j].TangentU = XMFLOAT3(1.0f, 0.0f, 0.0f);
+
+      // Stretch texture over grid.
+      meshData.Vertices[i*n+j].TexC.x = j*du;
+      meshData.Vertices[i*n+j].TexC.y = i*dv;
+    }
+  }<a id="page304"/>
+```
+
+<h3 id="s772">7.7.2 生成网格索引</h3>
+
+计算完顶点之后，我们需要通过指定索引来定义网格三角形。为此，我们遍历每个四边形，同样从左上角开始逐行进行，计算出定义该四边形两个三角形的索引；参照图 7.10，对于一个 *m* × *n* 个顶点的网格，两个三角形的线性数组索引计算如下：
+
+$$\Delta ABC = \left(i\cdot n + j,\quad i\cdot n + j + 1,\ (i+1)\cdot n + j\right)$$
+
+$$\Delta CBD = \left((i+1)\cdot n + j,\ i\cdot n + j + 1,\ (i+1)\cdot n + j + 1\right)$$
+
+<Figure src="images/Fig7-10.jpg" alt="网格单元格顶点索引示意图：标注第 ij 个四边形的 A、B、C、D 顶点" figureNumber="图 7.10" caption="第 ij 个四边形各顶点的索引。" />
+
+对应的代码：<a id="page305"/>
+
+```cpp
+  meshData.Indices32.resize(faceCount*3); // 3 indices per face
+
+  // Iterate over each quad and compute indices.
+  uint32 k = 0;
+  for(uint32 i = 0; i < m-1; ++i)
+  {
+    for(uint32 j = 0; j < n-1; ++j)
+    {
+      meshData.Indices32[k]   = i*n+j;
+      meshData.Indices32[k+1] = i*n+j+1;
+      meshData.Indices32[k+2] = (i+1)*n+j;
+
+      meshData.Indices32[k+3] = (i+1)*n+j;
+      meshData.Indices32[k+4] = i*n+j+1;
+      meshData.Indices32[k+5] = (i+1)*n+j+1;
+
+      k += 6; // next quad
+    }
+  }
+
+  return meshData;
+}
+```
+
+<h3 id="s773">7.7.3 应用高度函数</h3>
+
+创建网格之后，我们就可以从 `MeshData` 网格中提取想要的顶点元素，把平坦的网格变成表示山丘的曲面，并根据顶点海拔（*y* 坐标）为每个顶点生成颜色。
+
+```cpp
+// Not to be confused with GeometryGenerator::Vertex.
+struct Vertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT4 Color;
+};
+void LandAndWavesApp::BuildLandGeometry()
+{
+  GeometryGenerator geoGen;
+  GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.0f, 160.0f, 50, 50);
+
+  //
+  // Extract the vertex elements we are interested and apply the height
+  // function to each vertex. In addition, color the vertices based on
+  // their height so we have sandy looking beaches, grassy low hills, 
+  // and snow mountain peaks.
+  //
+
+  std::vector<Vertex> vertices(grid.Vertices.size());
+  for(size_t i = 0; i < grid.Vertices.size(); ++i)
+  {
+    auto& p = grid.Vertices[i].Position;
+    vertices[i].Pos = p;
+    vertices[i].Pos.y = GetHillsHeight(p.x, p.z);
+
+    // Color the vertex based on its height.
+    if(vertices[i].Pos.y < -10.0f)
+    {
+      // Sandy beach color.
+      vertices[i].Color = XMFLOAT4(1.0f, 0.96f, 0.62f, 1.0f);
+    }
+    else if(vertices[i].Pos.y < 5.0f)
+    {
+      // Light yellow-green.
+      vertices[i].Color = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
+    }
+    else if(vertices[i].Pos.y < 12.0f)
+    {
+      // Dark yellow-green.
+      vertices[i].Color = XMFLOAT4(0.1f, 0.48f, 0.19f, 1.0f);
+    }
+    else if(vertices[i].Pos.y < 20.0f)
+    {
+      // Dark brown.
+      vertices[i].Color = XMFLOAT4(0.45f, 0.39f, 0.34f, 1.0f);
+    }
+    else
+    {
+      // White snow.
+      vertices[i].Color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+  }
+  
+  const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+
+  std::vector<std::uint16_t> indices = grid.GetIndices16();
+  const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+  auto geo = std::make_unique<MeshGeometry>();
+  geo->Name = "landGeo";
+
+  ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+  CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+  ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+  CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+  geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(), 
+    mCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+  geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(), 
+    mCommandList.Get(), indices.data(), ibByteSize,  geo->IndexBufferUploader);
+
+  geo->VertexByteStride = sizeof(Vertex);
+  geo->VertexBufferByteSize = vbByteSize;
+  geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+  geo->IndexBufferByteSize = ibByteSize;
+
+  SubmeshGeometry submesh;
+  submesh.IndexCount = (UINT)indices.size();
+  submesh.StartIndexLocation = 0;
+  submesh.BaseVertexLocation = 0;
+
+  geo->DrawArgs["grid"] = submesh;
+
+  mGeometries["landGeo"] = std::move(geo);
+}
+```
+
+本演示使用的函数 *f*(*x*, *z*) 由下式给出：<a id="page307"/>
+
+```cpp
+float LandAndWavesApp::GetHeight(float x, float z)const
+{
+  return 0.3f*(z*sinf(0.1f*x) + x*cosf(0.1f*z));
+}
+```
+
+**译者注**：上面代码中的 `GetHillsHeight(p.x, p.z)` 调用与本处定义的方法名 `GetHeight` 不一致（原书笔误），此处按原文照录。
+
+它的图像看起来有点像有山丘和低谷的地形（见图 7.7）。
+
+<h3 id="s774">7.7.4 根 CBV</h3>
+
+我们对"Land and Waves"演示做的另一个不同于之前"Shapes"演示的改动是：使用根描述符，从而可以直接绑定 CBV，不必使用描述符堆。为此需要做如下改动：
+
+1. 根签名需要改为使用两个根 CBV，而不是两个描述符表。
+2. 不需要 CBV 堆，也不需要用描述符填充它。
+3. 绑定根描述符有一套新的语法。
+
+新的根签名定义如下：
+
+```cpp
+// Root parameter can be a table, root descriptor or root constants.
+CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+
+// Create root CBV.
+slotRootParameter[0].InitAsConstantBufferView(0); // per-object CBV
+slotRootParameter[1].InitAsConstantBufferView(1); // per-pass CBV
+
+// A root signature is an array of root parameters.
+CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, 
+  nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+```
+
+注意，我们用<a id="page308"/> `InitAsConstantBufferView` 辅助方法创建根 CBV；参数指定该参数绑定到的着色器寄存器（在上面的代码中是着色器常量缓冲寄存器"b0"和"b1"）。
+
+现在，我们用下面的方法把 CBV 作为实参绑定到根描述符：
+
+```cpp
+void 
+ID3D12GraphicsCommandList::SetGraphicsRootConstantBufferView(
+  UINT RootParameterIndex,
+  D3D12_GPU_VIRTUAL_ADDRESS BufferLocation); 
+```
+
+1. `RootParameterIndex`：我们要把 CBV 绑定到的根参数的索引。
+2. `BufferLocation`：包含常量缓冲数据的资源的虚拟地址。
+
+有了这一改动，我们的绘制代码现在如下：
+
+```cpp
+void LandAndWavesApp::Draw(const GameTimer& gt)
+{
+  […]
+
+  // Bind per-pass constant buffer. We only need to do this once per-
+  // pass.
+  auto passCB = mCurrFrameResource->PassCB->Resource();
+  mCommandList->SetGraphicsRootConstantBufferView(1, passCB-
+    >GetGPUVirtualAddress());
+
+  DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+
+  […]
+}
+
+void LandAndWavesApp::DrawRenderItems(
+  ID3D12GraphicsCommandList* cmdList, 
+  const std::vector<RenderItem*>& ritems)
+{
+  UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof
+    (ObjectConstants));
+
+  auto objectCB = mCurrFrameResource->ObjectCB->Resource();
+
+  // For each render item…
+  for(size_t i = 0; i < ritems.size(); ++i)
+  {
+    auto ri = ritems[i];
+
+    cmdList->IASetVertexBuffers(0, 1, &ri->Geo->VertexBufferView());
+    cmdList->IASetIndexBuffer(&ri->Geo->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+    D3D12_GPU_VIRTUAL_ADDRESS objCBAddress =  objectCB->GetGPUVirtualAddress();
+    objCBAddress += ri->ObjCBIndex*objCBByteSize;
+
+    cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+    cmdList->DrawIndexedInstanced(ri->IndexCount, 1, 
+      ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+  }
+}<a id="page309"/>
+```
+
+<h3 id="s775">7.7.5 动态顶点缓冲</h3>
+
+到目前为止，我们把顶点存储在默认缓冲资源中。当我们想存储静态几何时使用这种资源；也就是说，几何不会变化——我们设置好数据，GPU 读取并绘制这些数据。动态顶点缓冲则是指我们频繁更改顶点数据的情形，比如每帧更改。例如，假设我们在做一个波浪模拟，求解波动方程得到解函数 *f*(*x*, *z*, *t*)。这个函数表示 *t* 时刻 *xz* 平面每一点处的波高。如果要用这个函数绘制波浪，我们会像处理峰谷那样使用一个三角形网格，并对每个网格点应用 *f*(*x*, *z*, *t*) 来获得网格点处的波高。由于这个函数还依赖于时间 *t*（即波浪表面随时间变化），我们需要在短时间后（比如每隔 1/30 秒）重新对网格点应用该函数，以获得平滑的动画。因此，我们需要一个动态顶点缓冲，以便随着时间推移更新三角形网格顶点的高度。另一种会用到动态顶点缓冲的情形是具有复杂物理和碰撞检测的粒子系统。每帧我们都要在 CPU 上做物理和碰撞检测来求出粒子的新位置。由于粒子位置每帧都在变，我们需要一个动态顶点缓冲来更新粒子位置以便每帧绘制。
+
+我们在用上传缓冲更新常量缓冲数据时，已经见过每帧把数据从 CPU 上传到 GPU 的例子。我们可以应用相同的技术，使用我们的 `UploadBuffer` 类，但这次不是存储常量缓冲数组，而是存储顶点数组：
+
+```cpp
+  std::unique_ptr<UploadBuffer<Vertex>> WavesVB = nullptr;
+
+  WavesVB = std::make_unique<UploadBuffer<Vertex>>(
+    device, waveVertCount, false);
+```
+
+因为我们需要每帧把新内容从 CPU 上传到波浪的动态顶点缓冲，所以动态顶点缓冲需要作为帧资源。否则，我们可能在 GPU 还没处理完上一帧之前就改写了内存。
+
+每帧，我们运行波浪模拟并如下更新<a id="page310"/>顶点缓冲：
+
+```cpp
+void LandAndWavesApp::UpdateWaves(const GameTimer& gt)
+{
+  // Every quarter second, generate a random wave.
+  static float t_base = 0.0f;
+  if((mTimer.TotalTime() - t_base) >= 0.25f)
+  {
+    t_base += 0.25f;
+
+    int i = MathHelper::Rand(4, mWaves->RowCount() - 5);
+    int j = MathHelper::Rand(4, mWaves->ColumnCount() - 5);
+
+    float r = MathHelper::RandF(0.2f, 0.5f);
+
+    mWaves->Disturb(i, j, r);
+  }
+
+  // Update the wave simulation.
+  mWaves->Update(gt.DeltaTime());
+
+  // Update the wave vertex buffer with the new solution.
+  auto currWavesVB = mCurrFrameResource->WavesVB.get();
+  for(int i = 0; i < mWaves->VertexCount(); ++i)
+  {
+    Vertex v;
+
+    v.Pos = mWaves->Position(i);
+    v.Color = XMFLOAT4(DirectX::Colors::Blue);
+
+    currWavesVB->CopyData(i, v);
+  }
+
+  // Set the dynamic VB of the wave renderitem to the current frame VB.
+  mWavesRitem->Geo->VertexBufferGPU = currWavesVB->Resource();
+}
+```
+
+**注意**：我们保存一个指向波浪渲染项（`mWavesRitem`）的引用，以便能即时设置它的顶点缓冲。我们需要这样做，因为它的顶点缓冲是动态缓冲，每帧都在变。
+
+使用动态缓冲有一些开销，因为新数据必须从 CPU 内存传回 GPU 内存。因此，只要静态缓冲可行，就应优先使用静态缓冲。近来的 Direct3D 版本引入了一些新特性来减少对动态缓冲的需求。例如：
+
+1. 简单的动画可以在顶点着色器中完成。
+2. 通过渲染到纹理或计算着色器，以及顶点纹理拾取（vertex texture fetch）功能，可以实现像上面描述的那种完全在 GPU 上运行的波浪模拟。
+3. 几何着色器让 GPU 有能力创建或销毁图元，<a id="page311"/>在没有几何着色器时，这类任务通常要在 CPU 上完成。
+4. 曲面细分阶段可以在 GPU 上对几何体进行细分，在没有硬件曲面细分时，这类任务通常要在 CPU 上完成。
+
+**译者注**：原书上一条写作 "The tessellation stages can add tessellate geometry on the GPU"（"add" 与 "tessellate" 连用文理不通），译文按其含义译出，原书文字照录于此备查。
+
+索引缓冲也可以是动态的。不过，在"Land and Waves"演示中，三角形拓扑保持不变，只有顶点高度在变；因此只有顶点缓冲需要是动态的。
+
+本章的"Waves"演示使用动态顶点缓冲实现了一个简单的波浪模拟，与本节开头描述的类似。本书并不关心波浪模拟的实际算法细节（参见 [Lengyel02]），而更关注流程，以说明动态缓冲的用法：在 CPU 上更新模拟，然后用上传缓冲更新顶点数据。
+
+**注意**：我们再次提到，这个演示可以用更高级的方法在 GPU 上实现，例如渲染到纹理功能或计算着色器，以及顶点纹理拾取。由于我们还没有讲到这些主题，我们在 CPU 上做波浪模拟，并使用动态顶点缓冲更新新顶点。
+
+</section>
+
+<section className="lesson-section" id="s78">
+<h2>7.8 本章小结</h2>
+
+1. 每帧都等待 GPU 执行完队列中的所有命令是低效的，因为这会让 CPU 和 GPU 都在某些时刻空闲。一种更高效的技术是创建*帧资源*（frame resources）——一个由 CPU 每帧需要修改的资源组成的循环数组。这样，CPU 就不必等 GPU 完成后再进入下一帧；CPU 直接使用下一个可用的（即 GPU 未占用的）帧资源继续工作。如果 CPU 处理帧的速度总是快于 GPU，那么 CPU 最终仍要在某个时刻等待 GPU 赶上来，但这正是期望的情形，因为 GPU 得到了充分利用；多出来的 CPU 周期总可以用于游戏的其他部分，例如 AI、物理和游戏逻辑。
+2. 我们可以用 `ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart` 方法获得堆中第一个描述符的句柄。可以用 `ID3D12Device::GetDescriptorHandleIncrementSize(DescriptorHeapType type)` 方法获得描述符大小（取决于硬件和描述符类型）。知道了描述符<a id="page312"/>递增大小之后，我们就可以用两个 `CD3DX12_CPU_DESCRIPTOR_HANDLE::Offset` 方法之一把句柄偏移 *n* 个描述符：
+
+   ```cpp
+   // Specify the number of descriptors to offset times the descriptor
+   // increment size:
+   D3D12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap->
+     GetCPUDescriptorHandleForHeapStart();
+   handle.Offset(n * mCbvSrvDescriptorSize);
+
+   // Or equivalently, specify the number of descriptors to offset,
+   // followed by the descriptor increment size:
+   D3D12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap->GetCPUDescriptorHandleForHeapStart();
+   handle.Offset(n, mCbvSrvDescriptorSize);
+   The CD3DX12_GPU_DESCRIPTOR_HANDLE type has the same Offset methods.
+   ```
+
+3. 根签名定义了在发出绘制调用之前需要把哪些资源绑定到管线，以及这些资源如何映射到着色器输入寄存器。需要绑定哪些资源，取决于绑定的着色器程序期望什么资源。创建 PSO 时，会对根签名与着色器程序的组合进行验证。根签名被指定为一个根参数数组。根参数可以是描述符表、根描述符或根常量。描述符表指定堆中一段连续的描述符范围。根描述符用于直接在根签名中绑定一个描述符（它不必位于堆中）。根常量用于直接在根签名中绑定常量值。出于性能考虑，根签名中最多只能放 64 个 DWORD。描述符表每个花费 1 个 DWORD，根描述符每个花费 2 个 DWORD，根常量每 32 位常量花费 1 个 DWORD。硬件会为每个绘制调用自动保存一份根实参的快照。因此我们可以安全地逐绘制调用更改根实参；不过，我们也应尽量让根签名保持小，以减少需要复制的内存。
+4. 当顶点缓冲的内容需要在运行时频繁更新（例如每帧或每 1/30 秒）时，就要使用动态顶点缓冲。我们可以用 `UploadBuffer` 来实现动态顶点缓冲，但这次不是存储常量缓冲数组，而是存储顶点数组。因为我们需要每帧把新内容从 CPU 上传到波浪的动态顶点缓冲，所以动态顶点缓冲需要作为帧资源。使用动态顶点缓冲有一些开销，因为新数据必须从 CPU 内存传回 GPU 内存。因此，只要静态顶点缓冲可行，就应优先选择静态顶点缓冲。近来的 Direct3D 版本引入了一些新特性来减少对动态缓冲的需求。<a id="page313"/>
+
+</section>
+
+<section className="lesson-section" id="s79">
+<h2>7.9 习题</h2>
+
+1. 修改"Shape"演示，用 `GeometryGenerator::CreateGeosphere` 代替 `GeometryGenerator::CreateSphere.` 试试 0、1、2 和 3 个细分级别。
+2. 修改"Shapes"演示，用 16 个根常量来设置逐对象世界矩阵，而不是使用描述符表。
+3. 光盘上有一个名为 Models/Skull.txt 的文件。该文件包含渲染图 7.11 中骷髅所需的顶点列表和索引列表。用记事本之类的文本编辑器研究这个文件，并修改"Shapes"演示，加载并渲染这个骷髅网格。
+
+<Figure src="images/Fig7-11.jpg" alt="骷髅网格的渲染输出" figureNumber="图 7.11" caption="习题 4 的渲染输出。" />
+
+**译者注**：原书习题列表仅列 3 题，本图对应习题 3 的骷髅网格；图注"Rendered output of Exercise 4."（习题 4 的渲染输出）按原文照录。
+
+</section>
+
+
+
+
+
+

@@ -267,7 +267,9 @@ export function parseSource(source: string, chapterId: string): SourceBlock[] {
 function isCodeLine(value: string): boolean {
   const text = value.trim();
   if (!text) return false;
-  return /^(#\s*(include|if|ifdef|ifndef|elif|else|endif|define|pragma)\b|using namespace\b|typedef\b|struct\s+\w|class\s+\w|template\s*<|inline\b|static const\b|XMVECTOR\b|XMFLOAT\d\b|FXMVECTOR\b|GXMVECTOR\b|HXMVECTOR\b|CXMVECTOR\b|void\s+\w+\s*\(|float\s+XM_CALLCONV\b|return\b|if\s*\(|else\b|for\s*\(|while\s*\(|cout\s*<<|std::|ComPtr\s*<|\.{3}$|\{|\}|;\s*$|\/\/)/.test(text)
+  return /^(#\s*(include|if|ifdef|ifndef|elif|else|endif|define|pragma)\b|using namespace\b|namespace\b|typedef\b|struct(?:\s+\w+)?\b|union\b|class\s+\w|template\s*<|inline\b|static const\b|XMVECTOR\b|XMFLOAT\d\b|FXMVECTOR\b|GXMVECTOR\b|HXMVECTOR\b|CXMVECTOR\b|void\s+\w+\s*\(|float\s+XM_CALLCONV\b|return\b|operator\b|if\s*\(|else\b|for\s*\(|while\s*\(|cout\s*<<|std::|ComPtr\s*<|\.{3}$|\{|\}|;\s*(?:\/\/.*)?$|\/\/)/.test(text)
+    || /^(?:u?int(?:8|16|32|64)_t|float\d?|double|bool|char|HRESULT|BOOL|UINT|auto|const|static|explicit)\b/.test(text)
+    || /^[A-Z_]\w*\s*(?:\([^;]*\)|&\s*operator\b)/.test(text)
     // The source text extractor separates code lines with blank lines. These
     // syntax markers keep common Direct3D declarations and calls together as
     // code instead of rendering them as ordinary prose paragraphs.

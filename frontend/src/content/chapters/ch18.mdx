@@ -39,14 +39,14 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 <section className="lesson-section" id="s184">
 <h2>18.4 模拟反射</h2>
 
-<p>反射的采样方向由<b>反射向量</b>给出：r = d − 2(d·n)n，其中 d 是视线方向、n 是表面法线（图 18.5）。</p>
+<p>令 d 为从眼睛指向表面点 p 的单位入射方向，n 为表面法线。反射采样方向是 r = d − 2(d·n)n（图 18.5）。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig18-5.jpg" alt="E 为眼睛，n 为 p 点法线：反射光对应的 texel 由反射向量 r 求出" figureNumber="图 18.5" caption="E 为眼睛，n 为 p 点法线：反射光对应的 texel 由反射向量 r 求出。" />
   <Figure src="images/Fig18-6.jpg" alt="同一表面两点在眼睛位置 E、E′ 下对应不同反射向量" figureNumber="图 18.6" caption="同一表面两点 p 与 p′ 在眼睛位置 E、E′ 下对应不同的反射向量。" />
 </div>
 
-<p>实现上不直接用 r，而是求反射射线与立方体的交点 v = p + t₀·r，用 v 的方向查贴图（图 18.7）——这样与立方体贴图的寻址方式一致。</p>
+<p>只用方向向量 r 会丢掉反射射线的起点：平面上不同位置的反射射线可能方向相同，却会撞到环境中的不同位置（图 18.6），因此会取到同一纹素而显得不真实。对有界环境，可以用包围盒作代理几何，求射线与盒面的交点 v = p + t₀·r，再用 v 的方向查贴图（图 18.7），以近似补回位置因素。</p>
 
 <Figure src="images/Fig18-7.jpg" alt="用反射射线与立方体的交点求采样方向" figureNumber="图 18.7" caption="不直接用反射向量 r 查询，而用 r 与立方体的交点 v=p+t0r 求采样方向。" />
 </section>
@@ -54,7 +54,7 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 <section className="lesson-section" id="s185">
 <h2>18.5 动态立方体贴图</h2>
 
-<p>静态环境贴图是<b>预过滤</b>的：相机一移动，反射方向就与贴图对不上（图 18.6）。动态立方体贴图把相机放到待反光物体的中心，<b>重新渲染周围环境 6 个面</b>，所以反射永远正确。</p>
+<p>预先生成的静态环境贴图是固定的，之后移动或动画的物体不会出现在反射里。动态立方体贴图把相机放到待反光物体的中心，<b>重新渲染周围环境 6 个面</b>，让反射能呈现当前场景中的动态物体；代价是额外渲染开销。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig18-8.jpg" alt="相机放在物体中心渲染周围环境生成动态立方体贴图" figureNumber="图 18.8" caption="相机放在场景中 O 点（待反光物体中心），渲染周围环境生成动态立方体贴图。" />
@@ -71,7 +71,7 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
   <li>立方体贴图用 3D 方向寻址；命中哪一面由绝对值最大的分量（及其符号）决定。</li>
   <li>天空盒用视线方向采样，通常画一个跟随相机的巨大立方体或全屏三角形。</li>
   <li>反射采样方向 = 反射向量 r = d − 2(d·n)n，实际用 r 与立方体交点的方向查贴图。</li>
-  <li>静态环境贴图是预过滤的，相机移动时反射会「跟不上」；动态立方体贴图每帧多 6 次渲染换正确性。</li>
+  <li>静态环境贴图不会记录生成之后移动的物体；动态立方体贴图可反映当前场景，但每次更新要渲染 6 个面。</li>
 </ul>
 
 <div className="figure-pair">
@@ -99,10 +99,10 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
     },
     {
       id: 'ch18-a3',
-      question: '静态环境贴图在什么时候会「跟不上」？',
-      options: ['物体移动时', '相机移动导致反射方向改变时', '改粗糙度时', '永远不会'],
-      answer: 1,
-      explanation: '静态贴图的采样方向都相对同一个点拍摄；相机一动，反射方向就与贴图对不上。',
+      question: '预先生成的静态环境贴图无法反映什么变化？',
+      options: ['场景中之后移动或动画的物体', '观察相机改变视角', '表面法线参与反射方向计算', '立方体贴图的六个方向'],
+      answer: 0,
+      explanation: '静态贴图记录的是生成时周围环境的图像，之后才移动或动画的物体不会自动出现在贴图里。',
     },
     {
       id: 'ch18-a4',
@@ -122,9 +122,9 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
     '打开 Chapter 18 Cube Mapping 下的 DynamicCubeMap 工程，生成并运行（图 18.9）。',
     '让骷髅绕中心球转动，确认球面反射实时变化。',
     '把动态立方体贴图的更新改成「每 4 帧更新一次」，观察反射的延迟感。',
-    '对比：如果是静态环境贴图，转动相机时反射会明显「跟不上」。',
+    '对比静态环境贴图：如果它是在骷髅开始移动前生成的，反射里不会出现骷髅后续的位置变化。',
   ]}
-  expected="物体绕球转动时反射实时变化；降低更新频率后能看出延迟；静态方案下移动相机会出现明显不对。"
+  expected="物体绕球转动时，动态贴图中的反射会更新；降低更新频率后能看出延迟；预先生成的静态贴图不会反映骷髅后续的位置变化。"
   verify={[
     '我跑通了 DynamicCubeMap 示例。',
     '我观察到反射随物体移动而变化。',

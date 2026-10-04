@@ -83,7 +83,7 @@ DirectX::XMMATRIX Camera::GetView() const
 
 <Callout tone="warning">
   <b>视图矩阵的逆就是相机世界矩阵</b>
-  <p>不要每帧重新推一套旋转矩阵——直接 <code>XMMatrixInverse(nullptr, view)</code> 更快也更准。拾取、法线变换、反射都会用到它。</p>
+  <p>相机的 right、up、look 轴彼此正交且已归一化，因此可以利用这个结构构造逆矩阵（旋转部分取转置，并正确处理平移）。若手头只有 view 矩阵，也可调用 <code>XMMatrixInverse(nullptr, view)</code>；通用求逆不一定比利用相机基轴更快。拾取等操作会用到相机世界矩阵。</p>
 </Callout>
 </section>
 

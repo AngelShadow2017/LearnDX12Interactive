@@ -1,106 +1,95 @@
 import { useState } from 'react';
 import { ActivityFrame } from '@/activities/ActivityFrame';
-import { Choice, Readout, Slider, svgPoint } from '@/activities/controls';
-import { format, normalize, reflect, sub, vec3, type Vec3 } from '@/activities/math';
+import { Choice, Readout, Slider } from '@/activities/controls';
+import { format } from '@/activities/math';
 
-const objs: Array<{ name: string; pos: Vec3; color: string }> = [
-  { name: 'A', pos: vec3(-1.1, 0.4, -0.6), color: '#b1712f' },
-  { name: 'B', pos: vec3(1.0, 0.6, -0.4), color: '#3f7d52' },
-  { name: 'C', pos: vec3(0.2, 1.1, 1.2), color: '#2f6b8f' },
-  { name: 'D', pos: vec3(-0.4, -0.7, 1.0), color: '#8a5a8f' },
-];
+const CAPTURED_ACTOR_X = -1.1;
 
-/** 18.4–18.5 后的推演：移动反射物与周围物体，对比静态与动态环境贴图。 */
+/** Compare a fixed environment-map snapshot with a cubemap recaptured at runtime. */
 export function DynamicCubeMapActivity() {
   const [mode, setMode] = useState<'static' | 'dynamic'>('static');
-  const [sphereY, setSphereY] = useState(0.8);
-  const [eyeZ, setEyeZ] = useState(1.6);
+  const [actorX, setActorX] = useState(CAPTURED_ACTOR_X);
   const [moved, setMoved] = useState(false);
+  const [seenModes, setSeenModes] = useState<Array<'static' | 'dynamic'>>(['static']);
+  const capturedActorX = mode === 'static' ? CAPTURED_ACTOR_X : actorX;
 
-  const sphere: Vec3 = [0, sphereY, 0];
-  const eye: Vec3 = [0, sphereY, eyeZ];
-  const normal: Vec3 = [0, 0, 1];
-  const viewDir = normalize(sub(eye, sphere));
-  const reflection = reflect(viewDir, normal);
+  function chooseMode(next: 'static' | 'dynamic') {
+    setMode(next);
+    setSeenModes((current) => current.includes(next) ? current : [...current, next]);
+  }
 
   function reset() {
     setMode('static');
-    setSphereY(0.8);
-    setEyeZ(1.6);
+    setActorX(CAPTURED_ACTOR_X);
     setMoved(false);
+    setSeenModes(['static']);
   }
+
+  const pointX = (x: number, left: number) => left + 12 + ((x + 2) / 4) * 104;
 
   return (
     <ActivityFrame
       id="ch18-dynamic-cube"
       chapterId="ch18"
-      title="反射方向随相机移动，静态贴图跟不跟得上"
-      prompt="拖动相机与反光球的位置。切到「静态环境贴图」时，贴图固定在原处不更新；切到「动态」时每次都重新渲染 6 个面。"
+      title="移动场景物体，比较静态与动态环境贴图"
+      prompt="拖动场景物体 A，再切换两种环境贴图。观察固定快照和实时重绘分别记录了物体的哪个位置。"
       predict={{
-        question: '静态（预过滤）环境贴图在什么时候会「跟不上」？',
-        options: ['物体运动时', '相机移动导致反射方向变化时', '改变粗糙度时', '永远不会'],
-        answer: 1,
-        hint: '静态贴图里的方向是按拍摄点固定下来的。',
-        correctNote: '静态贴图的所有采样方向都相对同一个点；相机一动，反射方向就与贴图对不上。',
-        wrongNote: '物体移动本身不影响环境贴图（贴图只记录远处环境）；真正的问题是相机移动改变了反射方向。',
+        question: '动态立方体贴图相对预先生成的静态贴图，能额外反映什么？',
+        options: ['之后移动或动画的场景物体', '相机改变视角', '表面法线参与反射方向计算', '立方体贴图的六个采样方向'],
+        answer: 0,
+        hint: '想想一张已经导出的图片，能不能自动显示之后才移动的角色。',
+        correctNote: '动态贴图会重新渲染环境，因此能把当前场景物体的位置更新到反射中。',
+        wrongNote: '静态贴图记录生成时的场景；之后才移动或动画的物体不会自动出现在里面。',
       }}
       onReset={reset}
       check={() => {
-        if (!moved) return { passed: false, feedback: '先拖动「相机 z」或「反光球高度」，观察反射方向怎么变，再检查。' };
+        if (!moved) return { passed: false, feedback: '先把物体 A 移到别的位置，再比较贴图记录。' };
+        if (!seenModes.includes('dynamic')) return { passed: false, feedback: '再切换到动态贴图，比较它记录的位置与静态快照。' };
         return {
           passed: true,
-          feedback: `相机在 (${format(eye[0])}, ${format(eye[1])}, ${format(eye[2])})，反射方向 r = (${format(reflection[0])}, ${format(reflection[1])}, ${format(reflection[2])})。${mode === 'static' ? '静态贴图按旧方向取样，反射会「跟不上」。' : '动态立方体贴图每次重新渲染 6 个面，反射实时更新——代价是 6 次额外渲染。'}`,
+          feedback: mode === 'static'
+            ? `当前场景里 A 在 x = ${format(actorX)}，但静态贴图仍记录 x = ${format(CAPTURED_ACTOR_X)}。切到动态贴图会重新捕获当前位置。`
+            : `当前场景里 A 在 x = ${format(actorX)}；动态贴图重绘后也记录 x = ${format(actorX)}。每次更新需要渲染立方体的 6 个面。`,
         };
       }}
       explanation={<>
-        <p>反射的采样方向由<b>反射向量</b>给出：r = d − 2(d·n)n，其中 d 是视线方向、n 是表面法线（图 18.5）。</p>
-        <p>实际实现时不直接用 r，而是求<b>反射射线与立方体的交点</b> v = p + t₀·r，用 v 的方向去查贴图（图 18.7）——这样和立方体贴图的寻址方式一致。</p>
-        <p>环境贴图（静态）是<b>预过滤</b>的：每个方向上存的是该方向上若干层粗糙度的模糊结果。相机移动时，反射方向变了，但贴图还是当初拍的那个点拍的，于是「跟不上」（图 18.6）。</p>
-        <p>动态立方体贴图（图 18.8）把相机放到待反光物体的中心，<b>重新渲染周围环境 6 个面</b>，所以反射永远正确。代价是每帧（或每 N 帧）多 6 次渲染；图 18.9 里骷髅绕着中心球转，球面反射实时变化。</p>
-        <p><b>折中做法：</b>实践中常按「反射贡献的重要程度」决定更新频率——金属球每帧更新，地板可以每几帧甚至只在相机大幅移动时更新。</p>
+        <p>静态环境贴图是预先生成的固定图像，不会记录生成之后移动或动画的物体。动态立方体贴图把相机放在反光物体中心，重新渲染周围 6 个方向，因此可以捕获当前环境；更新频率越高，开销越大。</p>
+        <p>还有一个独立的近似误差：普通立方体贴图只用反射方向 r 查图，丢掉了反射射线的起点。平面上不同位置的射线可能方向相同、却会撞到环境中的不同位置（图 18.6）。若 d 是从眼睛指向表面点的单位入射方向，则 r = d − 2(d·n)n。对有界环境，可用包围盒与射线的交点改进采样方向（图 18.7）。</p>
       </>}
-      apply={<p>动态立方体贴图需要 6 个同尺寸的渲染目标、6 组视锥（第 16 章）与 6 次渲染循环；把结果合成的数组视图类型是 <code>D3D12_SRV_DIMENSION_CUBE</code>。</p>}
+      apply={<p>动态方案为立方体贴图的 6 个面分别渲染场景，再绑定类型为 <code>D3D12_SRV_DIMENSION_TEXTURECUBE</code> 的着色器资源视图。只对少数重要反光物体高频更新，其他物体可以复用静态贴图或降低更新频率。</p>}
     >
-      <svg className="svg-stage" viewBox="0 0 320 320" role="img"
-        aria-label={`反光球在 ${format(sphereY)}，相机 z ${format(eyeZ)}，反射方向 ${format(reflection[0])} 逗号 ${format(reflection[1])} 逗号 ${format(reflection[2])}`}>
-        <rect x={0} y={0} width={320} height={320} fill="#eef2ea" />
-        <line x1={20} y1={200} x2={300} y2={200} stroke="#b6c2b4" strokeWidth={2} />
-
-        {objs.map((obj) => {
-          const p = svgPoint(obj.pos[0] * 34, obj.pos[1] * 34 + (1 - sphereY) * 34, 34);
-          return <g key={obj.name}>
-            <circle cx={p.x} cy={p.y} r={9} fill={obj.color} />
-            <text x={p.x + 12} y={p.y + 4}>{obj.name}</text>
-          </g>;
-        })}
-
-        {(() => { const p = svgPoint(0, (1 - sphereY) * 34, 34); return <g>
-          <circle cx={160 + p.x - 160} cy={200 - p.y} r={26} fill="#7fa7c9" stroke="#4a6f8c" strokeWidth={2} />
-          <text x={26} y={228} style={{ fontSize: 10 }}>反光球</text>
-        </g>; })()}
-
-        {(() => { const p = svgPoint(0, (1 - sphereY) * 34, 34); return <g>
-          <circle cx={160} cy={200 - p.y - eyeZ * 34} r={7} fill="#2f6b8f" />
-          <text x={168} y={200 - p.y - eyeZ * 34 + 4}>相机</text>
-        </g>; })()}
-
-        <line className="vec vec--w" x1={160} y1={200 - (1 - sphereY) * 34} x2={160 + reflection[0] * 96} y2={200 - (1 - sphereY) * 34 - reflection[1] * 96} />
-        <text x={172} y={120} style={{ fontSize: 10 }}>反射方向 r</text>
-        <text x={12} y={306} style={{ fontSize: 10 }}>{mode === 'static' ? '静态贴图：方向固定，不随相机更新' : '动态贴图：6 个面每帧重新渲染'}</text>
+      <svg className="svg-stage" viewBox="0 0 320 220" role="img"
+        aria-label={`当前场景中 A 位于 x ${format(actorX)}；${mode === 'static' ? `静态贴图仍记录 x ${format(CAPTURED_ACTOR_X)}` : `动态贴图记录 x ${format(actorX)}`}`}>
+        <rect x={0} y={0} width={320} height={220} fill="#eef2ea" />
+        {[12, 164].map((left) => <g key={left}>
+          <rect x={left} y={28} width={144} height={164} rx={8} fill="#f8f8f2" stroke="#bdc8b9" />
+          <line x1={left + 12} y1={148} x2={left + 132} y2={148} stroke="#c5cdbf" strokeWidth={2} />
+          {[-0.7, 0.7].map((x, index) => <circle key={x} cx={pointX(x, left)} cy={index === 0 ? 96 : 112} r={8} fill={index === 0 ? '#3f7d52' : '#2f6b8f'} />)}
+        </g>)}
+        <text x={84} y={19} textAnchor="middle">当前场景</text>
+        <text x={236} y={19} textAnchor="middle">{mode === 'static' ? '静态贴图：生成时的快照' : '动态贴图：本次重绘'}</text>
+        <text x={pointX(actorX, 12)} y={78} textAnchor="middle" style={{ fontSize: 10 }}>A</text>
+        <circle cx={pointX(actorX, 12)} cy={96} r={10} fill="#c77a32" stroke="#80501f" strokeWidth={2} />
+        {mode === 'static' && Math.abs(actorX - CAPTURED_ACTOR_X) > 0.04 && <>
+          <circle cx={pointX(CAPTURED_ACTOR_X, 164)} cy={96} r={10} fill="none" stroke="#c77a32" strokeWidth={2} strokeDasharray="3 2" />
+          <text x={pointX(CAPTURED_ACTOR_X, 164)} y={78} textAnchor="middle" style={{ fontSize: 10 }}>A 快照</text>
+        </>}
+        <circle cx={pointX(capturedActorX, 164)} cy={96} r={10} fill="#c77a32" stroke="#80501f" strokeWidth={2} />
+        {mode === 'dynamic' && <text x={pointX(capturedActorX, 164)} y={78} textAnchor="middle" style={{ fontSize: 10 }}>A 当前</text>}
+        <text x={160} y={211} textAnchor="middle" style={{ fontSize: 10 }}>左侧是现场，右侧是环境贴图里记录的场景</text>
       </svg>
 
       <Choice label="环境贴图类型" options={[
-        { value: 'static', label: '静态（预过滤）', hint: '一次烘焙，零运行时开销' },
-        { value: 'dynamic', label: '动态立方体贴图', hint: '每帧 6 次渲染' },
-      ]} value={mode} onChange={setMode} />
-      <Slider label="反光球高度" min={0} max={1.6} step={0.05} value={sphereY} onChange={(value) => { setSphereY(value); setMoved(true); }} />
-      <Slider label="相机 z" min={1} max={4} step={0.05} value={eyeZ} onChange={(value) => { setEyeZ(value); setMoved(true); }} />
+        { value: 'static', label: '静态快照', hint: '保留生成时的环境' },
+        { value: 'dynamic', label: '动态立方体贴图', hint: '重新渲染当前环境的 6 个面' },
+      ]} value={mode} onChange={(value) => chooseMode(value as 'static' | 'dynamic')} />
+      <Slider label="场景物体 A 的 x 坐标" min={-1.8} max={1.8} step={0.05} value={actorX} onChange={(value) => { setActorX(value); setMoved(true); }} />
 
       <Readout items={[
-        ['视线方向 d', `(${format(viewDir[0])}, ${format(viewDir[1])}, ${format(viewDir[2])})`],
-        ['反射方向 r', `(${format(reflection[0])}, ${format(reflection[1])}, ${format(reflection[2])})`],
-        ['贴图是否跟随相机', mode === 'dynamic' ? '是' : '否'],
-        ['动态贴图每帧额外渲染', mode === 'dynamic' ? '6 个面' : '0'],
+        ['当前场景中的 A', `x = ${format(actorX)}`],
+        ['选中贴图记录的 A', `x = ${format(capturedActorX)}`],
+        ['场景位置是否已更新到贴图', mode === 'dynamic' ? '是，重新捕获' : '否，仍是生成时快照'],
+        ['动态贴图每次更新', mode === 'dynamic' ? '渲染 6 个面' : '无额外渲染'],
       ]} />
     </ActivityFrame>
   );

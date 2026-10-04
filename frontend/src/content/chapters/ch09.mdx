@@ -46,9 +46,9 @@ device->CreateShaderResourceView(woodCrate->Resource.Get(), &srvDesc, cpuSrvHand
 
 // 3) 绘制前绑定到根签名的描述符表
 commandList->SetGraphicsRootDescriptorTable(0, gpuSrvHandle);`}
-  input={<>一个 .dds 文件（含自动生成的 mip 链），以及一个 CBV/SRV/UAV 描述符堆。</>}
+  input={<>一个已包含所需 mip 级别的 .dds 文件，以及一个 CBV/SRV/UAV 描述符堆。</>}
   keyLines={[
-    { code: 'CreateDDSTextureFromFile12', note: '内部完成「上传堆 → CopyTextureRegion → 默认堆」，并自动生成 mip 链。' },
+    { code: 'CreateDDSTextureFromFile12', note: '读取 DDS 文件已有的纹理与 mip 级别，并完成上传；它不会自动替图片生成 mip 链。' },
     { code: 'Shader4ComponentMapping', note: '决定 RGBA 通道如何重排；用默认值即可，改错会导致颜色通道互换。' },
     { code: 'SetGraphicsRootDescriptorTable(0, gpuSrvHandle)', note: 'GPU 句柄，不是 CPU 句柄。传 CPU 句柄是 D3D12 新手高频错误。' },
   ]}

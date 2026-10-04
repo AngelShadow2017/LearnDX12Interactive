@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { figureAssetHref } from './figurePath';
 
 export type InlineFigureProps = { src: string; alt: string; caption: string; figureNumber?: string };
 
 export function InlineFigure({ src, alt, caption, figureNumber }: InlineFigureProps) {
-  const normalizedSrc = src.startsWith('/') || /^https?:\/\//.test(src) ? src : `/${src}`;
+  const normalizedSrc = figureAssetHref(src);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => setFailed(false), [normalizedSrc]);

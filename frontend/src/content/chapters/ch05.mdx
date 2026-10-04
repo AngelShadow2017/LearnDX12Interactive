@@ -92,7 +92,7 @@ import { WindingCullActivity } from '@/activities/WindingCullActivity';
 
 <h3>索引</h3>
 
-<p>索引让多个三角形共用同一个顶点，既省内存又省顶点着色器的执行次数。没有索引时，共享顶点会被重复处理。</p>
+<p>索引让多个三角形共用同一份顶点数据，省去重复存储。GPU 还可能通过顶点后变换缓存复用计算结果，减少重复的顶点着色器工作；是否命中取决于索引顺序与硬件。</p>
 
 <Figure src="images/Fig5-15.jpg" alt="两个三角形拼成四边形，八个三角形拼成八边形" figureNumber="图 5.15" caption="(a) 两个三角形拼成四边形；(b) 八个三角形拼成八边形。" />
 </section>

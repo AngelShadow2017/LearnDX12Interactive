@@ -56,7 +56,7 @@ static const D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
 <section className="lesson-section" id="s63">
 <h2>6.3 索引与索引缓冲</h2>
 
-<p>索引把「顶点数据」和「顶点使用顺序」分开。两个三角形共用的顶点只存一份，顶点着色器也只执行一次。</p>
+<p>索引把「顶点数据」和「顶点使用顺序」分开。两个三角形共用的顶点数据只存一份；GPU 还可能通过顶点后变换缓存复用结果，减少重复的顶点着色器工作，但不保证每个索引只执行一次。</p>
 
 <Figure src="images/Fig6-3.jpg" alt="把多个小顶点缓冲拼接成一个大顶点缓冲；索引缓冲同理" figureNumber="图 6.3" caption="把多个小顶点缓冲拼接成一个大顶点缓冲；索引缓冲同理。" />
 
@@ -185,7 +185,7 @@ cb->CopyData(0, objConstants);`}
 <ul>
   <li>输入布局用 <code>D3D12_INPUT_ELEMENT_DESC</code> 描述顶点每个字段的语义、格式与字节偏移。</li>
   <li>顶点缓冲放 GPU 资源里；多个网格可以拼进同一个大缓冲，用起始偏移区分。</li>
-  <li>索引让共享顶点只存一份、顶点着色器只跑一次；绘制用 <code>DrawIndexedInstanced</code>。</li>
+  <li>索引让共享顶点数据只存一份；GPU 可能通过顶点后变换缓存复用着色结果。绘制用 <code>DrawIndexedInstanced</code>。</li>
   <li>常量缓冲传每帧参数，大小必须向上对齐到 256 字节；每个帧资源要各有一份。</li>
   <li>语义是顶点字段与 HLSL 形参的对号方式；根签名是 CPU 与着色器之间的资源契约；PSO 把全部状态打包。</li>
   <li>HLSL 编译错误不会抛异常，一定要打印 <code>ID3DBlob</code> 里的错误信息。</li>

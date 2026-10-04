@@ -161,6 +161,28 @@ a:hover { color: var(--green-dark); }
 .original-text h2 { margin: 42px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 22px; }
 .original-text h3 { margin: 28px 0 9px; font-size: 16px; }
 .original-text p { margin: 13px 0 18px; scroll-margin-top: 90px; }
+.oebps-content { overflow-wrap: anywhere; }
+.oebps-content .source-prose { margin: 13px 0 18px; }
+.oebps-content .source-prose--lead { margin-top: 20px; }
+.oebps-content .source-heading { scroll-margin-top: 90px; }
+.oebps-content .source-inline-code { padding: .04em .22em; border-radius: 3px; background: #edf1eb; color: #3c5d49; font: .92em var(--mono); }
+.oebps-content .source-small-caps { font-variant: small-caps; }
+.oebps-content .source-objectives-label { margin: 18px 0 4px; color: #496d52; font: 700 11px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.oebps-content .source-list { margin: 9px 0 20px; padding-left: 1.5em; }
+.oebps-content .source-list li { margin: 5px 0; padding-left: 3px; }
+.oebps-content .source-list--objectives { padding: 12px 16px 12px 38px; border: 1px solid #dce6d9; border-radius: 10px; background: #f5f8f1; color: #56675a; font: 13px/1.75 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+.oebps-content .source-note { padding: 13px 16px; border-left: 3px solid #c7b77e; border-radius: 0 8px 8px 0; background: #f7f3e8; color: #61583f; font-size: 13px; }
+.oebps-content .source-table { max-width: 100%; border-collapse: collapse; }
+.oebps-content .source-table--note { width: 100%; margin: 15px 0; }
+.oebps-content .source-table--note td { padding: 4px; vertical-align: top; }
+.oebps-content .source-example-heading { display: flex; align-items: baseline; gap: 9px; margin: 24px 0 9px; padding: 10px 13px; border: 1px solid #e8dfca; border-radius: 8px; background: #f8f3e8; color: #584d38; font: 600 15px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+.oebps-content .source-caption { margin: -7px 0 22px; color: #77837a; font: 11px/1.7 'Segoe UI', 'Microsoft YaHei', sans-serif; text-align: center; }
+.oebps-content .source-equation { margin: 14px 0; padding: 13px 15px; overflow-x: auto; border-left: 2px solid #9dbfa6; border-radius: 0 8px 8px 0; background: #f4f8f2; text-align: center; }
+.source-anchor-alias { display: block; height: 0; scroll-margin-top: 90px; }
+.source-image-open--block { position: relative; display: block; width: 100%; margin: 12px auto; padding: 0; overflow: hidden; border: 1px solid #e5e6df; border-radius: 9px; background: #fff; cursor: zoom-in; }
+.source-image-open--block img { display: block; max-width: 100%; max-height: 570px; margin: 0 auto; object-fit: contain; }
+.source-image-open--block:hover::after, .source-image-open--block:focus-visible::after { position: absolute; right: 9px; bottom: 9px; padding: 5px 8px; border-radius: 5px; background: rgba(28, 42, 34, .82); color: white; content: '放大查看'; font: 10px/1.3 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+.source-image-open--block:focus-visible, .source-inline-image:focus-visible { outline: 3px solid #7cae88; outline-offset: 2px; }
 .original-text pre { max-width: 100%; margin: 18px 0 23px; overflow: auto; padding: 16px 18px; border: 1px solid #344039; border-radius: 9px; background: #202a25; color: #e4eae1; white-space: pre; font: 12.5px/1.75 var(--mono); }
 .original-text pre code { font-family: var(--mono); }
 .original-text pre code.hljs { display: block; padding: 0; overflow-x: auto; background: transparent; color: #e4eae1; font: inherit; }

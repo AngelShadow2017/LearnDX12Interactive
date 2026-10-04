@@ -1,0 +1,899 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page643"/><a href="toc.html#toc-20" id="chap20">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">20</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-20"><b>S</b><span class="sc">HADOW</span><br/><br/><b>M</b><span class="sc">APPING</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/></p>
+
+
+<p class="tx1">Shadows indicate to the observer where light originates and helps convey the relative locations of objects in a scene. This chapter provides an introduction to the basic shadow mapping algorithm, which is a popular method for modeling dynamic shadows in games and 3D applications. For an introductory book, we focus only on the basic shadow mapping algorithm; more sophisticated shadowing techniques, such as cascading shadow maps [Engel06] which give better quality results, are built by extending the basic shadow mapping algorithm.</p>
+
+
+
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To discover the basic shadow mapping algorithm.</li>
+<li>To learn how projective texturing works.</li>
+<li>To find out about orthographic projections.</li>
+<li>To understand shadow map aliasing problems and common strategies for fixing them.</li></ol>
+<p class="h1" id="c20.1"><a href="toc.html#toc-20.1"><b>20.1 RENDERING SCENE DEPTH</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The shadow mapping algorithm relies<a id="page644"/> on rendering the scene depth from the viewpoint of the light source&mdash;this is essentially a variation of render-to-texture, which was first described in &#x00A7;13.7.2. By &ldquo;rendering scene depth&rdquo; we mean building the depth buffer from the viewpoint of the light source. Thus, after we have rendered the scene from the viewpoint of the light source, we will know the pixel fragments nearest to the light source&mdash;such fragments cannot be in shadow. In this section we review a utility class called <span class="code">ShadowMap</span> that helps us store the scene depth from the perspective of the light source. It simply encapsulates a depth/stencil buffer, necessary views, and viewport. A depth/stencil buffer used for shadow mapping is called a <i>shadow map</i>.</p>
+     <p class="tx"><span class="code">class ShadowMap</span></p>
+     <p class="tx"><span class="code">{</span></p>
+     <p class="tx"><span class="code">public:</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;ShadowMap(ID3D12Device* device,</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT width, UINT height);</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;ShadowMap(const ShadowMap&amp; rhs)=delete;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;ShadowMap&amp; operator=(const ShadowMap&amp; rhs)=delete;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;</span>&tilde;<span class="code">ShadowMap()=default;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;UINT Width()const;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;UINT Height()const;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;ID3D12Resource* Resource();</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE Srv()const;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE Dsv()const;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_VIEWPORT Viewport()const;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_RECT ScissorRect()const;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;void BuildDescriptors(</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv,</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv,</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDsv);</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;void OnResize(UINT newWidth, UINT newHeight);</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">private:</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;void BuildDescriptors();</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;void BuildResource();</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">private:</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;ID3D12Device* md3dDevice = nullptr;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_VIEWPORT mViewport;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_RECT mScissorRect;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;UINT mWidth = 0;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;UINT mHeight = 0;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;DXGI_FORMAT mFormat = DXGI_FORMAT_R24G8_TYPELESS;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuSrv;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE mhGpuSrv;</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuDsv;</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; mShadowMap = nullptr;</span></p>
+     <p class="tx"><span class="code">};</span></p>
+<p class="tx1">The constructor creates the texture of the<a id="page645"/> specified dimensions and viewport. The resolution of the shadow map affects the quality of our shadows, but at the same time, a high resolution shadow map is more expensive to render into and requires more memory. </p>
+<p class="code"><span class="code">ShadowMap::ShadowMap(ID3D12Device* device, UINT width, UINT height)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice = device;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mWidth = width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mHeight = height;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mViewport = { 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mScissorRect = { 0, 0, (int)width, (int)height };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildResource();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShadowMap::BuildResource()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_DESC texDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ZeroMemory(&amp;texDesc, sizeof(D3D12_RESOURCE_DESC));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Alignment = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Width = mWidth;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Height = mHeight;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.DepthOrArraySize = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.MipLevels = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.SampleDesc.Count = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.SampleDesc.Quality = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CLEAR_VALUE optClear;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.DepthStencil.Depth = 1.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.DepthStencil.Stencil = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;texDesc,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;optClear,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(&amp;mShadowMap)));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">As we will see, the shadow mapping algorithm requires<a id="page646"/> two render passes. In the first one, we render the scene depth from the viewpoint of the light into the shadow map; in the second pass, we render the scene as normal to the back buffer from our &ldquo;player&rdquo; camera, but use the shadow map as a shader input to implement the shadowing algorithm. We provide a method to access the shader resource and its views:</p>
+<p class="code"><span class="code">ID3D12Resource* ShadowMap::Resource()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mShadowMap.Get();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_GPU_DESCRIPTOR_HANDLE ShadowMap::Srv()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; return mhGpuSrv;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE ShadowMap::Dsv()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; return mhCpuDsv;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c20.2"><a href="toc.html#toc-20.2"><b>20.2 ORTHOGRAPHIC PROJECTIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">So far in this book we have been using a perspective projection. The key property of perspective projection is that objects are perceived as getting smaller as their distance from the eye increases. This agrees with how we perceive things in real life. Another type of projection is an orthographic projection. Such projections are primarily used in 3D science or engineering applications<a id="page647"/>, where it is desirable to have parallel lines remain parallel after projection. However, orthographic projections will enable us to model shadows that parallel lights generate. With an orthographic projection, the viewing volume is a box axis-aligned with the view space with width <i>w</i>, height <i>h</i>, near plane <i>n</i> and far plane <i>f</i> that looks down the positive <i>z</i>-axis of view space (see Figure <a href="ch20.html#fig20.1">20.1</a>). These numbers, defined relative to the view space coordinate system, define the box view volume. </p>
+<p class="caption"><img src="images/Fig20-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.1"><b><i>Figure 20.1.</i></b>&nbsp;&nbsp;The orthographic viewing volume is a box that is axis aligned with the view coordinate system.</p>
+
+<p class="tx">With an orthographic projection, the lines of projection are parallel to the view space <i>z</i>-axis (Figure <a href="ch20.html#fig20.2">20.2</a>). And we see that the 2D projection of a vertex (<i>x</i>, <i>y</i>, <i>z</i>) is just (<i>x</i>, <i>y</i>). </p>
+
+<p class="caption"><img src="images/Fig20-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.2"><b><i>Figure 20.2.</i></b>&nbsp;&nbsp;The orthographic projection of points onto the projection plane. The lines of projection are parallel to the view space <i>z</i>-axis with an orthographic projection.</p>
+
+
+<p class="tx">As with perspective projection, we want to maintain relative depth information, and we want normalized device coordinates. To transform the view volume from view space to NDC space, we need to rescale and shift to map the view space view volume <span style="line-height:3.0em"><img src="images/eq681-01.jpg" alt="image" width="180" height="40" style="margin-bottom:-1.0em;"/></span> to the NDC space view volume [&minus;1, 1] &times; [-1, 1] &times; [0, 1]. We can determine this mapping by working coordinate-by-coordinate. For the first two coordinates, it is easy to see that the intervals differ only by a scaling factor:</p>
+
+<p class="eq"><img src="images/eq681-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">For the third coordinate, we need to map [<i>n</i>, <i>f</i>] &rarr; [0, 1]. We assume the mapping takes the form <i>g</i>(<i>z</i>) = <i>az</i> + <i>b</i> (i.e., a scaling and translation). We have the conditions <i>g</i>(<i>n</i>) = 0 and <i>g</i>(<i>f</i>) = 1, which allow us to solve for <i>a</i> and <i>b</i>:</p>
+
+<p class="eq"><img src="images/eq681-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The first equation implies<a id="page648"/> <i>b</i> = &minus;<i>an</i>. Plugging this into the second equation we get:</p>
+
+<p class="eq"><img src="images/eq682-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">And so:</p>
+<p class="eq"><img src="images/eq682-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus,</p>
+<p class="eq"><img src="images/eq682-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The reader may wish to graph <i>g</i>(<i>z</i>) over the domain [<i>n</i>, <i>f</i>] for various <i>n</i> and <i>f</i> such that <i>f</i> &gt; <i>n</i>.</p>
+<p class="tx">Finally, the orthographic transformation from view space coordinates (<i>x</i>, <i>y</i>, <i>z</i>) to NDC space coordinates (<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;) is:</p>
+<p class="eq"><img src="images/eq682-04.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Or in terms of matrices:</p>
+<p class="eq"><img src="images/eq682-05.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The 4 &times; 4 matrix in the above equation is the <i>orthographic projection matrix</i>.</p>
+<p class="tx">Recall that with the perspective projection transform, we had to split it into two parts: a linear part described by the projection matrix, and a nonlinear part described by the divide by <i>w</i>. In contrast, the orthographic projection transformation is completely linear&mdash;there is no divide by <i>w</i>. Multiplying by the orthographic projection matrix takes us directly into NDC coordinates. </p>
+<p class="h1" id="c20.3"><a href="toc.html#toc-20.3"><b>20.3 PROJECTIVE TEXTURE COORDINATES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Projective texturing is so called because<a id="page649"/> it allows us to project a texture onto arbitrary geometry, much like a slide projector. Figure <a href="ch20.html#fig20.3">20.3</a> shows an example of projective texturing.</p>
+
+<p class="caption"><img src="images/Fig20-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.3"><b><i>Figure 20.3.</i></b>&nbsp;&nbsp;The skull texture (right) is projected onto the scene geometry (left).</p>
+
+
+<p class="tx">Projective texturing can be useful on its own for modeling slide projector lights, but as we will see in &#x00A7;20.4, it is also used as an intermediate step for shadow mapping.</p>
+<p class="tx">The key to projective texturing is to generate texture coordinates for each pixel in such a way that the applied texture looks like it has been projected onto the geometry. We will call such generated texture coordinates <i>projective texture coordinates</i>.</p>
+<p class="tx">From Figure <a href="ch20.html#fig20.4">20.4</a>, we see that the texture coordinates (<i>u</i>, <i>v</i>) identify the texel that should be projected onto the 3D point <b>p</b>. But the coordinates (<i>u</i>, <i>v</i>) precisely identify the projection of <b>p</b> on the projection window, relative to a texture space coordinate system on the projection window. So the strategy of generating projective texture coordinates is as follows:</p>
+<ol><li>Project the point <b>p</b> onto the light&rsquo;s projection window and transform the coordinates to NDC space.</li>
+<li>Transform the projected coordinates from NDC space to texture space, thereby effectively turning them into texture coordinates. </li></ol>
+
+<p class="caption"><img src="images/Fig20-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.4"><b><i>Figure 20.4.</i></b>&nbsp;&nbsp;The texel identified by the coordinates (<i>u</i>, <i>v</i>) relative to the texture space on the projection window is projected onto the point <b>p</b> by following the line of sight from the light origin to the point <b>p</b>.</p>
+
+
+<p class="tx1">Step 1 can be implemented by thinking of the light projector as a camera. We define a view matrix <b>V</b> and projection matrix <b>P</b> for the light projector. Together, these matrices essentially define the position, orientation, and frustum of the light projector in the world. The matrix <b>V</b> transforms coordinates from world space to the coordinate system of the light projector. Once the coordinates are relative<a id="page650"/> to the light coordinate system, the projection matrix, along with the homogeneous divide, are used to project the vertices onto the projection plane of the light. Recall from &#x00A7;5.6.3.5 that after the homogeneous divide, the coordinates are in NDC space. </p>
+<p class="tx">Step 2 is accomplished by transforming from NDC space to texture space via the following change of coordinate transformation:</p>
+
+<p class="eq"><img src="images/eq684-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Here, <i>u</i>, <i>v</i> &#x2208; [0, 1] provided <i>x</i>, <i>y</i> &#x2208; [&minus;1, 1]. We scale the <i>y</i>-coordinate by a negative to invert the axis because the positive <i>y</i>-axis in NDC coordinates goes in the direction opposite to the positive <i>v</i>-axis in texture coordinates. The texture space transformations can be written in terms of matrices (recall Exercise 21 from Chapter <a href="ch03.html#chap03">3</a>):</p>
+<p class="eq"><img src="images/eq684-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Let us call the above matrix <b>T</b> for &ldquo;texture matrix&rdquo; that transforms from NDC space to texture space. We can form the composite transform <b>VPT</b> that takes us from world space directly to texture space. After we multiply by this transform, we still need to do the perspective divide to complete the transformation; see Chapter <a href="ch05.html#chap05">5</a>  Exercise 8 for why we can do the perspective divide after doing the texture transform.</p>
+<p class="h2" id="c20.3.1"><a href="toc.html#toc-20.3.1"><b>20.3.1 Code Implementation</b></a></p>
+<p class="tx1">The code for generating projective texture<a id="page651"/> coordinates is shown below:</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp; : SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp; : POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 TangentW : TANGENT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 Tex&nbsp;&nbsp; : TEXCOORD0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ProjTex : TEXCOORD1;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; [&hellip;]</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to light&rsquo;s projective space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;<b>vout.ProjTex = mul(float4(vIn.posL, 1.0f),</b></span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;<b>gLightWorldViewProjTexture);</b></span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; [&hellip;]</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Complete projection by doing division by w.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.ProjTex.xyz /= pin.ProjTex.w;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Depth in NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float depth = pin.ProjTex.z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sample the texture using the projective tex-coords.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 c = gTextureMap.Sample(sampler, pin.ProjTex.xy);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c20.3.2"><a href="toc.html#toc-20.3.2"><b>20.3.2 Points Outside the Frustum</b></a></p>
+<p class="tx1">In the rendering pipeline, geometry outside the frustum is clipped. However, when we generate projective texture coordinates by projecting the geometry from the point of view of the light projector, no clipping is done&mdash;we simply project vertices. Consequently, geometry outside the projector&rsquo;s frustum receives projective texture coordinates outside the [0, 1] range. Projective texture coordinates outside the [0, 1] range function just like normal texture coordinates outside the [0, 1] range based on the enabled address mode (see (&#x00A7;9.6) used when sampling the texture.</p>
+<p class="tx">Generally, we do not want to texture any geometry<a id="page652"/> outside the projector&rsquo;s frustum because it does not make sense (such geometry receives no light from the projector). Using the border color address mode with a zero color is a common solution. Another strategy is to associate a spotlight with the projector so that anything outside the spotlight&rsquo;s field of view cone is not lit (i.e., the surface receives no projected light). The advantage of using a spotlight is that the light intensity from the projector is strongest at the center of the spotlight cone, and can smoothly fade out as the angle &#x03D5; between &minus;<b>L</b> and <b>d</b> increases (where <b>L</b> is the light vector to the surface point and <b>d</b> is the direction of the spotlight). </p>
+<p class="h2" id="c20.3.3"><a href="toc.html#toc-20.3.3"><b>20.3.3 Orthographic Projections</b></a></p>
+<p class="tx1">So far we have illustrated projective texturing using perspective projections (frustum shaped volumes). However, instead of using a perspective projection for the projection process, we could have used an orthographic projection. In this case, the texture is projected in the direction of the <i>z</i>-axis of the light through a box.</p>
+<p class="tx">Everything we have talked about with projective texture coordinates also applies when using an orthographic projection, except for a couple things. First, with an orthographic projection, the spotlight strategy used to handle points outside the projector&rsquo;s volume does not work. This is because a spotlight cone approximates the volume of a frustum to some degree, but it does not approximate a box. However, we can still use texture address modes to handle points outside the projector&rsquo;s volume. This is because an orthographic projection still generates NDC coordinates and a point (<i>x</i>, <i>y</i>, <i>z</i>) is inside the volume if and only if:</p>
+<p class="eq"><img src="images/eq686-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Second, with an orthographic projection, we do not need to do the divide by <i>w</i>; that is, we do not need the line:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Complete projection by doing division by w.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.ProjTex.xyz /= pin.ProjTex.w;</span></p>
+<p class="tx1">This is because after an orthographic projection, the coordinates are already in NDC space. This is faster, because it avoids the per-pixel division required for perspective projection. On the other hand, leaving in the division does not hurt because it divides by 1 (an orthographic projection does not change the <i>w</i>-coordinate, so <i>w</i> will be 1). If we leave the division by <i>w</i> in the shader code, then the shader code works for both perspective and orthographic projections uniformly. Though, the tradeoff for this uniformity is that you do a superfluous division with an orthographic projection. </p>
+<p class="h1" id="c20.4"><a href="toc.html#toc-20.4"><b>20.4 SHADOW MAPPING </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c20.4.1"><a href="toc.html#toc-20.4.1"><b>20.4.1 Algorithm Description</b></a></p>
+<p class="tx1">The idea of the shadow mapping algorithm<a id="page653"/> is to render-to-texture the scene depth from the viewpoint of the light into a depth buffer called a <i>shadow map</i>. After this is done, the shadow map will contain the depth values of all the visible pixels from the perspective of the light. (Pixels occluded by other pixels will not be in the shadow map because they will fail the depth test and either be overwritten or never written.)</p>
+<p class="tx">To render the scene from the viewpoint of the light, we need to define a light view matrix that transforms coordinates from world space to the space of the light and a light projection matrix, which describes the volume that light emits through in the world. This can be either a frustum volume (perspective projection) or box volume (orthographic projection). A frustum light volume can be used to model spotlights by embedding the spotlight cone inside the frustum. A box light volume can be used to model parallel lights. However, the parallel light is now bounded and only passes through the box volume; therefore, it may only strike a subset of the scene (see Figure <a href="ch20.html#fig20.5">20.5</a>). For a light source that strikes the entire scene (such as the sun), we can make the light volume large enough to contain the entire scene. </p>
+
+<p class="tx">Once we have built the shadow map, we render the scene as normal from the perspective of the &ldquo;player&rdquo; camera. For each pixel <i>p</i> rendered, we also compute its depth from the light source, which we denote by <i>d</i>(<i>p</i>). In addition, using projective texturing, we sample the shadow map along the line of sight from the light source to the pixel <i>p</i> to get the depth value <i>s</i>(<i>p</i>) stored in the shadow map; this value is the depth of the pixel closest to the light along the line of sight from the position of the light to <i>p</i>. Then, from Figure <a href="ch20.html#fig20.6">20.6</a>, we see that a pixel <i>p</i> is in shadow if and only if <i>d</i>(<i>p</i>) &gt; <i>s</i>(<i>p</i>). Hence a pixel is not in shadow if and only if <i>d</i>(<i>p</i>) &#x2264; <i>s</i>(<i>p</i>). </p>
+<p class="caption"><img src="images/Fig20-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.5"><b><i>Figure 20.5.</i></b>&nbsp;&nbsp;Parallel light rays travel through the light volume, so only a subset of the scene inside the volume receives light. If the light source needs to strike the entire scene, we can set the light volume size to contain the entire scene.</p>
+
+<p class="caption"><img src="images/Fig20-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig20.6"><b><i>Figure 20.6.</i></b>&nbsp;&nbsp;On the left, the depth of the pixel <i>p</i> from the light is <i>d</i>(<i>p</i>). However, the depth of the pixel nearest to the light along the same line of sight has depth <i>s</i>(<i>p</i>), and <i>d</i>(<i>p</i>) &gt; <i>s</i>(<i>p</i>). We conclude, therefore, that there is an object in front of <i>p</i> from the perspective of the light and so <i>p</i> is in shadow. On the right, the depth of the pixel <i>p</i> from the light is <i>d</i>(<i>p</i>) and it also happens to be the pixel nearest to the light along the line of sight, that is, <i>s</i>(<i>p</i>) = <i>d</i>(<i>p</i>), so we conclude <i>p</i> is not in shadow.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The depth values compared are in NDC coordinates. This is because the shadow map, which is a depth buffer, stores the depth values in NDC coordinates. How this is done exactly will be clear when we look at the code.</i></p>
+
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c20.4.2"><a href="toc.html#toc-20.4.2"><b>20.4.2 Biasing and Aliasing</b></a></p>
+<p class="tx1">The shadow map stores the depth of the<a id="page654"/> nearest visible pixels with respect to its associated light source. However, the shadow map only has some finite resolution. So each shadow map texel corresponds to an area of the scene. Thus, the shadow map is just a discrete sampling of the scene depth from the light perspective. This causes aliasing issues known as <i>shadow acne</i> (see Figure <a href="ch20.html#fig20.7">20.7</a>). </p>
+<p class="caption"><img src="images/Fig20-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.7"><b><i>Figure 20.7.</i></b>&nbsp;&nbsp;Notice the aliasing on the floor plane with the &ldquo;stair-stepping&rdquo; alternation between light and shadow. This aliasing error is often called shadow acne.</p>
+
+
+<p class="tx">Figure <a href="ch20.html#fig20.8">20.8</a> shows a simple diagram to explain<a id="page655"/> why shadow acne occurs. A simple solution is to apply a constant bias to offset the shadow map depth. Figure <a href="ch20.html#fig20.9">20.9</a> shows how this corrects the problem. </p>
+
+<p class="caption"><img src="images/Fig20-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.8"><b><i>Figure 20.8.</i></b>&nbsp;&nbsp;The shadow map samples the depth of the scene. Observe that due to finite resolution of the shadow map, each shadow map texel corresponds to an area of the scene. The eye <b>E</b> sees two points on the scene <i>p</i><sub>1</sub> and <i>p</i><sub>2</sub> that correspond to different screen pixels. However, from the viewpoint of the light, both points are covered by the same shadow map texel (that is,  s(<i>p</i><sub>1</sub>) = <i>s</i>(<i>p</i><sub>2</sub>) = <i>s</i>). When we do the shadow map test, we have <i>d</i>(<i>p</i><sub>1</sub>) &gt; <i>s</i> and <i>d</i>(<i>p</i><sub>2</sub>) &#x2264; <i>s</i>. Thus, <i>p</i><sub>1</sub> will be colored as if it were in shadow, and <i>p</i><sub>2</sub> will be colored as if it were not in shadow. This causes the shadow acne.</p>
+
+<p class="caption"><img src="images/Fig20-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.9"><b><i>Figure 20.9.</i></b>&nbsp;&nbsp;By biasing the depth values in the shadow map, no false shadowing occurs. We have that <i>d</i>(<i>p</i><sub>1</sub>)  &#x2264; <i>s</i> and <i>d</i>(<i>p</i><sub>2</sub>) &#x2264; <i>s</i>. Finding the right depth bias is usually done by experimentation.</p>
+
+
+
+
+<p class="tx">Too much biasing results in an artifact called <i>peter-panning</i>, where the shadow appears to become detached from the object (see Figure <a href="ch20.html#fig20.10">20.10</a>).</p>
+
+<p class="caption"><img src="images/Fig20-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.10"><b><i>Figure 20.10.</i></b>&nbsp;&nbsp;Peter-panning&mdash;the shadow becomes detached from the column due to a large depth bias.</p>
+
+
+<p class="tx">Unfortunately, a fixed bias does not work for all geometry. In particular,  Figure <a href="ch20.html#fig20.11">20.11</a> shows that triangles with large slopes (with respect to the light source) need a larger bias. It is tempting to choose a large enough depth bias to handle all slopes. However, as Figure <a href="ch20.html#fig20.10">20.10</a> showed, this leads to peter-panning. </p>
+
+<p class="caption"><img src="images/Fig20-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.11"><b><i>Figure 20.11.</i></b>&nbsp;&nbsp;Polygons with large slopes, relative to the light source, require more bias than polygons with small slopes relative to the light source.</p>
+
+
+<p class="tx">What we want is a way to measure<a id="page656"/> the polygon slope with respect to the light source, and apply more bias for larger sloped polygons. Fortunately, graphics hardware has intrinsic support for this via the so-called <i>slope-scaled-bias</i> rasterization state properties:</p>
+<p class="code"><span class="code">typedef struct D3D12_RASTERIZER_DESC {</span></p>
+<p class="code"><span class="code">&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">&nbsp;INT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; DepthBias;</span></p>
+<p class="code"><span class="code">&nbsp;FLOAT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DepthBiasClamp;</span></p>
+<p class="code"><span class="code">&nbsp;FLOAT&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SlopeScaledDepthBias;</span></p>
+<p class="code"><span class="code">&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">} D3D12_RASTERIZER_DESC;</span></p>
+<ol><li><span class="code">DepthBias</span>: A fixed bias to apply; see comments below for how this integer value is used for a UNORM depth buffer format.</li>
+<li><span class="code">DepthBiasClamp</span>: A maximum depth bias allowed. This allows us to set a bound on the depth bias, for we can imagine that for very steep slopes, the bias slope-scaled-bias would be too much and cause peter-panning artifacts. </li>
+<li><span class="code">SlopeScaledDepthBias</span>: A scale factor to control how much to bias based on the polygon slope; see comments below for the formula.</li></ol>
+<p class="tx1">Note that we apply the slope-scaled-bias <i>when we are rendering the scene to the shadow map</i>. This is because we want to bias based on the polygon slope <i>with respect to the light source</i>. Consequently, we are biasing the shadow map values. In our demo we use the values:</p>
+<p class="code"><span class="code">// [From MSDN]</span></p>
+<p class="code"><span class="code">// If the depth buffer currently bound to the output-merger stage</span></p>
+<p class="code"><span class="code">// has a UNORM format or no depth buffer is bound the bias value&nbsp;</span></p>
+<p class="code"><span class="code">// is calculated like this:&nbsp;</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Bias = (float)DepthBias * r + SlopeScaledDepthBias * MaxDepthSlope;</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// where r is the minimum representable value &gt; 0 in the&nbsp;</span></p>
+<p class="code"><span class="code">// depth-buffer format converted to float32.</span></p>
+<p class="code"><span class="code">// [/End MSDN]</span></p>
+<p class="code"><span class="code">//&nbsp;</span></p>
+<p class="code"><span class="code">// For a 24-bit depth buffer, r = 1 / 2^24.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Example: DepthBias = 100000 ==&gt; Actual DepthBias = 100000/2^24 = .006</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// These values are highly scene dependent, and you will need</span></p>
+<p class="code"><span class="code">// to experiment with these values for your scene to find the&nbsp;</span></p>
+<p class="code"><span class="code">// best values.</span></p>
+<p class="code"><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC smapPsoDesc = opaquePsoDesc;</span></p>
+<p class="code"><span class="code">smapPsoDesc.RasterizerState.DepthBias = 100000;</span></p>
+<p class="code"><span class="code">smapPsoDesc.RasterizerState.DepthBiasClamp = 0.0f;</span></p>
+<p class="code"><span class="code">smapPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;</span></p>
+
+
+<p class="caption"><img src="images/Fig20-12.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.12"><b><i>Figure 20.12.</i></b>&nbsp;&nbsp;Taking four shadow mapa samples.</p>
+
+
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Depth bias happens during rasterization (after clipping), so does not affect geometry clipping.</i></p>
+</td></tr>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>For the complete details of depth bias, search the SDK documentation for &ldquo;Depth Bias,&rdquo; and it will give all the rules for how it is applied, and how it works for floating-point depth buffers.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c20.4.3"><a href="toc.html#toc-20.4.3"><b>20.4.3 PCF Filtering</b></a></p>
+<p class="tx1">The projective texture coordinates<a id="page657"/> (<i>u</i>, <i>v</i>) used to sample the shadow map generally will not coincide with a texel in the shadow map. Usually, it will be between four texels. With color texturing, this is solved with bilinear interpolation (&#x00A7;9.5.1). However, [Kilgard01] points out that we should not average depth values, as it can lead to incorrect results about a pixel being flagged in shadow. (For the same reason, we also cannot generate mipmaps for the shadow map.) Instead of interpolating the depth values, we interpolate the results&mdash;this is called <i>percentage closer filtering (PCF)</i>. That is, we use point filtering (<span class="code">MIN_MAG_MIP_POINT</span>) and sample the texture with coordinates (<i>u</i>, <i>v</i>), (<i>u</i> + &#x0394;<i>x</i>, <i>v</i>), (<i>u</i>, <i>v</i> + &#x0394;<i>x</i>), (<i>u</i> + &#x0394;<i>x</i>,  <i>v</i> + &#x0394;<i>x</i>), where &#x0394;<i>x</i> = 1/SHADOW_MAP_SIZE. Since we are using point sampling, these four points will hit the nearest four texels <b>s</b><sub>0</sub>, <b>s</b><sub>1</sub>, <b>s</b><sub>2</sub>, and <b>s</b><sub>3</sub>, respectively, surrounding (<i>u</i>, <i>v</i>), as shown in Figure <a href="ch20.html#fig20.12">20.12</a>. We then do the shadow map test for each of these sampled depths and bilinearly interpolate the shadow map results:</p>
+
+<p class="code"><span class="code">static const float SMAP_SIZE = 2048.0f;</span></p>
+<p class="code"><span class="code">static const float SMAP_DX = 1.0f / SMAP_SIZE;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sample shadow map to get nearest depth to light.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float s0 = gShadowMap.Sample(gShadowSam,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;projTexC.xy).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float s1 = gShadowMap.Sample(gShadowSam,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;projTexC.xy + float2(SMAP_DX, 0)).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float s2 = gShadowMap.Sample(gShadowSam,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;projTexC.xy + float2(0, SMAP_DX)).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float s3 = gShadowMap.Sample(gShadowSam,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;projTexC.xy + float2(SMAP_DX, SMAP_DX)).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Is the pixel depth &lt;= shadow map value?</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float result0 = depth &lt;= s0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float result1 = depth &lt;= s1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float result2 = depth &lt;= s2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float result3 = depth &lt;= s3;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to texel space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 texelPos = SMAP_SIZE*projTexC.xy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Determine the interpolation amounts.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 t = frac( texelPos );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolate results.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return lerp( lerp(result0, result1, t.x),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; lerp(result2, result3, t.x), t.y);</span></p>
+<p class="tx1">In this way, it is not an all-or-nothing situation; a pixel can be partially in shadow<a id="page658"/>. For example, if two of the samples are in shadow and two are not in shadow, then the pixel is 50% in shadow. This creates a smoother transition from shadowed pixels to non-shadows pixels (see Figure <a href="ch20.html#fig20.13">20.13</a>).</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The HLSL </i><span class="code">frac</span><i> function returns the fractional part of a floating-point number (i.e., the mantissa). For example, if </i><span class="code">SMAP_SIZE = 1024</span><i> and </i><span class="code">projTex.xy = (0.23, 0.68)</span><i>, then </i><span class="code">texelPos = (235.52, 696.32)</span><i> and </i><span class="code">frac(texelPos) = (0.52, 0.32)</span><i>. These fractions tell us how much to interpolate between the samples. The HLSL </i><span class="code">lerp(x, y, s)</span><i> function is the linear interpolation function and returns  x + s(y </i>&minus;<i> x) = (1 </i>&minus;<i> s)x</i> + <i>sy. </i></p>
+</td></tr>
+</tbody>
+</table>
+<p class="caption"><img src="images/Fig20-13.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.13"><b><i>Figure 20.13.</i></b>&nbsp;&nbsp;In the top image, observe the &ldquo;stair-stepping&rdquo; artifacts on the shadow boundary. On the bottom image, these aliasing artifacts are smoothed out a bit with filtering.</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Even with our filtering, the shadows are still very hard and the aliasing artifacts can still be unsatisfactory close up. More aggressive methods can be used; see [Uralsky05], for example. We also note that using a higher-resolution shadow map helps, but can be cost prohibitive.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">The main disadvantage of PCF filtering as described above is that it requires four texture samples. Sampling textures is one of the more expensive<a id="page659"/> operations on a modern GPU because memory bandwidth and memory latency have not improved as much as the raw computational power of GPUs [M&ouml;ller08]. Fortunately, Direct3D 11+ graphics hardware has built in support for PCF via the <span class="code">SampleCmpLevelZero</span> method:</p>
+<p class="code"><span class="code">Texture2D gShadowMap : register(t1);</span></p>
+<p class="code"><span class="code">SamplerComparisonState gsamShadow : register(s6);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Complete projection by doing division by w.</span></p>
+<p class="code"><span class="code">shadowPosH.xyz /= shadowPosH.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Depth in NDC space.</span></p>
+<p class="code"><span class="code">float depth = shadowPosH.z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Automatically does a 4-tap PCF.&nbsp;</span></p>
+<p class="code"><span class="code">gShadowMap.SampleCmpLevelZero(gsamShadow,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;shadowPosH.xy, depth).r;</span></p>
+<p class="tx1">The <span class="code">LevelZero</span> part of the method name means that it only looks at the top mipmap level, which is fine because that is what we want for shadow mapping (we do not generate a mipmap chain for the shadow map). This method does not use a typical sampler object, but instead uses a so-called <i>comparison sampler</i>. This is so that the hardware can do the shadow map comparison test, which needs to be done before filtering the results. For PCF, you need to use the filter <span class="code">D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT</span> and set the comparison function to <span class="code">LESS_EQUAL</span> (<span class="code">LESS</span> also works since we bias the depth). The first and second parameters are the comparison sampler and texture coordinates, respectively. The third parameter is the value to compare against the shadow map samples. So settings the compare value to <span class="code">depth</span>, and the comparison function to <span class="code">LESS_EQUAL</span> we are doing the comparisons:</p>
+<p class="code"><span class="code">float result0 = depth &lt;= s0;</span></p>
+<p class="code"><span class="code">float result1 = depth &lt;= s1;</span></p>
+<p class="code"><span class="code">float result2 = depth &lt;= s2;</span></p>
+<p class="code"><span class="code">float result3 = depth &lt;= s3;</span></p>
+<p class="tx1">Then the hardware bilinearly interpolates the results to finish the PCF. </p>
+<p class="tx">The following code shows how we describe the comparison sampler for shadow mapping:</p>
+<p class="code"><span class="code">const CD3DX12_STATIC_SAMPLER_DESC shadow(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;6, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_BORDER, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_BORDER, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_BORDER, // addressW</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0.0f,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// mipLODBias</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;16,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // maxAnisotropy</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_FUNC_LESS_EQUAL,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>From the SDK documentation, only the following formats support comparison filters: </i><span class="code">R32_FLOAT_X8X24_TYPELESS</span><i>, </i><span class="code">R32_FLOAT</span><i>, </i><span class="code">R24_UNORM_X8_TYPELESS</span><i>, </i><span class="code">R16_UNORM</span><i>.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">So far in this section, we used a 4-tap PCF kernel. Larger kernels can be used<a id="page660"/> to make the edges of shadows larger and even smoother, at the expensive of extra <span class="code">SampleCmpLevelZero</span> calls. In our demo, we call <span class="code">SampleCmpLevelZero</span> in a 3 &times; 3 box filter pattern. Since each <span class="code">SampleCmpLevelZero</span> call performs a 4-tap PCF, we are using 4 &times; 4 unique sample points from the shadow map (based on our pattern there is some overlap of sample points). Using large filtering kernels can cause the shadow acne problem to return; we explain why and describe a solution in &#x00A7;20.5. </p>
+<p class="tx">An observation is that PCF really only needs to be performed at the shadow edges. Inside the shadow, there is no blending, and outside the shadow there is no blending. Based on this observation, methods have been devised to only do PCF at the shadow edges. [Isidoro06b] describes one way to do this. Such a technique requires a dynamic branch in the shader code: &ldquo;If we are on a shadow edge, do expensive PCF, otherwise just take one shadow map sample.&rdquo; </p>
+<p class="tx">Note that the extra expensive of doing such a method makes it only worthwhile if your PCF kernel is large (say 5 &times; 5 or greater); however, this is just general advice and you will need to profile to verify the cost/benefit. </p>
+<p class="tx">One final remark is that your PCF kernel need not be a box filter grid. Many articles have been written about randomly picking points to be in the PCF kernel. </p>
+<p class="h2" id="c20.4.4"><a href="toc.html#toc-20.4.4"><b>20.4.4 Building the Shadow Map</b></a></p>
+<p class="tx1">The first step in shadow mapping is building the shadow map. To do this, we create a <span class="code">ShadowMap</span> instance:</p>
+<p class="code"><span class="code">mShadowMap = std::make_unique&lt;ShadowMap&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice.Get(), 2048, 2048);</span></p>
+<p class="tx1">We then define a light view matrix and projection matrix (representing the light frame and view volume). The light view matrix is derived from the primary light source, and the light view volume is computed to fit the bounding sphere of the entire scene.</p>
+<p class="code"><span class="code">DirectX::BoundingSphere mSceneBounds;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">ShadowMapApp::ShadowMapApp(HINSTANCE hInstance)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;: D3DApp(hInstance)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Estimate the scene bounding sphere manually since we know how the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// scene was constructed.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The grid is the "widest object" with a width of 20 and depth of&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// 30.0f, and centered at</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the world space origin. In general, you need to loop over every&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// world space vertex</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// position and compute the bounding sphere<a id="page661"/>.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSceneBounds.Radius = sqrtf(10.0f*10.0f + 15.0f*15.0f);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShadowMapApp::Update(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Animate the lights (and hence shadows).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mLightRotationAngle += 0.1f*gt.DeltaTime();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX R = XMMatrixRotationY(mLightRotationAngle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 3; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR lightDir = XMLoadFloat3(&amp;mBaseLightDirections[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;lightDir = XMVector3TransformNormal(lightDir, R);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;mRotatedLightDirections[i], lightDir);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;AnimateMaterials(gt);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UpdateObjectCBs(gt);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UpdateMaterialBuffer(gt);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UpdateShadowTransform(gt);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UpdateMainPassCB(gt);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UpdateShadowPassCB(gt);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShadowMapApp::UpdateShadowTransform(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Only the first "main" light casts a shadow.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR lightDir = XMLoadFloat3(&amp;mRotatedLightDirections[0]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR lightPos = -2.0f*mSceneBounds.Radius*lightDir;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR targetPos = XMLoadFloat3(&amp;mSceneBounds.Center);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR lightUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mLightPosW, lightPos);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform bounding sphere to light space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 sphereCenterLS;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;sphereCenterLS, XMVector3TransformCoord(targetPos, lightView));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Ortho frustum in light space encloses scene.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float l = sphereCenterLS.x - mSceneBounds.Radius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float b = sphereCenterLS.y - mSceneBounds.Radius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float n = sphereCenterLS.z - mSceneBounds.Radius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float r = sphereCenterLS.x + mSceneBounds.Radius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float t = sphereCenterLS.y + mSceneBounds.Radius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float f = sphereCenterLS.z + mSceneBounds.Radius;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mLightNearZ = n;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mLightFarZ = f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform NDC space [-1,+1]^2 to texture space [0,1]^2</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX T(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.5f, 0.0f, 0.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f, -0.5f, 0.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f, 0.0f, 1.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.5f, 0.5f, 0.0f, 1.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX S = lightView*lightProj*T;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mLightView, lightView);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mLightProj, lightProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mShadowTransform, S);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Rendering the scene into the shadow map<a id="page662"/> is done like so:</p>
+<p class="code"><span class="code">void ShadowMapApp::DrawSceneToShadowMap()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetViewports(1, &amp;mShadowMap-&gt;Viewport());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetScissorRects(1, &amp;mShadowMap-&gt;ScissorRect());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Change to DEPTH_WRITE.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mShadowMap-&gt;Resource(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_DEPTH_WRITE));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; (PassConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Clear the back buffer and depth buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ClearDepthStencilView(mShadowMap-&gt;Dsv(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Set null render target because we are only going to draw to</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// depth buffer. Setting a null render target will disable color writes.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Note the active PSO also must specify a render target count of 0.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;OMSetRenderTargets(0, nullptr, false, &amp;mShadowMap-&gt;Dsv());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bind the pass constant buffer for the shadow map pass.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = passCB-&gt;GetGPUVirtualAddress()</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;+ 1*passCBByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootConstantBufferView(1, passCBAddress);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetPipelineState(mPSOs["shadow_opaque"].Get());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Change back to GENERIC_READ so we can read the texture in a shader.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mShadowMap-&gt;Resource(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_DEPTH_WRITE,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Observe that we set a null render target<a id="page663"/>, which essentially disables color writes. This is because when we render the scene to the shadow map, all we care about is the depth values of the scene relative to the light source. Graphics cards are optimized for only drawing depth; a depth only render pass is significantly faster than drawing color and depth. The active pipeline state object must also specify a render target count of 0:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_GRAPHICS_PIPELINE_STATE_DESC smapPsoDesc = opaquePsoDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.RasterizerState.DepthBias = 100000;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.RasterizerState.DepthBiasClamp = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.pRootSignature = mRootSignature.Get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.VS =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;reinterpret_cast&lt;BYTE*&gt;(mShaders["shadowVS"]-&gt;GetBufferPointer()),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mShaders["shadowVS"]-&gt;GetBufferSize()</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;smapPsoDesc.PS =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;reinterpret_cast&lt;BYTE*&gt;(mShaders["shadowOpaquePS"]-&gt;GetBufferPointer()),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mShaders["shadowOpaquePS"]-&gt;GetBufferSize()</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;<b>// Shadow map pass does not have a render target.</b></span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;smapPsoDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;smapPsoDesc.NumRenderTargets = 0;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;smapPsoDesc, IID_PPV_ARGS(&amp;mPSOs["shadow_opaque"])));</span></p>
+<p class="tx1">The shader programs we use for rendering the scene from the perspective of the light is quite simple because we are only building the shadow map, so we do not need to do any complicated pixel shader work.</p>
+<p class="code"><span class="code">//*********************************************************************</span></p>
+<p class="code"><span class="code">// Shadows.hlsl by Frank Luna (C) 2015 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//*********************************************************************</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include common HLSL code.</span></p>
+<p class="code"><span class="code">#include "Common.hlsl"</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, matData.MatTransform).xy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// This is only used for alpha cut out geometry,<a id="page664"/> so that shadows&nbsp;</span></p>
+<p class="code"><span class="code">// show up correctly. Geometry that does not need to sample a</span></p>
+<p class="code"><span class="code">// texture can use a NULL pixel shader for depth pass.</span></p>
+<p class="code"><span class="code">void PS(VertexOut pin)&nbsp;</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = matData.DiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint diffuseMapIndex = matData.DiffuseMapIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Dynamically look up the texture in the array.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;diffuseAlbedo *= gTextureMaps[diffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifdef ALPHA_TEST</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Discard pixel if texture alpha &lt; 0.1. We do this test as soon&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// as possible in the shader so that we can potentially exit the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// shader early, thereby skipping the rest of the shader code.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;clip(diffuseAlbedo.a - 0.1f);</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Notice that the pixel shader does not return<a id="page665"/> a value because we only need to output depth values. The pixel shader is solely used to clip pixel fragments with zero or low alpha values, which we assume indicate complete transparency. For example, consider the tree leaf texture in Figure <a href="ch20.html#fig20.14">20.14</a>; here, we only want to draw the pixels with white alpha values to the shadow map. To facilitate this, we provide two techniques: one that does the alpha clip operation, and one that does not. If the alpha clip does not need to be done, then we can bind a null pixel shader, which would be even faster than binding a pixel shader that only samples a texture and performs a clip operation.</p>
+<p class="caption"><img src="images/Fig20-14.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.14"><b><i>Figure 20.14.</i></b>&nbsp;&nbsp;Leaf texture.</p>
+
+
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Although not shown for brevity, the shaders for rendering the depth for tessellated geometry are slightly more involved. When drawing tessellated geometry into the shadow map, we need to tessellate the geometry the same way we tessellate it when being drawn into the back buffer (i.e., based on the distance to the player&rsquo;s eye). This is for consistency; the geometry the eye sees should be the same that the light sees. That being said, if the tessellated geometry is not displaced too much, the displacement might not even be noticeable in the shadows; therefore, a possible optimization may be not to tessellate the geometry when rendering the shadow map. This optimization trades accuracy for speed.  </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c20.4.5"><a href="toc.html#toc-20.4.5"><b>20.4.5 The Shadow Factor</b></a></p>
+<p class="tx1">The shadow factor is a new factor we add to the lighting equation. The shadow factor is a scalar in the range 0 to 1. A value of 0 indicates a point is in shadow, and a value of 1 indicates a point is not in shadow. With PCF (&#x00A7;20.4.3), a point can also be partially in shadow, in which case the shadow factor will be between 0 and 1. The <span class="code">CalcShadowFactor</span> implementation is in <i>Common.hlsl</i>.</p>
+<p class="code"><span class="code">float CalcShadowFactor(float4 shadowPosH)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Complete projection by doing division by w.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;shadowPosH.xyz /= shadowPosH.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Depth in NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float depth = shadowPosH.z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint width, height, numMips;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gShadowMap.GetDimensions(0, width, height, numMips);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Texel size.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dx = 1.0f / (float)width;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float percentLit = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float2 offsets[9] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, -dx), float2(0.0f, -dx), float2(dx, -dx),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, +dx), float2(0.0f, +dx), float2(dx, +dx)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;[unroll]</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 9; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;percentLit += gShadowMap.SampleCmpLevelZero(gsamShadow,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shadowPosH.xy + offsets[i], depth).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return percentLit / 9.0f;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">In our model, the shadow factor will be multiplied against<a id="page666"/> the direct lighting (diffuse and specular) terms:</p>
+<p class="code"><span class="code">// Only the first light casts a shadow.</span></p>
+<p class="code"><b><span class="code">float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);</span></b></p>
+<p class="code"><b><span class="code">shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);</span></b></p>
+
+<p class="code"><span class="code">const float shininess = (1.0f - roughness) * normalMapSample.a;</span></p>
+<p class="code"><span class="code">Material mat = { diffuseAlbedo, fresnelR0, shininess };</span></p>
+<p class="code"><span class="code">float4 directLight = ComputeLighting(gLights, mat, pin.PosW,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;bumpedNormalW, toEyeW, <b>shadowFactor</b>);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">float4 ComputeLighting(Light gLights[MaxLights], Material mat,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float3 pos, float3 normal, float3 toEye,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float3 shadowFactor)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 result = 0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;int i = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#if (NUM_DIR_LIGHTS &gt; 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(i = 0; i &lt; NUM_DIR_LIGHTS; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;result += <b>shadowFactor[i]</b> * ComputeDirectionalLight(gLights[i], mat, normal, toEye);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#if (NUM_POINT_LIGHTS &gt; 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(i = NUM_DIR_LIGHTS; i &lt; NUM_DIR_LIGHTS+NUM_POINT_LIGHTS; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;result += ComputePointLight(gLights[i], mat, pos, normal, toEye);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#if (NUM_SPOT_LIGHTS &gt; 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(i = NUM_DIR_LIGHTS + NUM_POINT_LIGHTS; i &lt; NUM_DIR_LIGHTS +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;NUM_POINT_LIGHTS + NUM_SPOT_LIGHTS; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;result += ComputeSpotLight(gLights[i], mat, pos, normal, toEye);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">#endif&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return float4(result, 0.0f);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The shadow factor does not affect ambient<a id="page667"/> light since that is indirect light, and it also does not affect reflective light coming from the environment map. </p>
+<p class="h2" id="c20.4.6"><a href="toc.html#toc-20.4.6"><b>20.4.6 The Shadow Map Test</b></a></p>
+<p class="tx1">After we have built the shadow map by rendering the scene from the perspective of the light, we can sample the shadow map in our main rendering pass to determine if a pixel is in shadow or not. The key issue is computing <i>d</i>(<i>p</i>) and <i>s</i>(<i>p</i>) for each pixel <i>p</i>. The value <i>d</i>(<i>p</i>) is found by transforming the point to the NDC space of the light; then the <i>z</i>-coordinate gives the normalized depth value of the point from the light source. The value <i>s</i>(<i>p</i>) is found by projecting the shadow map onto the scene through the light&rsquo;s view volume using projective texturing. Note that with this setup, both <i>d</i>(<i>p</i>) and <i>s</i>(<i>p</i>) are measured in the NDC space of the light, so they can be compared. The transformation matrix <span class="code">gShadowTransform</span> transforms from world space to the shadow map texture space (&#x00A7;20.3).</p>
+<p class="code"><span class="code">// Generate projective tex-coords to project shadow map onto scene&nbsp;</span></p>
+<p class="code"><span class="code">// in vertex shader.</span></p>
+<p class="code"><span class="code">vout.ShadowPosH = mul(posW, gShadowTransform);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Do the shadow map test in pixel shader.</span></p>
+<p class="code"><span class="code">float3 shadowFactor = float3(1.0f, 1.0f, 1.0f);</span></p>
+<p class="code"><span class="code">shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);</span></p>
+<p class="tx1">The <span class="code">gShadowTransform</span> matrix is stored as a per-pass constant.</p>
+<p class="h2" id="c20.4.7"><a href="toc.html#toc-20.4.7"><b>20.4.7 Rendering the Shadow Map</b></a></p>
+<p class="tx1">For this demo, we also render the shadow map onto a quad that occupies the lower-right corner of the screen. This allows us to see what the shadow map looks like for each frame. Recall that the shadow map is just a depth buffer texture and we can create an SRV to it so that it can be sampled in a shader program. The shadow map is rendered as a grayscale image since it stores a one-dimensional value at each pixel (a depth value). Figure <a href="ch20.html#fig20.15">20.15</a> shows a screenshot of the &ldquo;Shadow Map&rdquo; demo.</p>
+
+<p class="caption"><img src="images/Fig20-15.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.15"><b><i>Figure 20.15.</i></b>&nbsp;&nbsp;Screenshot of the shadow map demo.</p>
+
+
+
+<p class="h1" id="c20.5"><a href="toc.html#toc-20.5"><b>20.5 LARGE PCF KERNELS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this section, we discuss problem occurs when using a large<a id="page668"/> PCF kernel. Our demos do not use a large PCF kernel, so this section is in some sense optional, but it introduces some interesting ideas. </p>
+<p class="tx">Refer to Figure <a href="ch20.html#fig20.16">20.16</a>, where we are computing the shadow test for a pixel <i>p</i> visible by the eye. With no PCF, we compute the distance <i>d</i> = <i>d</i>(<i>p</i>) and compare it to the corresponding shadow map value <i>s</i><sub>0</sub> = <i>s</i>(<i>p</i>). With PCF, we also compare neighboring shadow map values <i>s</i><sub>-1</sub> and <i>s</i><sub>1</sub> against <i>d</i>. However, it is not valid to compare <i>d</i> with <i>s</i><sub>-1</sub> and <i>s</i><sub>1</sub>. The texels <i>s</i><sub>-1</sub> and <i>s</i><sub>1</sub> describe the depths of different areas of the scene that may or may not be on the same polygon as <i>p</i>. </p>
+
+<p class="tx">The scenario in Figure <a href="ch20.html#fig20.16">20.16</a> actually results in an error in the PCF. Specifically, when we do the shadow map test we compute:</p>
+
+<p class="eq"><img src="images/eq702-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">When the results are interpolated, we get that <i>p</i> is is 1/3rd in shadow, which is incorrect as nothing is occluding <i>p</i>. </p>
+
+
+<p class="tx">Observe from Figure <a href="ch20.html#fig20.16">20.16</a> that more depth biasing would fix the error. However, in this example, we are only sampling the next door neighbor texels in the shadow map. If we widen the PCF kernel, then even more biasing is needed. Thus for small PCF kernels, simply doing the depth bias as explained in &#x00A7;20.4.2 is enough to counter this problem and it is nothing to worry about. But for large PCF kernels such as 5 &times; 5 or 9 &times; 9, which are used to make soft shadows, this can become a real problem. </p>
+<p class="caption"><img src="images/Fig20-16.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.16"><b><i>Figure 20.16.</i></b>&nbsp;&nbsp;Comparing the depth <i>d</i>(<i>p</i>) with <i>s</i><sub>0</sub> is correct, since the texel <i>s</i><sub>0</sub> covers the scene area <i>p</i> is contained in. However, it is not correct to compare <i>d</i>(<i>p</i>) with <i>s</i><sub>-1</sub> and <i>s</i><sub>1</sub>, as those texels cover areas of the scene that are unrelated to <i>p</i>.</p>
+
+<p class="h2" id="c20.5.1"><a href="toc.html#toc-20.5.1"><b>20.5.1 The DDX and DDY Functions</b></a></p>
+<p class="tx1">Before we can look at an approximate solution<a id="page669"/> to this problem, we first need to discuss the <span class="code">ddx</span> and <span class="code">ddy</span> HLSL functions. These functions estimate &#x2202;<b>p</b>/&#x2202;<i>x</i> and &#x2202;<b>p</b>/&#x2202;<i>y</i>, respectively, where <i>x</i> is the screen space <i>x</i>-axis and <i>y</i> is the screen space <i>y</i>-axis. With these functions you can determine how per pixel quantities <b>p</b> vary from pixel to pixel. Examples of what the derivative functions could be used for:</p>
+<ol><li>Estimate how colors are changing pixel by pixel.</li>
+<li>Estimate how depths are changing pixel by pixel.</li>
+<li>Estimate how normals are changing pixel by pixel.</li></ol>
+<p class="tx">How the hardware estimates these partial derivatives is not complicated. The hardware processes pixels in 2 &times; 2  quads at a time in parallel. Then the partial derivative in the <i>x</i>-direction can be estimated by the forward difference equation <i>q</i><i><sub>x</sub></i>+1,<i><sub>y</sub></i> &minus; <i>q</i><i><sub>x</sub></i>,<i>y</i> (estimates how the quantity <i>q</i> changes from pixel (<i>x</i>, <i>y</i>) to pixel (<i>x</i> + 1, <i>y</i>)), and similarly for the partial derivative in the <i>y</i> direction. </p>
+<p class="h2" id="c20.5.2"><a href="toc.html#toc-20.5.2"><b>20.5.2 Solution to the Large PCF Kernel Problem</b></a></p>
+<p class="tx1">The solution we describe is from [Tuft10]. The strategy is to make the assumption the neighboring pixels of <i>p</i> lie on the same plane as <i>p</i>. This assumption is not always true, but it is the best we have to work with.</p>
+<p class="tx">Let <b>p</b> = (<i>u</i>, <i>v</i>, <i>z</i>) be the coordinates in light space. The coordinates (<i>u</i>, <i>v</i>) are used to index into the shadow map, and the value <i>z</i> is the distance from the light source used in the shadow map test. We can compute the vectors <span style="line-height:3.0em"><img src="images/eq703-01.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span> and <span style="line-height:3.0em"><img src="images/eq704-01.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span> with <span class="code">ddx</span> and <span class="code">ddy</span>, which lie in the tangent plane of the polygon<a id="page670"/>. This tells us how we move in light space when we move in screen space. In particular, if we move (&#x0394;<i>x</i>, &#x0394;<i>y</i>) units in screen space, we move <span style="line-height:3.0em"><img src="images/eq704-02.jpg" alt="image" width="220" height="40" style="margin-bottom:-1.0em;"/></span> units in light space in the directions of the tangent vectors. Ignoring the depth term for the moment, if we move (&#x0394;<i>x</i>, &#x0394;<i>y</i>) units in screen space, we move <span style="line-height:3.0em"><img src="images/eq704-03.jpg" alt="image" width="180" height="40" style="margin-bottom:-1.0em;"/></span> units in light space <i>on the uv-plane</i>; this can be expressed by the matrix equation: </p>
+
+<p class="eq"><img src="images/eq704-04.jpg" alt="image" width="100%"/></p>
+<p class="tx">Therefore, </p>
+
+<p class="eq" id="eq20.1"><img src="images/eq704-05.jpg" alt="image" width="100%"/></p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Recall from Chapter <a href="ch02.html#chap02">2</a> that</i></p>
+</td></tr>
+</tbody>
+</table>
+
+
+<p class="eq"><img src="images/eq704-06.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This new equation tells us that if we move (&#x0394;<i>u</i>, &#x0394;<i>v</i>) units in light space on the <i>uv-plane</i>, then we move (&#x0394;<i>x</i>, &#x0394;<i>y</i>) units in screen space. So why is Equation <a href="ch20.html#eq20.1">20.1</a> important to us? Well, when we build our PCF kernel, we offset our texture coordinates to sample neighboring values in the shadow map:</p>
+<p class="code"><span class="code">// Texel size.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;const float dx = SMAP_DX;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float percentLit = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;const float2 offsets[9] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, -dx), float2(0.0f, -dx), float2(dx, -dx),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float2(-dx, +dx), float2(0.0f, +dx), float2(dx, +dx)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// 3x3 box filter pattern. Each sample does a 4-tap PCF.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;[unroll]</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;for(int i = 0; i &lt; 9; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;percentLit += shadowMap.SampleCmpLevelZero(samShadow,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;shadowPosH.xy + offsets[i], depth).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="tx1">In other words, we know how much we are displacing in light<a id="page671"/> space in the <i>uv-plane</i>&mdash;we know (&#x0394;<i>u</i>, &#x0394;<i>v</i>) . Equation <a href="ch20.html#eq20.1">20.1</a> tells us that when we move (&#x0394;<i>u</i>, &#x0394;<i>v</i>)  units in light space we are moving (&#x0394;<i>x</i>, &#x0394;<i>y</i>)  in screen space.</p>
+<p class="tx">Now, let us return to the depth term we have been ignoring. If we move  (&#x0394;<i>x</i>, &#x0394;<i>y</i>) units in screen space, then the light space depth moves by <span style="line-height:3.0em"><img src="images/eq705-01.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span>. Thus, when we offset our texture coordinates to do the PCF, we can modify the depth value used in the depth test accordingly: <i>z</i>&prime; = <i>z</i> + &#x0394;<i>z</i> (see Figure <a href="ch20.html#fig20.17">20.17</a>).</p>
+<p class="tx">Let us summarize:</p>
+<ol><li>In our PCF implementation, we offset our texture coordinates to sample neighboring values in the shadow map. So for each sample, we know (&#x0394;<i>u</i>, &#x0394;<i>v</i>).</li>
+<li>We can use Equation <a href="ch20.html#eq20.1">20.1</a> to find the screen space offset (&#x0394;<i>x</i>, &#x0394;<i>y</i>) when we offset (&#x0394;<i>u</i>, &#x0394;<i>v</i>) units in light space.</li>
+<li>With (&#x0394;<i>x</i>, &#x0394;<i>y</i>) solved for, apply <span style="line-height:3.0em"><img src="images/eq705-01.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span> to figure out the light space depth change.</li></ol>
+<p class="tx1">The &ldquo;CascadedShadowMaps11&rdquo; demo in the DirectX 11 SDK implements this method in the <span class="code">CalculateRightAndUpTexelDepthDeltas</span> and <span class="code">CalculatePCFPercentLit</span> functions.</p>
+<p class="h2" id="c20.5.3"><a href="toc.html#toc-20.5.3"><b>20.5.3 An Alternative Solution to the Large PCF Kernel Problem</b></a></p>
+<p class="tx1">This solution presented in [Isidoro06] is in the same spirit as the previous section, but takes a slightly different approach. </p>
+<p class="caption"><img src="images/Fig20-17.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig20.17"><b><i>Figure 20.17.</i></b>&nbsp;&nbsp;We illustrate in 2D for simplicity. If we offset from <b>p</b> = (<i>u</i>, <i>z</i>) by &#x0394;<i>u</i> in the <i>u</i>-direction to get (<i>u</i> + &#x0394;<i>u</i>, <i>z</i>), then we need to offset by &#x0394;<i>z</i> in order to remain on the polygon to get <b>p</b>&prime; = (<i>u</i> + &#x0394;<i>u</i>, <i>z</i> + &#x0394;<i>z</i>).</p>
+
+
+<p class="tx">Let <b>p</b> = (<i>u</i>, <i>v</i>, <i>z</i>) be the coordinates in light space<a id="page672"/>. The coordinates (<i>u</i>, <i>v</i>) are used to index into the shadow map, and the value <i>z</i> is the distance from the light source used in the shadow map test. We can compute <span style="line-height:3.0em"><img src="images/eq706-01.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span> and <span style="line-height:3.0em"><img src="images/eq706-02.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span> with <span class="code">ddx</span> and <span class="code">ddy</span>. </p>
+<p class="tx">In particular, the fact that we can take these derivatives means <i>u</i> = <i>u</i>(<i>x</i>, <i>y</i>), <i>v</i> = <i>v</i>(<i>x</i>, <i>y</i>) and <i>z</i> = <i>z</i>(<i>x</i>, <i>y</i>) are all functions of <i>x</i> and <i>y</i>. However, we can also think of <i>z</i> as a function of <i>u</i> and <i>v</i>&mdash;that is, <i>z</i> = <i>z</i>(<i>u</i>, <i>v</i>); as we move in light space in the <i>u</i>- and <i>v</i>-directions, the depth <i>z</i> changes along the polygon plane. By the chain rule, we have:</p>
+
+<p class="eq"><img src="images/eq706-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Or in matrix notation:</p>
+
+<p class="eq"><img src="images/eq706-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Taking the inverse yields:</p>
+
+<p class="eq"><img src="images/eq706-05.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We now have solved for <span style="line-height:3.0em"><img src="images/eq706-06.jpg" alt="image" width="30" height="30" style="margin-bottom:-1.0em;"/></span> and <span style="line-height:3.0em"><img src="images/eq706-07.jpg" alt="image" width="30" height="30" style="margin-bottom:-1.0em;"/></span> directly (everything on the right-side of the equation is known). If we move (&#x0394;<i>u</i>, &#x0394;<i>v</i>) units in light space on the <i>uv-plane</i>, then the light space depth moves by <span style="line-height:3.0em"><img src="images/eq706-08.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/></span>. </p>
+<p class="tx">So with this approach, we do not have to transform to screen space, but can stay in light space&mdash;the reason being that we figured out directly how depth changes when <i>u</i> and <i>v</i> change, whereas in the previous section, we only knew how depth changed when <i>x</i> and <i>y</i> changed in screen space.</p>
+<p class="h1" id="c20.6"><a href="toc.html#toc-20.6"><b>20.6 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The back buffer need not always be the render<a id="page673"/> target; we can render to a different texture. Rendering to texture provides an efficient way for the GPU to update the contents of a texture at runtime. After we have rendered to a texture, we can bind the texture as a shader input and map it onto geometry. Many special effects require render to texture functionality like shadow maps, water simulations, and general purpose GPU programming.</li>
+<li>With an orthographic projection, the viewing volume is a box (see Figure <a href="ch20.html#fig20.1">20.1</a>) with width <i>w</i>, height <i>h</i>, near plane <i>n</i> and far plane <i>f</i>, and the lines of projection are parallel to the view space <i>z</i>-axis. Such projections are primarily used in 3D science or engineering applications, where it is desirable to have parallel lines remain parallel after projection. However, we can use orthographic projections to model shadows that parallel lights generate. </li>
+<li>Projective texturing is so called because it allows us to project a texture onto arbitrary geometry, much like a slide projector. The key to projective texturing is to generate texture coordinates for each pixel in such a way that the applied texture looks like it has been projected onto the geometry. Such texture coordinates are called <i>projective texture coordinates</i>. We obtain the projective texture coordinates for a pixel by projecting it onto the projection plane of the projector, and then mapping it to the texture coordinate system. </li>
+<li>Shadow mapping is a real-time shadowing technique, which shadows arbitrary geometry (it is not limited to planar shadows). The idea of shadow mapping is to render the depth of the scene from the light&rsquo;s viewpoint into a shadow map; thus, after which, the shadow map stores the depth of all pixels visible from the light&rsquo;s perspective. We then render the scene again from the camera&rsquo;s perspective, and we project the shadow map onto the scene using projective texturing. Let <i>s</i>(<i>p</i>) be the depth value projected onto a pixel <i>p</i> from the shadow map and let <i>d</i>(<i>p</i>) be the depth of the pixel from the light source. Then <i>p</i> is in shadow if <i>d</i>(<i>p</i>) &gt; <i>s</i>(<i>p</i>); that is, if the depth of the pixel is greater than the projected pixel depth <i>s</i>(<i>p</i>), then there must exist a pixel closer to the light which occludes <i>p</i>, thereby casting <i>p</i> in shadow.</li>
+<li>Aliasing is the biggest challenge with shadow maps. The shadow map stores the depth of the nearest visible pixels with respect to its associated light source. However, the shadow map only has some finite resolution. So each shadow map texel corresponds to an area of the scene. Thus, the shadow map is just a discrete sampling of the scene depth from the light perspective. This causes aliasing issues known as <i>shadow acne</i>. Using the graphics hardware intrinsic support for <i>slope-scaled-bias</i> (in the rasterization render state) is a common strategy to fix shadow acne. The finite resolution of the shadow map<a id="page674"/> also causes aliasing at the shadow edges. PCF is a popular solution to this. More advanced solutions utilized for the aliasing problem are <i>cascaded shadow maps and variance shadow maps</i>. </li></ol>
+<p class="h1" id="c20.7"><a href="toc.html#toc-20.7"><b>20.7 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Write a program that simulates a slide projector by projecting a texture onto the scene. Experiment with both perspective and orthographic projections.</li>
+<li>Modify the solution to the previous exercise by using texture address modes so that points outside the projector&rsquo;s frustum do not receive light. </li>
+<li>Modify the solution to Exercise 1 by using a spotlight so that points outside the spotlight cone do not receive any light from the projector. </li>
+<li>Modify this chapter&rsquo;s demo application by using a perspective projection. Note that the slope-scaled-bias that worked for an orthographic projection might not work well for a perspective projection. When using a perspective projection, notice that the depth map is heavily biased to white (1.0). Does this make sense considering the graph in Figure <a href="ch05.html#fig5.25">5.25</a>?</li>
+<li>Experiment with the following shadow map resolutions: 4096 &times; 4096, 1024 &times; 1024, 512 &times; 512, 256 &times; 256</li>
+<li>Derive the matrix that maps the box [<i>l, r</i>] &times; [<i>b, t</i>] &times; [<i>n, f</i>] &rarr; [&minus;1, 1] &times; [&minus;1, 1] &times; [0, 1]. This is an &ldquo;off center&rdquo; orthographic view volume (i.e., the box is not centered about the view space origin). In contrast, the orthographic projection matrix derived in &#x00A7;20.2 is an &ldquo;on center&rdquo; orthographic view volume. </li>
+<li>In Chapter <a href="ch17.html#chap17">17</a>, we learned about picking with a perspective projection matrix. Derive picking formulas for an off-centered orthographic projection.</li>
+<li>Modify the &ldquo;Shadow Demo&rdquo; to use a single point sampling shadow test (i.e., no PCF). You should observe hard shadows and jagged shadow edges. </li>
+<li>Turn off the slope-scaled-bias to observe shadow acne.</li>
+<li>Modify the slope-scaled-bias to have a very large bias to observe the peter-panning artifact.</li>
+<li>An orthographic projection can be used to generate the shadow map for directional lights, and a perspective projection can be used to generate the shadow map for spotlights. Explain how cube maps and six 90&deg; field of view perspective projections can be used to generate the shadow map for a point light. </li></ol>
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Hint:</i><sup> </sup><i>(Recall how dynamic cube maps were generated in Chapter <a href="ch18.html#chap18">18</a>.) Explain how the shadow map test would be done with a cube map. </i></p></td></tr>
+</tbody>
+</table>
+
+</body>
+</html>

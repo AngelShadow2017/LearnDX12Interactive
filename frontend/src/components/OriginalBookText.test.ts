@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import chapterFiveSource from '../content/source/ch05.txt?raw';
+import chapterOneSource from '../content/source/ch01.txt?raw';
 import chapterTwoSource from '../content/source/ch02.txt?raw';
+import chapterTwelveSource from '../content/source/ch12.txt?raw';
+import chapterThirteenSource from '../content/source/ch13.txt?raw';
 import { parseSource } from './OriginalBookText';
+
+const allBookSources = import.meta.glob('../content/source/*.txt', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>;
 
 describe('parseSource', () => {
   it('turns chapter objectives, examples, lists, captions, and code into semantic blocks', () => {
@@ -172,5 +181,108 @@ XMCOLOR() {}
       'float m20, float m21, float m22, float m23,\n' +
       'float m30, float m31, float m32, float m33);',
     );
+  });
+
+  it('recognizes unfamiliar C++ types, wrapped calls, attributes, and HLSL signatures from syntax', () => {
+    const source = `
+Chapter 1
+
+CODE PARSING
+
+This paragraph mentions Widget and Create without showing code.
+
+Widget<NativeHandle>* resource;
+
+auto output = device->Create<NativeHandle>(
+
+    input,
+
+    fallback);
+
+resource->Bind(output);
+
+__declspec(align(16)) struct AlignedRecord
+
+{
+
+    float4 Position : SV_POSITION;
+
+};
+
+[numthreads(8, 8, 1)]
+
+float4 Main(PixelInput input) : SV_Target
+
+{
+
+    return input.Color;
+
+}
+
+The Widget API is described in the next section.
+`;
+    const blocks = parseSource(source, 'ch01');
+    const code = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+    const joined = code.join('\n');
+
+    expect(joined).toContain('Widget<NativeHandle>* resource;');
+    expect(joined).toContain('device->Create<NativeHandle>(\ninput,\nfallback);');
+    expect(joined).toContain('__declspec(align(16)) struct AlignedRecord');
+    expect(joined).toContain('[numthreads(8, 8, 1)]');
+    expect(joined).toContain('float4 Main(PixelInput input) : SV_Target');
+    expect(code.some((block) => block.includes('This paragraph mentions Widget'))).toBe(false);
+    expect(blocks.some((block) => block.kind === 'paragraph' && block.text.startsWith('The Widget API'))).toBe(true);
+  });
+
+  it('keeps representative real HLSL declarations and calls in the English source blocks', () => {
+    const chapterTwelve = parseSource(chapterTwelveSource, 'ch12');
+    const chapterThirteen = parseSource(chapterThirteenSource, 'ch13');
+    const chapterTwelveCode = chapterTwelve.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+    const chapterThirteenCode = chapterThirteen.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+    const code = [...chapterTwelveCode, ...chapterThirteenCode].join('\n');
+    const geometryShader = chapterTwelveCode.find((block) => block.includes('void GS(point VertexOut gin[1],') && block.includes('triStream.Append(gout);'));
+    const computeShader = chapterThirteenCode.find((block) => block.includes('void CS(int3 dispatchThreadID : SV_DispatchThreadID)'));
+
+    expect(code).toContain('#include "LightingUtil.hlsl"');
+    expect(code).toContain('Texture2DArray gTreeMapArray : register(t0);');
+    expect(code).toContain('inout TriangleStream<GeoOut> triStream');
+    expect(code).toContain('float4 PS(GeoOut pin) : SV_Target');
+    expect(code).toContain('void CS(int3 dispatchThreadID : SV_DispatchThreadID)');
+    expect(geometryShader).toContain('triStream.Append(gout);');
+    expect(computeShader).toContain('gOutput[dispatchThreadID.xy]');
+  });
+
+  it('does not mistake chapter prose containing citations, semicolons, parentheses, or equations for code', () => {
+    const blocks = parseSource(chapterOneSource, 'ch01');
+    const code = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []).join('\n');
+    const paragraphs = blocks.flatMap((block) => block.kind === 'paragraph' ? [block.text] : []);
+
+    expect(paragraphs.some((text) => text.startsWith('Vectors play a crucial role in computer graphics'))).toBe(true);
+    expect(paragraphs.some((text) => text.startsWith('A vector refers to a quantity that possesses both magnitude'))).toBe(true);
+    expect(paragraphs.some((text) => text.startsWith('A first step in characterizing a vector mathematically'))).toBe(true);
+    expect(code).not.toContain('we recommend [Verth04]');
+    expect(code).not.toContain('Again we have that u = v');
+    expect(code).not.toContain('move north (direction) ten meters (length)');
+  });
+
+  it('does not absorb natural-language rows into code blocks anywhere in the book', () => {
+    const suspicious: string[] = [];
+
+    for (const [path, source] of Object.entries(allBookSources)) {
+      const sourceId = path.match(/\/(ch\d+|app[A-E]|intro)\.txt$/)?.[1] ?? 'source';
+      for (const block of parseSource(source, sourceId)) {
+        if (block.kind !== 'code') continue;
+        for (const line of block.text.split('\n')) {
+          const trimmed = line.trim();
+          if (/^(?:\/\/|\/\*|\*|#)/.test(trimmed)) continue;
+          const withoutComment = trimmed.replace(/\/\/.*$/, '');
+          if (/\b[A-Za-z]{2,}\b(?:\s+\b[A-Za-z]{2,}\b){5}/.test(withoutComment)) {
+            suspicious.push(`${path}: ${trimmed}`);
+          }
+        }
+      }
+    }
+
+    expect(suspicious).toEqual([]);
   });
 });

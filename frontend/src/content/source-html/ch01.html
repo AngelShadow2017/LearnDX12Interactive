@@ -1,0 +1,1033 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page3"/><a href="toc.html#toc-01" id="chap01">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">1</span></span></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-01"><b>V</b><span class="sc">ECTOR</span><br/><br/><b>A</b><span class="sc">LGEBRA</span></a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+<p class="tx1">Vectors play a crucial role in computer graphics, collision detection, and physical simulation, all of which are common components in modern video games. Our approach here is informal and practical; for a book dedicated to 3D game/graphics math, we recommend [Verth04]. We emphasize the importance of vectors by noting that they are used in just about every demo program in this book.</p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn how vectors are represented geometrically and numerically.</li>
+<li>To discover the operations defined on vectors and their geometric applications.</li>
+<li>To become familiar with the vector functions and classes of the DirectXMath library.</li></ol>
+
+<p class="h1" id="c1.1"><a href="toc.html#toc-1.1"><b>1.1 VECTORS</b></a><a id="page4"/></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A <i>vector</i> refers to a quantity that possesses both magnitude and direction. Quantities that possess both magnitude and direction are called <i>vector-valued quantities</i>. Examples of vector-valued quantities are forces (a force is applied in a particular direction with a certain strength&mdash;magnitude), displacements (the net direction and distance a particle moved), and velocities (speed and direction). Thus, vectors are used to represent forces, displacements, and velocities. In addition, we also use vectors to specify pure directions, such as the direction the player is looking in a 3D game, the direction a polygon is facing, the direction in which a ray of light travels, or the direction in which a ray of light reflects off a surface. </p>
+<p class="tx">A first step in characterizing a vector mathematically is geometrically: We graphically specify a vector by a directed line segment (see Figure <a href="ch01.html#fig1.1">1.1</a>), where the length denotes the magnitude of the vector and the aim denotes the direction of the vector. We note that the location in which we draw a vector is immaterial because changing the location does not change the magnitude or direction (the two properties a vector possesses). Therefore, we say two vectors are equal if and only if they have the same length and they point in the same direction. Thus, the vectors <b>u</b> and <b>v</b> drawn in Figure <a href="ch01.html#fig1.1">1.1</a><i>a</i> are actually equal because they have the same length and point in the same direction. In fact, because location is unimportant for vectors, we can always translate a vector without changing its meaning (since a translation changes neither length nor direction). Observe that we could translate <b>u </b>such that it completely overlaps with <b>v</b> (and conversely), thereby making them indistinguishable&mdash;hence their equality. As a physical example, the vectors <b>u</b> and <b>v </b>in Figure <a href="ch01.html#fig1.1">1.1</a><i>b</i> both tell the ants at two different points <i>A</i> and <i>B</i> to move north ten meters from where they <a id="page5"/>are. Again we have that <b>u</b> = <b>v</b>. The vectors themselves are independent of position; they simply instruct the ants how to move from where they are. In this example, they tell the ants to move north (direction) ten meters (length).</p>
+
+<p class="caption"><img src="images/Fig1-1.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.1"><b><i>Figure 1.1.</i></b>&nbsp;&nbsp;(a) Vectors drawn on a 2D plane. (b) Vectors instructing ants to move 10 meters north.</p>
+
+<p class="h2" id="c1.1.1"><a href="toc.html#toc-1.1.1"><b>1.1.1 Vectors and Coordinate Systems</b></a></p>
+<p class="tx1">We could now define useful geometric operations on vectors, which can then be used to solve problems involving vector-valued quantities. However, since the computer cannot work with vectors geometrically, we need to find a way of specifying vectors numerically instead. So what we do is introduce a 3D coordinate system in space, and translate all the vectors so that their tails coincide with the origin (Figure <a href="ch01.html#fig1.2">1.2</a>). Then we can identify a vector by specifying the coordinates of its head, and write <b>v</b> = (<i>x</i>, <i>y</i>, <i>z</i>) as shown in Figure <a href="ch01.html#fig1.3">1.3</a>. Now we can represent a vector with three <span class="code">float</span>s in a computer program.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>If working in 2D, then we just use a 2D coordinate system and the vector only has two coordinates: </i><b>v</b> =<i> (x, y) and we can represent a vector with two <span class="code">float</span>s in a computer program.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx">Consider Figure <a href="ch01.html#fig1.4">1.4</a>, which shows a vector <b>v</b> and two frames in space. (Note that we use the terms <i>frame</i>, <i>frame of reference</i>, <i>space</i>, and <i>coordinate system</i> to all mean the same thing in this book.) We can translate <b>v</b> so that it is in standard position in either of the two frames. Observe, however, that the coordinates of the vector <b>v</b> relative to frame <i>A</i> are different than the coordinates of the vector <b>v </b>relative to frame <i>B</i>. In other words, the <i>same</i> vector <b>v </b>has a different coordinate representation for distinct frames. </p>
+
+
+<p class="caption"><img src="images/Fig1-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig1.2"><b><i>Figure 1.2.</i></b>&nbsp;&nbsp;We translate <b>v</b> so that its tail coincides with the origin of the coordinate system. When a vector&rsquo;s tail coincides with the origin, we say that it is in<i> standard position</i>.</p>
+
+
+<p class="caption"><img src="images/Fig1-3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig1.3"><b><i>Figure 1.3.</i></b>&nbsp;&nbsp;A vector specified by coordinates relative to a coordinate system.</p>
+
+
+
+<p class="caption"><img src="images/Fig1-4.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.4"><b><i>Figure 1.4.</i></b>&nbsp;&nbsp;The same vector <b>v</b> has different coordinates when described relative to different frames.</p>
+
+
+
+
+<p class="tx"><a id="page6"/>The idea is analogous to, say, temperature. Water boils at 100&deg; Celsius or 212&deg; Fahrenheit. The physical temperature of boiling water is the <i>same</i> no matter the scale (i.e., we can&rsquo;t lower the boiling point by picking a different scale), but we assign a different scalar number to the temperature based on the scale we use. Similarly, for a vector, its direction and magnitude, which are embedded in the directed line segment, does not change; only the coordinates of it change based on the frame of reference we use to describe it. This is important because it means whenever we identify a vector by coordinates, those coordinates are relative to some frame of reference. Often in 3D computer graphics, we will utilize more than one frame of reference and, therefore, we will need to keep track of which frame a vector&rsquo;s coordinates are relative to; additionally, we will need to know how to convert vector coordinates from one frame to another.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We see that both vectors and points can be described by coordinates (x, y, z)  relative to a frame. However, they are not the same; a point represents a location in 3-space, whereas a vector represents a magnitude and direction. We will have more to say about points in &#x00A7;1.5.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c1.1.2"><a href="toc.html#toc-1.1.2"><b>1.1.2 Left-Handed Versus Right-Handed Coordinate Systems</b></a></p>
+<p class="tx1">Direct3D uses a so-called left-handed coordinate system. If you take your left hand and aim your fingers down the positive <i>x</i>-axis, and then curl your fingers towards the positive <i>y</i>-axis, your thumb points roughly in the direction of the positive <i>z</i>-axis. Figure <a href="ch01.html#fig1.5">1.5</a> illustrates the differences between a left-handed and right-handed coordinate system.</p>
+<p class="tx">Observe that for the right-handed coordinate system, if you take your right hand and aim your fingers down the positive <i>x</i>-axis, and then curl your fingers towards the positive <i>y</i>-axis, your thumb points roughly in the direction of the positive <i>z</i>-axis. </p>
+
+
+<p class="caption"><img src="images/Fig1-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig1.5"><b><i>Figure 1.5.</i></b>&nbsp;&nbsp;On the left we have a left-handed coordinate system. Observe that the positive <i>z</i>-axis goes into the page. On the right we have a right-handed coordinate system. Observe that the positive <i>z</i>-axis comes out of the page.<a id="page7"/></p>
+
+
+
+<p class="h2" id="c1.1.3"><a href="toc.html#toc-1.1.3"><b>1.1.3 Basic Vector Operations</b></a></p>
+<p class="tx1">We now define equality, addition, scalar multiplication, and subtraction on vectors using the coordinate representation. For these four definitions, let <b>u</b> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>)<sub>  </sub>and <b>v</b><sub> </sub>=<sub> </sub>(<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>)<sub>.</sub></p>
+<ol><li>Two vectors are equal if and only if their corresponding components are equal. That is,<sub> </sub><b>u</b> = <b>v</b> if and only if<sub> </sub><i>u</i><sub>x</sub> = <i>v</i><sub>x, </sub><i>u</i><sub>y</sub> = <i>v</i><sub>y,</sub> and <i>u</i><sub>z</sub> = <i>v</i><sub>z.</sub></li>
+<li>We add vectors component-wise: <b>u</b><sub> </sub>+<sub> </sub><b>v</b><sub> </sub>=<sub> </sub>(<i>u</i><sub>x</sub> + <i>v</i><sub>x, </sub><i>u</i><sub>y</sub> +<sub> </sub><i>v</i><sub>y, </sub><i>u</i><sub>z</sub> +<sub> </sub><i>v</i><sub>z</sub>)<sub>.</sub> Observe that it only makes sense to add vectors of the same dimension.</li>
+<li>We can multiply a scalar (i.e., a real number) and a vector and the result is a vector. Let <i>k</i> be a scalar, then <i>k</i><b>u</b> = (<i>ku</i><sub>x</sub>, <i>ku</i><sub>y</sub>, <i>ku</i><sub>z</sub>). This is called <i>scalar multiplication</i>.</li>
+<li>We define subtraction in terms of vector addition and scalar multiplication. That is, <b>u</b> &minus; <b>v</b> = <b>u</b> + (&minus;1 &#x00B7; <b>v</b>) = <b>u</b> + (&minus;<b>v</b>) = (<i>u</i><sub>x</sub> &minus; <i>v</i><sub>x</sub>, <i>u</i><sub>y</sub> &minus; <i>v</i><sub>y</sub>, <i>u</i><sub>z</sub> &minus; <i>v</i><sub>z</sub>).</li></ol>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.1</b></p>
+<p class="tx1">Let <b>u</b> = (1, 2, 3), <b>v</b> = (1, 2, 3), <b>w</b> = (3, 0, &minus;2), and <i>k</i> = 2. Then,</p>
+<ol><li><b>u</b> + <b>w</b> = (1, 2, 3) + (3, 0, &minus;2) = (4, 2, 1);</li>
+<li><b>u</b> = <b>v</b>;</li>
+<li><b>u</b> &minus; <b>v</b> = <b>u</b> + (&minus;<b>v</b>) = (1, 2, 3) + (&minus;1, &minus;2, &minus;3) = (0, 0, 0) = <b>0</b>;</li>
+<li><i>k</i><b>w</b> = 2(3, 0, &minus;2) = (6, 0, &minus;4)</li></ol>
+<p class="tx1">The difference in the third bullet illustrates a special vector, called the<i> zero-vector</i>, which has zeros for all of its components and is denoted by <b>0</b>.<a id="page8"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.2</b></p>
+<p class="tx1">We will illustrate this example with 2D vectors to make the drawings simpler. The ideas are the same as in 3D; we just work with one less component in 2D.</p>
+<ol><li>Let <b>v</b> = (2, 1) How do <b>v</b> and <img src="images/eq42-01.jpg" alt="image" width="30" height="25" style="margin-bottom:-0.5em;"/> compare geometrically? We note that <img src="images/eq42-02.jpg" alt="image" width="90" height="25" style="margin-bottom:-0.5em;"/>. Graphing both <b>v</b> and <img src="images/eq42-03.jpg" alt="image" width="30" height="25" style="margin-bottom:-0.5em;"/> (Figure <a href="ch01.html#fig1.6">1.6</a><i>a</i>), we notice that <img src="images/eq42-04.jpg" alt="image" width="30" height="25" style="margin-bottom:-0.5em;"/> is in the direction directly opposite of <b>v</b> and its length is 1/2 that of <b>v</b>. Thus, geometrically, negating a vector can be thought of as &ldquo;flipping&rdquo; its direction, and scalar multiplication can be thought of as scaling the length of a vector.</li>
+<li>Let <img src="images/eq42-05.jpg" alt="image" width="60" height="25" style="margin-bottom:-0.5em;"/> and <b>v</b> = (1, 2). Then <img src="images/eq42-06.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/>. Figure <a href="ch01.html#fig1.6">1.6</a><i>b</i> shows what vector addition means geometrically: We parallel translate <b>u</b> so that its <i>tail </i>coincided with the <i>head</i> of <b>v</b>. Then, the sum is the vector originating at the tail of <b>v</b> and ending at the head of the translated <b>u</b>. (We get the same result if we keep <b>u</b> fixed and translate <b>v</b> so that its tail coincided with the head of <b>u</b>. In this case, <b>u</b> + <b>v</b> would be the vector originating at the tail of <b>u</b> and ending at the head of the translated <b>v</b>.) Observe also that our rules of vector addition agree with what we would intuitively expect to happen physically when we add forces together to produce a net force: If we add two forces (vectors) in the same direction, we get another stronger net force (longer vector) in that direction. If we add two forces (vectors) in opposition to each other, then we get a weaker net force (shorter vector). Figure <a href="ch01.html#fig1.7">1.7</a> illustrates these ideas. </li>
+<li>Let <img src="images/eq42-07.jpg" alt="image" width="60" height="25" style="margin-bottom:-0.5em;"/> and <b>v</b> = (1, 2). Then <img src="images/eq42-08.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/>. Figure <a href="ch01.html#fig1.6">1.6</a><i>c</i> shows what vector subtraction means geometrically. Essentially, the difference <b>v</b> &minus; <b>u</b> gives us a vector aimed from the head of <b>u</b> to the head of <b>v</b>. If we instead interpret <b>u</b> and <b>v</b> as points, then <b>v</b> &minus; <b>u</b> gives us a vector aimed from the point <b>u</b> to the point <b>v</b>; this interpretation is important as we will often want the vector aimed from one point to another. <a id="page9"/>Observe also that the length of <b>v</b> &minus; <b>u</b> is the distance from <b>u</b> to <b>v</b>, when thinking of <b>u</b> and <b>v</b> as points.</li></ol>
+
+
+<p class="caption"><img src="images/Fig1-6.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.6"><b><i>Figure 1.6.</i></b>&nbsp;&nbsp;(a) The geometric interpretation of scalar multiplication.  (b) The geometric interpretation of vector addition.  (c) The geometric interpretation of vector subtraction.</p>
+
+<p class="caption"><img src="images/Fig1-7.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.7"><b><i>Figure 1.7.</i></b>&nbsp;&nbsp;Forces applied to a ball. The forces are combined using vector addition to get a net force.</p>
+
+
+
+
+
+<p class="h1" id="c1.2"><a href="toc.html#toc-1.2"><b>1.2 LENGTH AND UNIT VECTORS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Geometrically, the magnitude of a vector is the length of the directed line segment. We denote the magnitude of a vector by double vertical bars (e.g., ||<b>u</b>|| denotes the magnitude of <b>u</b>). Now, given a vector <b>u</b> = (<i>x</i>, <i>y</i>, <i>z</i>), we wish to compute its magnitude algebraically. The magnitude of a 3D vector can be computed by applying the Pythagorean theorem twice; see Figure <a href="ch01.html#fig1.8">1.8</a>.</p>
+<p class="tx">First, we look at the triangle in the <i>xz</i>-plane with sides <i>x</i>, <i>z</i>, and hypotenuse a. From the Pythagorean theorem, we have <img src="images/eq43-01.jpg" alt="image" width="90" height="25" style="margin-bottom:-0.5em;"/>. Now look at the triangle with sides <i>a</i>, <i>y</i>, and hypotenuse ||<b>u</b>||. From the Pythagorean theorem again, we arrive at the following magnitude formula:</p>
+
+<p class="eq" id="eq1.1"><img src="images/eq43-02.jpg" alt="image" width="90%"/></p>
+
+<p class="tx">For some applications, we do not care about the length of a vector because we want to use the vector to represent a pure direction. For such direction-only vectors, we want the length of the <a id="page10"/>vector to be exactly 1. When we make a vector unit length, we say that we are <i>normalizing </i>the vector. We can normalize a vector by dividing each of its components by its magnitude:</p>
+
+<p class="eq" id="eq1.2"><img src="images/eq44-01.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig1-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig1.8"><b><i>Figure 1.8.</i></b>&nbsp;&nbsp;The 3D length of a vector can be computed by applying the Pythagorean theorem twice.</p>
+
+
+
+<p class="tx">To verify that this formula is correct, we can compute the length of <b>&#x00FB;</b>:</p>
+
+<p class="eq"><img src="images/eq44-02.jpg" alt="image" width="90%"/></p>
+
+<p class="tx">So <b>&#x00FB;</b> is indeed a unit vector.</p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.3</b></p>
+<p class="tx">Normalize the vector <b>v</b> = (&minus;1, 3, 4). We have <img src="images/eq44-03.jpg" alt="image" width="150" height="20"/>. Thus,</p>
+
+<p class="eq"><img src="images/eq44-04.jpg" alt="image" width="40%"/></p>
+<p class="tx">To verify that <img src="images/vcrown.jpg" alt="image" width="10" height="10"/> is indeed a unit vector, we compute its length:</p>
+
+<p class="eq"><img src="images/eq44-05.jpg" alt="image" width="90%"/></p>
+
+
+<p class="h1" id="c1.3"><a href="toc.html#toc-1.3"><b>1.3 THE DOT PRODUCT</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The <i>dot product</i> is a form of vector multiplication that results in a scalar value; for this reason, it is sometimes referred to as the <i>scalar product</i>. Let <b>u</b> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>) and <b>v</b> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>), then the dot product is defined as follows:</p>
+
+<p class="eq" id="eq1.3"><img src="images/44-0a.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">In words, the dot product is the sum of the products of the corresponding components.</p>
+<p class="tx">The dot product definition does not present an obvious geometric meaning. Using the law of cosines (see Exercise 10), we can find the relationship,</p>
+
+<p class="eq" id="eq1.4"><img src="images/44-0b.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig1-9.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.9"><b><i>Figure 1.9.</i></b>&nbsp;&nbsp;In the left figure, the angle &theta; between <b>u</b> and <b>v</b> is an acute angle. In the right figure, the angle &theta; between <b>u</b> and <b>v</b> is an obtuse angle. When we refer to the angle between two vectors, we always mean the smallest angle, that is, the angle &theta; such that 0 &#x2264; &theta; &#x2264; &pi;.</p>
+
+
+
+<p class="tx1"><a id="page11"/>where &theta; is the angle between the vectors <b>u</b> and <b>v</b> such that 0 &#x2264; &theta; &#x2264; &pi;; see Figure <a href="ch01.html#fig1.9">1.9</a>. So, Equation <a href="ch01.html#eq1.4">1.4</a> says that the dot product between two vectors is the cosine of the angle between them scaled by the vectors&rsquo; magnitudes. In particular, if both <b>u</b> and <b>v</b> are unit vectors, then <b>u</b> &#x00B7; <b>v</b> is the cosine of the angle between them (i.e., <b>u</b> &#x00B7; <b>v</b> = cos &theta;). </p>
+<p class="tx">Equation <a href="ch01.html#eq1.4">1.4</a> provides us with some useful geometric properties of the dot product:</p>
+<ol><li>If <b>u</b> &#x00B7; <b>v</b> = 0, then <b>u</b> &#x22A5; <b>v</b> (i.e., the vectors are orthogonal).</li>
+<li>If <b>u</b> &#x00B7;<b> v</b> &gt; 0, then the angle &theta; between the two vectors is less than 90 degrees (i.e., the vectors make an acute angle).</li>
+<li>If <b>u</b> &#x00B7;<b> v</b> &lt; 0, the angle &theta; between the two vectors is greater than 90 degrees (i.e., the vectors make an obtuse angle).</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The word &ldquo;orthogonal&rdquo; can be used as a synonym for &ldquo;perpendicular.&rdquo; </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.4</b></p>
+<p class="tx">Let <b>u</b> = (1, 2, 3) and <b>v</b> = (&minus;4, 0, &minus;1). Find the angle between <b>u</b> and <b>v</b>. First we compute:</p>
+
+<p class="eq"><img src="images/eq45-01.jpg" alt="image" width="50%"/></p>
+
+<p class="tx">Now, applying Equation <a href="ch01.html#eq1.4">1.4</a> and solving for theta, we get:</p>
+
+<p class="eq"><img src="images/eq45-02.jpg" alt="image" width="35%"/><a id="page12"/></p>
+
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.5</b></p>
+<p class="tx">Consider Figure <a href="ch01.html#fig1.10">1.10</a>. Given <b>v</b> and the <i>unit</i> vector <b>n</b>, find a formula for <b>p</b> in terms of <b>v</b> and <b>n</b> using the dot product. </p>
+<p class="tx">First, observe from the figure that there exists a scalar <i>k</i> such that <b>p</b> =<i> k</i><b>n</b>; moreover, since we assumed ||<b>n</b>|| = 1, we have ||<b>p</b>|| = ||<i>k</i><b>n</b>|| = |<i>k</i>|||<b>n</b>|| = |<i>k</i>|. (Note that <i>k</i> may be negative if and only if <b>p</b> and <b>n</b> aim in opposite directions.) Using trigonometry, we have that <i>k</i> = ||<b>v</b>|| cos&theta;; therefore, <b>p</b> = <i>k</i><b>n</b> = (||<b>v</b>|| cos&theta;)<b>n</b>. However, because <b>n</b> is a unit vector, we can say this in another way:</p>
+<p class="eq"><img src="images/46-0a.jpg" alt="image" width="90%"/></p>
+
+
+
+<p class="tx1">In particular, this shows <i>k</i> = <b>v </b>&#x00B7;<b> n</b>, and this illustrates the geometric interpretation of <b>v </b>&#x00B7;<b> n</b> when <b>n</b> is a unit vector. We call <b>p</b> the <i>orthogonal projection</i> of <b>v</b> on <b>n</b>, and it is commonly denoted by</p>
+<p class="eq"><img src="images/46-0b.jpg" alt="image" width="90%"/></p>
+<p class="tx1">If we interpret <b>v</b> as a force, <b>p</b> can be thought of as the portion of the force <b>v</b> that acts in the direction <b>n</b>. Likewise, the vector <b>w</b> = perp<b><sub>n</sub></b>(<b>v</b>) = <b>v</b> &ndash; <b>p</b> is the portion of the force <b>v</b> that acts orthogonal to the direction <b>n</b> (which is why we also denote it by perp<b><sub>n</sub></b>(<b>v</b>) for perpendicular). Observe that <img src="images/46-0d.jpg" alt="image" width="180" height="20" style="margin-bottom:-0.5em;"/>, which is to say we have decomposed the vector <b>v</b> into the sum of two orthogonal vectors <b>p</b> and <b>w</b>.</p>
+<p class="tx">If <b>n</b> is not of unit length, we can always normalize it first to make it unit length. Replacing <b>n</b> by the unit vector <img src="images/eq46-01.jpg" alt="image" width="20" height="25" style="margin-bottom:-0.5em;"/> gives us the more general projection formula:</p>
+<p class="eq"><img src="images/eq46-02.jpg" alt="image" width="95%"/></p>
+
+
+<p class="caption"><img src="images/Fig1-10.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.10"><b><i>Figure 1.10.</i></b>&nbsp;&nbsp;The <i>orthogonal projection </i>of <b>v</b> on <b>n</b>.<a id="page13"/></p>
+
+
+
+
+<p class="h2" id="c1.3.1"><a href="toc.html#toc-1.3.1"><b>1.3.1 Orthogonalization</b></a></p>
+<p class="tx1">A set of vectors {<b>v</b><sub>0</sub>, &hellip;, <b>v</b><sub>n-1</sub>} is called <i>orthonormal</i> if the vectors are mutually orthogonal (every vector in the set is orthogonal to every other vector in the set) and unit length. Sometimes we have a set of vectors that are almost orthonormal, but not quite. A common task is to orthogonalize the set and make it orthonormal. In 3D computer graphics we might start off with an orthonormal set, but due to numerical precision issues, the set gradually becomes un-orthonormal. We are mainly concerned with the 2D and 3D cases of this problem (that is, sets that contain two and three vectors, respectively).</p>
+<p class="tx">We examine the simpler 2D case first. Suppose we have the set of vectors  {<b>v</b><sub>0</sub>, <b>v</b><sub>1</sub>} that we want to orthogonalize into an orthonormal set {<b>w</b><sub>0</sub>, <b>w</b><sub>1</sub>} as shown in Figure <a href="ch01.html#fig1.11">1.11</a>. We start with <b>w</b><sub>0 </sub>= <b>v</b><sub>0 </sub>and modify<sub> </sub><b>v</b><sub>1 </sub>to make it orthogonal to <b>w</b><sub>0</sub>; this is done by subtracting out the portion of <b>v</b><sub>1</sub> that acts in the <b>w</b><sub>0 </sub>direction:</p>
+<p class="eq"><img src="images/47-0a.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We now have a mutually orthogonal set of vectors {<b>w</b><sub>0, </sub><b>w</b><sub>1</sub>}; the last step to constructing the orthonormal set is to normalize<sub> </sub><b>w</b><sub>0</sub> and <b>w</b><sub>1 </sub>to make them unit length.</p>
+<p class="tx">The 3D case follows in the same spirit as the 2D case, but with more steps. Suppose we have the set of vectors {<b>v</b><sub>0</sub>, <b>v</b><sub>1</sub>, <b>v</b><sub>2</sub>} that we want to orthogonalize into an orthonormal set {<b>w</b><sub>0, </sub><b>w</b><sub>1, </sub><b>w</b><sub>2</sub>}as shown in Figure <a href="ch01.html#fig1.12">1.12</a>. We start with <b>w</b><sub>0</sub> =<sub> </sub><b>v</b><sub>0 </sub>and modify <b>v</b><sub>1</sub> to make it orthogonal to <b>w</b><sub>0</sub>; this is done by subtracting out the portion of<sub> </sub><b>v</b><sub>1</sub> that acts in the w<sub>0</sub> direction:</p>
+<p class="eq"><img src="images/47-0a.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig1-11.jpg" alt="image" width="70%"/></p>
+<p class="caption" id="fig1.11"><b><i>Figure 1.11.</i></b>&nbsp;&nbsp;2D orthogonalization.</p>
+
+<p class="caption"><img src="images/Fig1-12.jpg" alt="image" width="90%"/></p>
+<p class="caption" id="fig1.12"><b><i>Figure 1.12.</i></b>&nbsp;&nbsp;3D orthogonalization.</p>
+
+<p class="tx1"><a id="page14"/>Next, we modify <b>v</b><sub>2 </sub>to make it orthogonal to <i>both</i><sub> </sub><b>w</b><sub>0</sub> and <b>w</b><sub>1</sub>. This is done by subtracting out the portion of <b>v</b><sub>2</sub> that acts in the <b>w</b><sub>0</sub> direction and the portion of <b>v</b><sub>2 </sub>that acts in the <b>w</b><sub>1</sub> direction:</p>
+
+<p class="eq"><img src="images/48-0a.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We now have a mutually orthogonal set of vectors {<b>w</b><sub>0, </sub><b>w</b><sub>1, </sub><b>w</b><sub>2</sub>}; the last step to constructing the orthonormal set is to normalize <b>w</b><sub>0, </sub><b>w</b><sub>1</sub> and <b>w</b><sub>2</sub> to make them unit length.</p>
+<p class="tx">For the general case of <i>n</i> vectors {<b>v</b><sub>0</sub>, &hellip;, <b>v</b><sub>n&minus;1</sub>} that we want to orthogonalize into an orthonormal set {<b>w</b><sub>0</sub>, &hellip;, <b>w</b><sub>n&minus;1</sub>}, we have the following procedure commonly called the <i>Gram-Schmidt Orthogonalization</i><sub> </sub>process:</p>
+
+
+<p class="eq"><img src="images/48-0d.jpg" alt="image" width="100%"/></p>
+
+
+<p class="tx1">Again, the intuitive idea is that when we pick a vector <b>v</b><sub>i </sub>from the input set to add to the orthonormal set, we need to subtract out the components of<sub> </sub><b>v</b><sub>i </sub>that act in the directions of the other vectors (<b>w</b><sub>0, </sub><b>w</b><sub>1,&hellip;, </sub><b>w</b><sub>i&minus;1</sub>) that are already in the orthonormal set to ensure the new vector being added is orthogonal to the other vectors already in the orthonormal set.</p>
+<p class="h1" id="c1.4"><a href="toc.html#toc-1.4"><b>1.4 THE CROSS PRODUCT</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The second form of multiplication vector math defines is the<i> cross product</i>. Unlike the dot product, which evaluates to a scalar, the cross product evaluates to another vector; moreover, the cross product is only defined for 3D vectors<sub> </sub>(in particular, there is no 2D cross product). Taking the cross product of two 3D vectors<sub> </sub><b>u</b> and<b> v</b><sub> </sub>yields another vector, <b>w</b> that is mutually orthogonal to <b>u</b> and <b>v</b>. By that we mean <b>w </b>is orthogonal to <b>u</b>, and <b>w</b> is orthogonal to <b>v</b>; see Figure <a href="ch01.html#fig1.13">1.13</a>. If <b>u</b> = (<i>u</i><sub>x, </sub><i>u</i><sub>y, </sub><i>u</i><sub>z</sub>) and  <b>v</b> = (<i>v</i><sub>x, </sub><i>v</i><sub>y, </sub><i>v</i><sub>z</sub>), then the cross product is computed like so:</p>
+<p class="eq" id="eq1.5"><img src="images/48-0b.jpg" alt="image" width="100%"/></p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>If you are working in a right-handed coordinate system, then you use the right-hand-thumb rule: If you take your right hand and aim the fingers in the direction of the first vector</i><sub> </sub><b>u</b><i>, and then curl your fingers toward </i><b>v</b><i> along an angle 0 &#x2264; &theta; &#x2264; &pi; then your thumb roughly points in the direction of </i><b>w</b> = <b>u</b><i> &times; </i><b>v</b><sub>.</sub></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="caption"><img src="images/Fig1-13.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig1.13"><b><i>Figure 1.13.</i></b>&nbsp;&nbsp;The cross product of two 3D vectors <b>u</b> and <b>v</b> yields another vector <b>w</b> that is mutually orthogonal to <b>u</b> and <b>v</b>. If you take your left hand and aim the fingers in the direction of the first vector <b>u</b>, and then curl your fingers toward <b>v</b> along an angle 0 &#x2264; &theta; &#x2264; &pi; , then your thumb roughly points in the direction of <b>w</b> = <b>u</b> &times; <b>v</b> ; this is called the <i>left-hand-thumb rule</i>.<a id="page15"/></p>
+
+
+
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 1.6</b></p>
+<p class="tx1">Let<sub> </sub><b>u</b> = (2, 1,3) and <b>v</b> = (2, 0, 0). Compute <b>w</b> = <b>u</b> &times; <b>v</b> and <b>z</b> = <b>v</b> &times; <b>u</b>, and then verify that <b>w</b> is orthogonal to <b>u</b> and that <b>w</b> is orthogonal to <b>v</b>. Applying Equation <a href="ch01.html#eq1.5">1.5</a> we have,</p>
+<p class="tx"><b>w</b> = <b>u</b> &times; <b>v</b> </p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= (2, 1, 3) &times; (2, 0, 0)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;=(1&#x00B7;0 &minus; 3&#x00B7;0, 3&#x00B7;2 &minus; 2&#x00B7;0, 2&#x00B7;0 &minus; 1&#x00B7;2)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= (0, 6, &minus;2)</p>
+<p class="tx1">And</p>
+<p class="tx"><b>z</b> =<b> v</b> &times; <b>u</b></p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= (2, 0, 0) &times; (2, 1, 3)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;=(0&#x00B7;3 &minus; 0&#x00B7;1, 0&#x00B7;2 &minus; 2&#x00B7;3, 2&#x00B7;1 &minus; 0&#x00B7;2)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= (0, &minus; 6, 2)</p>
+<p class="tx1">This result makes one thing clear, generally speaking <b>u</b> &times; <b>v</b> &#x2260; <b>v</b> &times; <b>u</b>. Therefore, we say that the cross product is anti-commutative. In fact, it can be shown that <b>u</b> &times; <b>v</b> = &minus; <b>v</b> &times; <b>u</b>. You can determine the vector returned by the cross product by the <i>left-hand-thumb</i> rule. If you first aim your fingers in the direction of the first vector, and then curl your fingers towards the second vector (always take the path with the smallest angle), your thumb points in the direction of the returned vector, as shown in Figure <a href="ch01.html#fig1.11">1.11</a>.</p>
+<p class="tx">To show that <b>w</b> is orthogonal to <b>u</b> and that <b>w</b> is orthogonal to <b>v</b>, we recall from &#x00A7;1.3 that if <b>u</b> &#x00B7; <b>v</b> = 0, then <b>u</b> &#x22A5; <b>v</b> (i.e., the vectors are orthogonal). Because</p>
+
+<p class="eq"><img src="images/49-0a.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/Fig1-14.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.14"><b><i>Figure 1.14.</i></b>&nbsp;&nbsp;The 2D Pseudo Cross Product of a vector <b>u</b> evaluates to an orthogonal vector <b>v</b>.</p>
+
+
+
+<p class="tx1">and</p>
+
+<p class="eq"><img src="images/50-0a.jpg" alt="image" width="100%"/></p>
+<p class="tx1"><a id="page16"/>we conclude that <b>w</b> is orthogonal to <b>u</b> and that <b>w</b> is orthogonal to <b>v</b>.</p>
+<p class="h2" id="c1.4.1"><a href="toc.html#toc-1.4.1"><b>1.4.1 Pseudo 2D Cross Product</b></a></p>
+<p class="tx1">The cross product allows us to find a vector orthogonal to two given 3D vectors. In 2D we do not quite have the same situation, but given a 2D vector <b>u</b> = (<i>u</i><sub>x, </sub><i>u</i><sub>y</sub>) it can be useful to find a vector <b>v</b> orthogonal to <b>u</b>. Figure <a href="ch01.html#fig1.14">1.14</a> shows the geometric setup from which it is suggested that <b>v</b> = (&minus;<i>u</i><sub>y, </sub><i>u</i><sub>x</sub>). The formal proof is straightforward:</p>
+
+<p class="eq"><img src="images/50-0b.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Thus <b>u</b> &#x22A5; <b>v</b>. Observe that <b>u</b>&#x00B7;&minus;<b>v</b> = <i>u<sub>x</sub>u<sub>y</sub> + u<sub>y</sub></i> (<i>-u<sub>x</sub></i>)=0, too, so we also have that  <b>u</b> &#x22A5; &minus;<b>v</b>.</p>
+<p class="h2" id="c1.4.2"><a href="toc.html#toc-1.4.2"><b>1.4.2 Orthogonalization with the Cross Product</b></a></p>
+<p class="tx1">In &#x00A7;1.3.1, we looked at a way to orthogonalize a set of vectors using the <i>Gram-Schmidt </i>process. For 3D, there is another strategy to orthogonalize a set of vectors {<b>v</b><sub>0</sub>, <b>v</b><sub>1</sub>, <b>v</b><sub>2</sub>} that are almost orthonormal, but perhaps became un-orthonormal due to accumulated numerical precision errors, using the cross product. Refer to Figure <a href="ch01.html#fig1.15">1.15</a> for the geometry of this process:</p>
+<ol><li>Set <img src="images/50-0c.jpg" alt="image" width="20" height="20" style="margin-bottom:-0.7em;"/>.</li>
+<li>Set <img src="images/50-0d.jpg" alt="image" width="90" height="30" style="margin-bottom:-0.7em;"/></li>
+<li>Set <b>w</b><sub>1</sub> = <b>w</b><sub>2</sub> &times; <b>w</b><sub>0</sub> By Exercise 14,||<b>w</b><sub>2</sub> &times; <b>w</b><sub>0</sub>|| = 1 because <b>w</b><sub>2 </sub>&#x22A5;<sub> </sub><b>w</b><sub>0</sub> and ||<b>w</b><sub>2</sub>|| = ||<b>w</b><sub>0</sub>|| = 1, so we do not need to do any normalization in this last step. </li></ol>
+
+
+<p class="caption"><img src="images/Fig1-15.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.15"><b><i>Figure 1.15.</i></b>&nbsp;&nbsp;3D orthogonalization with the cross product.</p>
+
+
+
+
+<p class="tx"><a id="page17"/>At this point, the set of vectors {<b>w</b><sub>0, </sub><b>w</b><sub>1, </sub><b>w</b><sub>2</sub>} is orthonormal. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In the above example, we started with <img src="images/eq51-01.jpg" alt="image" width="60" height="30" style="margin-bottom:-0.5em;"/> which means we did not change the direction when going from </i><b>v</b><sub>0</sub><i> to </i><b>w</b><sub>0</sub><i>; we only changed the length. However, the directions of </i><b>w</b><sub>1</sub><i> and </i><b>w</b><sub>2</sub><i> could be different from </i><b>v</b><sub>1</sub><i> and </i><b>v</b><sub>2</sub><i>, respectively. Depending on the specific application, the vector you choose not to change the direction of might be important. For example, later in this book we represent the orientation of the camera with three orthonormal vectors </i>{<b>v</b><sub>0</sub><i>, </i><b>v</b><sub>1</sub><i>, </i><b>v</b><sub>2</sub>}<i> where the third vector </i><b>v</b><sub>2</sub><i> describes the direction the camera is looking. When orthogonalizing these vectors, we often do not want to change the direction we are looking, and so we will start the above algorithm with </i><b>v</b><sub>2</sub><i> and modify </i><b>v</b><sub>0</sub><i> and </i><b>v</b><sub>1</sub><i> to orthogonalize the vectors.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c1.5"><a href="toc.html#toc-1.5"><b>1.5 POINTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">So far we have been discussing vectors, which do not describe positions. However, we will also need to specify positions in our 3D programs, for example, the position of 3D geometry and the position of the 3D virtual camera. Relative to a coordinate system, we can use a vector in standard position (Figure <a href="ch01.html#fig1.16">1.16</a>) to represent a 3D position in space; we call this a <i>position vector</i>. In this case, the location of the tip of the vector is the characteristic of interest, not the direction or magnitude. We will use the terms &ldquo;position vector&rdquo; and &ldquo;point&rdquo; interchangeably since a position vector is enough to identify a point.</p>
+<p class="tx">One side effect of using vectors to represent points, especially in code, is that we can do vector operations that do not make sense for points; for instance, geometrically, what should the sum of two points mean? On the other hand, some operations can be extended to points. For example, we define the difference of two points<sub> </sub><b>q</b> &minus; <b>p</b> to be the vector from <b>p</b><sub> </sub>to<sub> </sub><b>q</b><sub>.</sub> Also, we define a point <b>p</b> plus a vector <b>v</b> to be the point <b>q</b> obtained by displacing <a id="page18"/><b>p</b> by the vector <b>v</b>. Conveniently, because we are using vectors to represent points relative to a coordinate system, no extra work needs to be done for the point operations just discussed, as the vector algebra framework already takes care of them; see Figure <a href="ch01.html#fig1.17">1.17</a>.</p>
+
+
+<p class="caption"><img src="images/Fig1-16.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.16"><b><i>Figure 1.16.</i></b>&nbsp;&nbsp;The position vector, which extends from the origin to the point, fully describes where the point is located relative to the coordinate system.  </p>
+
+
+
+<p class="caption"><img src="images/Fig1-17.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.17"><b><i>Figure 1.17.</i></b>&nbsp;&nbsp;(a) The difference <b>q</b> &minus; <b>p</b> between two points is defined as the vector from <b>p</b> to <b>q</b>.  (b) A point <b>p</b> plus the vector <b>v</b> is defined to be the point <b>q</b> obtained by displacing <b>p</b> by the vector <b>v</b>.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Actually there is a geometric meaningful way to define a special sum of points, called an affine combination, which is like a weighted average of points.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c1.6"><a href="toc.html#toc-1.6"><b>1.6 DIRECTX MATH VECTORS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">For Windows 8 and above, DirectX Math is a 3D math library for Direct3D application that is part of the Windows SDK. The library uses the SSE2 (Streaming SIMD Extensions 2) instruction set. With 128-bit wide SIMD (single instruction multiple data) registers, SIMD instructions can operate on four 32-bit<sub> </sub><span class="code">float</span>s<sub> </sub>or <span class="code">int</span>s with one instruction. This is very useful for vector calculations; for example, if you look at vector addition:</p>
+
+
+<p class="eq"><img src="images/eq52-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1"><a id="page19"/>we see that we just add corresponding components. By using SIMD, we can do 4D vector addition with one SIMD instruction instead of four scalar instructions. If we only required three coordinates for 3D work, we can still use SIMD, but we would just ignore the fourth coordinate; likewise, for 2D we would ignore the third and fourth coordinates. </p>
+<p class="tx">Our coverage of the DirectX Math library is not comprehensive, and we only cover the key parts needed for this book. For all the details, we recommend the online documentation [DirectXMath]. For readers wishing to understand how an SIMD vector library might be developed optimally, and, perhaps, to gain some insight why the DirectX Math library made some of the design decisions that it did, we recommend the article <i>Designing Fast Cross-Platform SIMD Vector Libraries</i> by [Oliveira2010].</p>
+<p class="tx">To use the DirectX Math library, you need to <span class="code">#include</span> <span class="code">&lt;DirectXMath.h&gt;</span>, and for some additional data types <span class="code">#include &lt;DirectXPackedVector.h&gt;</span>. There are no additional library files, as all the code is implemented inline in the header file. The DirectXMath.h code lives in the <span class="code">DirectX</span> namespace, and the DirectXPackedVector.h code lives in the <span class="code">DirectX::PackedVector</span> namespace. In addition, for the x86 platform you should enable SSE2 (<b>Project Properties &gt; Configuration Properties &gt; C/C</b>++<b> &gt; Code Generation &gt; Enable Enhanced Instruction Set</b>), and for all platforms you should enable the fast floating point model /fp:fast (<b>Project Properties &gt; Configuration Properties &gt; C/C</b>++<b> &gt; Code Generation &gt; Floating Point Model</b>). You do not need to enable SSE2 for the x64 platform because all x64 CPUs support SSE2 (<a href="http://en.wikipedia.org/wiki/SSE2">http://en.wikipedia.org/wiki/SSE2</a>). </p>
+<p class="h2" id="c1.6.1"><a href="toc.html#toc-1.6.1"><b>1.6.1 Vector Types</b></a></p>
+<p class="tx1">In DirectX Math, the core vector type is <span class="code">XMVECTOR</span>, which maps to SIMD hardware registers. This is a 128-bit type that can process four 32-bit floats with a single SIMD instruction. When SSE2 is available, it is defined like so for x86 and x64 platforms:</p>
+<p class="code"><span class="code">typedef __m128 XMVECTOR;</span></p>
+<p class="tx1">where __m128 is a special SIMD type. When doing calculations, vectors must be of this type to take advantage of SIMD. As already mentioned, we still use this type for 2D and 3D vectors to take advantage of SIMD, but we just zero out the unused components and ignore them. </p>
+     <p class="tx"><span class="code">XMVECTOR</span> needs to be 16-byte aligned, and this is done automatically for local and global variables. For class data members, it is recommended to use <span class="code">XMFLOAT2&nbsp;</span>(2D), <span class="code">XMFLOAT3</span> (3D), and <span class="code">XMFLOAT4&nbsp;</span>(4D) instead; these structures are defined below:<a id="page20"/></p>
+<p class="code"><span class="code">struct XMFLOAT2</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float y;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT2() {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT2(float _x, float _y) : x(_x), y(_y) {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMFLOAT2(_In_reads_(2) const float *pArray) :&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;x(pArray[0]), y(pArray[1]) {}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT2&amp; operator</span>=<span class="code">&nbsp;(const XMFLOAT2&amp; Float2)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ x&nbsp;</span>=<span class="code">&nbsp;Float2.x; y&nbsp;</span>=<span class="code">&nbsp;Float2.y; return *this; }</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct XMFLOAT3</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3() {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMFLOAT3(_In_reads_(3) const float *pArray) :&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;x(pArray[0]), y(pArray[1]), z(pArray[2]) {}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3&amp; operator</span>=<span class="code">&nbsp;(const XMFLOAT3&amp; Float3)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ x&nbsp;</span>=<span class="code">&nbsp;Float3.x; y&nbsp;</span>=<span class="code">&nbsp;Float3.y; z&nbsp;</span>=<span class="code">&nbsp;Float3.z; return *this; }</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct XMFLOAT4</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4() {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4(float _x, float _y, float _z, float _w) :&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;x(_x), y(_y), z(_z), w(_w) {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMFLOAT4(_In_reads_(4) const float *pArray) :&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;x(pArray[0]), y(pArray[1]), z(pArray[2]), w(pArray[3]) {}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4&amp; operator</span>=<span class="code">&nbsp;(const XMFLOAT4&amp; Float4)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ x&nbsp;</span>=<span class="code">&nbsp;Float4.x; y&nbsp;</span>=<span class="code">&nbsp;Float4.y; z&nbsp;</span>=<span class="code">&nbsp;Float4.z; w&nbsp;</span>=<span class="code">&nbsp;Float4.w; return *this; }</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">However, if we use these types directly for calculations, then we will not take advantage of SIMD. In order to use SIMD, we need to convert instances of these types into the <span class="code">XMVECTOR</span> type. This is done with the DirectX Math loading functions. Conversely, DirectX Math provides storage functions which are used to convert data from <span class="code">XMVECTOR</span> into the <span class="code">XMFLOAT<i>n</i></span> types above.</p>
+<p class="tx"><a id="page21"/>To summarize, </p>
+<ol><li>Use <span class="code">XMVECTOR</span> for local or global variables.</li>
+<li>Use <span class="code">XMFLOAT2,</span> <span class="code">XMFLOAT3</span>, and <span class="code">XMFLOAT4</span> for class data members.</li>
+<li>Use loading functions to convert from <span class="code">XMFLOAT<i>n</i></span> to <span class="code">XMVECTOR</span> before doing calculations.</li>
+<li>Do calculations with <span class="code">XMVECTOR</span> instances.</li>
+<li>Use storage functions to convert from <span class="code">XMVECTOR</span> to <span class="code">XMFLOAT<i>n</i></span>.</li></ol>
+<p class="h2" id="c1.6.2"><a href="toc.html#toc-1.6.2"><b>1.6.2 Loading and Storage Methods</b></a></p>
+<p class="tx1">We use the following methods to load data from <span class="code">XMFLOAT<i>n</i></span> into <span class="code">XMVECTOR</span>:</p>
+<p class="code"><span class="code">// Loads XMFLOAT2 into XMVECTOR</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMLoadFloat2(const XMFLOAT2 *pSource);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Loads XMFLOAT3 into XMVECTOR</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMLoadFloat3(const XMFLOAT3 *pSource);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Loads XMFLOAT4 into XMVECTOR</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMLoadFloat4(const XMFLOAT4 *pSource);</span></p>
+<p class="tx">We use the following methods to store data from <span class="code">XMVECTOR</span> into <span class="code">XMFLOAT<i>n</i></span>:</p>
+<p class="code"><span class="code">// Loads XMVECTOR into XMFLOAT2</span></p>
+<p class="code"><span class="code">void XM_CALLCONV XMStoreFloat2(XMFLOAT2 *pDestination, FXMVECTOR V);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Loads XMVECTOR into XMFLOAT3</span></p>
+<p class="code"><span class="code">void XM_CALLCONV XMStoreFloat3(XMFLOAT3 *pDestination, FXMVECTOR V);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Loads XMVECTOR into XMFLOAT4</span></p>
+<p class="code"><span class="code">void XM_CALLCONV XMStoreFloat4(XMFLOAT4 *pDestination, FXMVECTOR V);</span></p>
+<p class="tx">Sometimes we just want to get or set one component of an <span class="code">XMVECTOR</span>; the following getter and setter functions facilitate this:</p>
+<p class="code"><span class="code">float XM_CALLCONV XMVectorGetX(FXMVECTOR V);</span></p>
+<p class="code"><span class="code">float XM_CALLCONV XMVectorGetY(FXMVECTOR V);</span></p>
+<p class="code"><span class="code">float XM_CALLCONV XMVectorGetZ(FXMVECTOR V);</span></p>
+<p class="code"><span class="code">float XM_CALLCONV XMVectorGetW(FXMVECTOR V);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSetX(FXMVECTOR V, float x);</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSetY(FXMVECTOR V, float y);</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSetZ(FXMVECTOR V, float z);</span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSetW(FXMVECTOR V, float w);</span></p>
+<p class="h2" id="c1.6.3"><a href="toc.html#toc-1.6.3"><b>1.6.3 Parameter Passing</b></a></p>
+<p class="tx1">For efficiency purposes,<span class="code">&nbsp;XMVECTOR</span> values can be passed as arguments to functions in SSE/SSE2 registers instead of on the stack. The number of arguments that can be passed this way <a id="page22"/>depends on the platform (e.g., 32-bit Windows, 64-bit Windows, and Windows RT) and compiler. Therefore, to be platform/compiler independent, we use the types <span class="code">FXMVECTOR</span>, <span class="code">GXMVECTOR</span>, <span class="code">HXMVECTOR</span> and <span class="code">CXMVECTOR</span> for passing <span class="code">XMVECTOR</span> parameters; these are defined to the right type based on the platform and compiler. Furthermore, the calling convention annotation <span class="code">XM_CALLCONV</span> must be specified before the function name so that the proper calling convention is used, which again depends on the compiler version. </p>
+<p class="tx">Now the rules for passing <span class="code">XMVECTOR</span> parameters are as follows:</p>
+<ol><li>The first three <span class="code">XMVECTOR</span> parameters should be of type <span class="code">FXMVECTOR</span>; </li>
+<li>The fourth <span class="code">XMVECTOR</span> should be of type <span class="code">GXMVECTOR</span>;</li>
+<li>The fifth and sixth <span class="code">XMVECTOR</span> parameter should be of type <span class="code">HXMVECTOR</span>;</li>
+<li>Any additional <span class="code">XMVECTOR</span> parameters should be of type <span class="code">CXMVECTOR</span>. </li></ol>
+<p class="tx1">We illustrate how these types are defined on 32-bit Windows with a compiler that supports the <span class="code">__fastcall</span> calling convention and a compiler that supports the newer <span class="code">__vectorcall</span> calling convention:</p>
+<p class="code"><span class="code">// 32-bit Windows __fastcall passes first 3 XMVECTOR arguments</span></p>
+<p class="code"><span class="code">// via registers, the remaining on the stack.</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR FXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR&amp; GXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR&amp; HXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR&amp; CXMVECTOR;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// 32-bit Windows __vectorcall passes first 6 XMVECTOR arguments</span></p>
+<p class="code"><span class="code">// via registers, the remaining on the stack.</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR FXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR GXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR HXMVECTOR;</span></p>
+<p class="code"><span class="code">typedef const XMVECTOR&amp; CXMVECTOR;</span></p>
+<p class="tx1">For the details on how these types are defined for the other platforms, see &ldquo;Calling Conventions&rdquo; under &ldquo;Library Internals&rdquo; in the DirectX Math documentation [DirectXMath]. The exception to these rules is with constructor methods. [DirectXMath] recommends using <span class="code">FXMVECTOR</span> for the first three <span class="code">XMVECTOR</span> parameters and <span class="code">CXMVECTOR</span> for the rest when writing a constructor that takes <span class="code">XMVECTOR</span> parameters. Furthermore, do not use the annotation <span class="code">XM_CALLCONV</span> for constructors </p>
+<p class="tx">Here is an example from the DirectXMath library:</p>
+<p class="code"><span class="code">inline XMMATRIX XM_CALLCONV XMMatrixTransformation(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR ScalingOrigin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR ScalingOrientationQuaternion, .</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Scaling,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GXMVECTOR RotationOrigin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HXMVECTOR RotationQuaternion,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HXMVECTOR Translation);</span></p>
+<p class="tx1">This function takes <a id="page23"/>6 <span class="code">XMVECTOR</span> parameters, but following the parameter passing rules, it uses <span class="code">FXMVECTOR</span> for the first three parameters, <span class="code">GXMVECTOR</span> for the fourth, and <span class="code">HXMVECTOR</span> for the fifth and sixth.</p>
+<p class="tx">You can have non-<span class="code">XMVECTOR</span> parameters between <span class="code">XMVECTOR</span> parameters. The same rules apply and the <span class="code">XMVECTOR</span> parameters are counted as if the non-<span class="code">XMVECTOR</span> parameters were not there. For example, in the following function, the first three <span class="code">XMVECTOR</span> parameters are of type <span class="code">FXMVECTOR</span> as and the fourth <span class="code">XMVECTOR</span> parameter is of type <span class="code">GXMVECTOR</span>.</p>
+<p class="code"><span class="code">inline XMMATRIX XM_CALLCONV XMMatrixTransformation2D(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR ScalingOrigin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp; ScalingOrientation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Scaling,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR RotationOrigin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp; Rotation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GXMVECTOR Translation);</span></p>
+<p class="tx1">The rules for passing <span class="code">XMVECTOR</span> parameters apply to &ldquo;input&rdquo; parameters. &ldquo;Output&rdquo; <span class="code">XMVECTOR</span> parameters (<span class="code">XMVECTOR</span>&amp; or <span class="code">XMVECTOR*</span>) will not use the SSE/SSE2 registers and so will be treated like non-<span class="code">XMVECTOR</span> parameters.</p>
+<p class="h2" id="c1.6.4"><a href="toc.html#toc-1.6.4"><b>1.6.4 Constant Vectors</b></a></p>
+<p class="tx1">Constant <span class="code">XMVECTOR</span> instances should use the <span class="code">XMVECTORF32</span> type. Here are some examples from the DirectX SDK&rsquo;s CascadedShadowMaps11 sample:</p>
+<p class="code"><span class="code">static const XMVECTORF32 g_vHalfVector&nbsp;</span>=<span class="code">&nbsp;{ 0.5f, 0.5f, 0.5f, 0.5f };</span></p>
+<p class="code"><span class="code">static const XMVECTORF32 g_vZero&nbsp;</span>=<span class="code">&nbsp;{ 0.0f, 0.0f, 0.0f, 0.0f };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTORF32 vRightTop&nbsp;</span>=<span class="code">&nbsp;{</span></p>
+<p class="code"><span class="code">vViewFrust.RightSlope,</span></p>
+<p class="code"><span class="code">vViewFrust.TopSlope,</span></p>
+<p class="code"><span class="code">1.0f,1.0f</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTORF32 vLeftBottom&nbsp;</span>=<span class="code">&nbsp;{</span></p>
+<p class="code"><span class="code">vViewFrust.LeftSlope,</span></p>
+<p class="code"><span class="code">vViewFrust.BottomSlope,</span></p>
+<p class="code"><span class="code">1.0f,1.0f</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Essentially, we use <span class="code">XMVECTORF32</span> whenever we want to use initialization syntax.<a id="page24"/></p>
+     <p class="tx"><span class="code">XMVECTORF32</span> is a 16-byte aligned structure with a <span class="code">XMVECTOR</span> conversion operator; it is defined as follows:</p>
+<p class="code"><span class="code">// Conversion types for constants</span></p>
+<p class="code"><span class="code">__declspec(align(16)) struct XMVECTORF32</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;union</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float f[4];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;inline operator XMVECTOR() const { return v; }</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;inline operator const float*() const { return f; }</span></p>
+<p class="code"><span class="code">#if !defined(_XM_NO_INTRINSICS_) &amp;&amp; defined(_XM_SSE_INTRINSICS_)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;inline operator __m128i() const { return _mm_castps_si128(v); }</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;inline operator __m128d() const { return _mm_castps_pd(v); }</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx">You can also create a constant <span class="code">XMVECTOR</span> of integer data using <span class="code">XMVECTORU32</span>:</p>
+<p class="code"><span class="code">static const XMVECTORU32 vGrabY&nbsp;</span>=<span class="code">&nbsp;{</span></p>
+<p class="code"><span class="code">0x00000000,0xFFFFFFFF,0x00000000,0x00000000</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="h2" id="c1.6.5"><a href="toc.html#toc-1.6.5"><b>1.6.5 Overloaded Operators</b></a></p>
+<p class="tx1">The <span class="code">XMVECTOR</span> has several overloaded operators for doing vector addition, subtraction, and scalar multiplication. </p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator</span>+<span class="code">&nbsp;(FXMVECTOR V);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator- (FXMVECTOR V);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator</span>+=<span class="code">&nbsp;(XMVECTOR&amp; V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator-</span>=<span class="code">&nbsp;(XMVECTOR&amp; V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator*</span>=<span class="code">&nbsp;(XMVECTOR&amp; V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator/</span>=<span class="code">&nbsp;(XMVECTOR&amp; V1, FXMVECTOR V2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;operator*</span>=<span class="code">&nbsp;(XMVECTOR&amp; V, float S);</span></p>
+<p class="code"><span class="code">XMVECTOR&amp;&nbsp;&nbsp;operator/</span>=<span class="code">&nbsp;(XMVECTOR&amp; V, float S);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator</span>+<span class="code">&nbsp;(FXMVECTOR V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator- (FXMVECTOR V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator* (FXMVECTOR V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator/ (FXMVECTOR V1, FXMVECTOR V2);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator* (FXMVECTOR V, float S);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator* (float S, FXMVECTOR V);</span></p>
+<p class="code"><span class="code">XMVECTOR&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator/ (FXMVECTOR V, float S);</span></p>
+<p class="h2" id="c1.6.6"><a href="toc.html#toc-1.6.6"><b>1.6.6 Miscellaneous</b></a></p>
+<p class="tx1">The DirectX Math library defined the following constants useful for approximating different expressions involving &pi;:</p>
+<p class="code"><span class="code">const float XM_PI&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;3.141592654f;</span></p>
+<p class="code"><span class="code">const float XM_2PI&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;6.283185307f;</span></p>
+<p class="code"><span class="code">const float XM_1DIVPI&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;0.318309886f;</span></p>
+<p class="code"><span class="code">const float XM_1DIV2PI&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;0.159154943f;</span></p>
+<p class="code"><span class="code">const float XM_PIDIV2&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;1.570796327f;</span></p>
+<p class="code"><span class="code">const float XM_PIDIV4&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;0.785398163f;</span></p>
+<p class="tx1"><a id="page25"/>In addition, it defines the following inline functions for converting between radians and degrees:</p>
+<p class="code"><span class="code">inline float XMConvertToRadians(float fDegrees)&nbsp;</span></p>
+<p class="code"><span class="code">{ return fDegrees * (XM_PI / 180.0f); }</span></p>
+<p class="code"><span class="code">inline float XMConvertToDegrees(float fRadians)&nbsp;</span></p>
+<p class="code"><span class="code">{ return fRadians * (180.0f / XM_PI); }</span></p>
+<p class="tx">It also defines min/max functions:</p>
+<p class="code"><span class="code">template&lt;class T&gt; inline T XMMin(T a, T b) { return (a &lt; b) ? a : b; }</span></p>
+<p class="code"><span class="code">template&lt;class T&gt; inline T XMMax(T a, T b) { return (a &gt; b) ? a : b; }</span></p>
+<p class="h2" id="c1.6.7"><a href="toc.html#toc-1.6.7"><b>1.6.7 Setter Functions</b></a></p>
+<p class="tx1">DirectX Math provides the following functions to set the contents of an <span class="code">XMVECTOR</span>:</p>
+<p class="tx1">// Returns the zero vector<span class="code">&nbsp;<b>0</b></span></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorZero();</span></p>
+<p class="tx1">// Returns the vector (1, 1, 1, 1)</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSplatOne();</span></p>
+<p class="tx1">// Returns the vector (<i>x</i>, <i>y</i>, <i>z</i>, <i>w</i>)</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSet(float x, float y, float z, float w);</span></p>
+<p class="tx1">// Returns the vector (<i>s</i>, <i>s</i>, <i>s</i>, <i>s</i>)</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorReplicate(float Value);</span></p>
+<p class="tx1">// Returns the vector (<i>v</i><sub>x, </sub><i>v</i><sub>x, </sub><i>v</i><sub>x, </sub><i>v</i><sub>x</sub>)<sub> </sub></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSplatX(FXMVECTOR V);</span></p>
+<p class="tx1">// Returns the vector (<i>v</i><sub>y, </sub><i>v</i><sub>y, </sub><i>v</i><sub>y, </sub><i>v</i><sub>y</sub>)<sub> </sub></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSplatY(FXMVECTOR V);</span></p>
+<p class="tx1">// Returns the vector (<i>v</i><sub>z, </sub><i>v</i><sub>z, </sub><i>v</i><sub>z, </sub><i>v</i><sub>z</sub>)<sub> </sub></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVectorSplatZ(FXMVECTOR V);</span></p>
+<p class="tx1">The following program illustrates most of these functions:<a id="page26"/></p>
+<p class="code"><span class="code">#include &lt;windows.h&gt; // for XMVerifyCPUSupport</span></p>
+<p class="code"><span class="code">#include &lt;DirectXMath.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;DirectXPackedVector.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;iostream&gt;</span></p>
+<p class="code"><span class="code">using namespace std;</span></p>
+<p class="code"><span class="code">using namespace DirectX;</span></p>
+<p class="code"><span class="code">using namespace DirectX::PackedVector;</span></p>
+<p class="code"><span class="code">// Overload the "&lt;&lt;" operators so that we can use cout to&nbsp;</span></p>
+<p class="code"><span class="code">// output XMVECTOR objects.</span></p>
+<p class="code"><span class="code">ostream&amp; XM_CALLCONV operator&lt;&lt;(ostream&amp; os, FXMVECTOR v)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 dest;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;dest, v);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;os &lt;&lt; "(" &lt;&lt; dest.x &lt;&lt; ", " &lt;&lt; dest.y &lt;&lt; ", " &lt;&lt; dest.z &lt;&lt; ")";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return os;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">int main()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout.setf(ios_base::boolalpha);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Check support for SSE2 (Pentium4, AMD K8, and above).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (!XMVerifyCPUSupport())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "directx math not supported" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR p&nbsp;</span>=<span class="code">&nbsp;XMVectorZero();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR q&nbsp;</span>=<span class="code">&nbsp;XMVectorSplatOne();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR u&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(1.0f, 2.0f, 3.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR v&nbsp;</span>=<span class="code">&nbsp;XMVectorReplicate(-2.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR w&nbsp;</span>=<span class="code">&nbsp;XMVectorSplatZ(u);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "p&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; p &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "q&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; q &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "u&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; u &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "v&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; v &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "w&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; w &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">}</span></p>
+
+
+
+<p class="caption"><img src="images/Fig1-18.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.18"><b><i>Figure 1.18.</i></b>&nbsp;&nbsp;Output for the above program.</p>
+
+
+
+<p class="h2" id="c1.6.8"><a href="toc.html#toc-1.6.8"><b>1.6.8 Vector Functions</b></a></p>
+<p class="tx1">DirectX Math provides the following functions to do various vector operations. We illustrate with the 3D versions, but there are analogous versions for 2D and 4D; the 2D and 4D versions have the same names as the 3D versions, with the exception of a 2 and 4 substituted for the 3, respectively. <a id="page27"/></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3Length(&nbsp;&nbsp;&nbsp;</span>// Returns ||<b>v||</b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3LengthSq(&nbsp;&nbsp;&nbsp;</span>// Returns ||<b>v||</b><sup>2</sup></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b> </p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3Dot(&nbsp;&nbsp;&nbsp;</span>// Returns <b>v</b><sub>1</sub>&#x00B7;<b>v</b><sub>2</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V1, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>1</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V2);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>2</sub></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3Cross(&nbsp;&nbsp;&nbsp;</span>// Returns  <b>v</b><sub>1</sub> &times; <b>v</b><sub>2</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V1, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>1</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V2);&nbsp;&nbsp;&nbsp;</span>// Input<sub> </sub><b>v</b><sub>2</sub></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3Normalize(&nbsp;&nbsp;&nbsp;</span>// Returns <b>v</b>/||<b>v</b>||</p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3Orthogonal(&nbsp;&nbsp;&nbsp;</span>// Returns a vector orthogonal to <b>v</b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV</span></p>
+<p class="code"><span class="code">XMVector3AngleBetweenVectors(&nbsp;&nbsp;&nbsp;</span>// Returns the angle between <b>v</b><sub>1</sub> and <b>v</b><sub>2</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V1, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>1</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V2);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>2</sub></p>
+
+<p class="code"><span class="code">void XM_CALLCONV XMVector3ComponentsFromNormal(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR* pParallel, &nbsp;&nbsp;&nbsp;</span><sub>// Returns proj<b>n</b></sub>(<b>v</b>)</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR* pPerpendicular, &nbsp;&nbsp;&nbsp;</span><sub>// Returns perp<b>n</b></sub>(<b>v</b>)</p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Normal);&nbsp;&nbsp;&nbsp;</span>// Input <b>n</b></p>
+
+<p class="code"><span class="code">bool XM_CALLCONV XMVector3Equal(&nbsp;&nbsp;&nbsp;</span>// Returns <b>v</b><sub>1</sub> = <b>v</b><sub>2</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V1, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>1</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V2);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>2</sub></p>
+
+<p class="code"><span class="code">bool XM_CALLCONV XMVector3NotEqual(&nbsp;&nbsp;&nbsp;</span>// Returns <b>v</b><sub>1 &#x2260; </sub><b>v</b><sub>2</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V1, &nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>1</sub></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V2);&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b><sub>2</sub></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Observe that these functions return </i><span class="code">XMVECTORs</span><i> even for operations that mathematically return a scalar (for example, the dot product k </i>= <b>v</b><sub>1 </sub>&#x00B7;<sub> </sub><b>v</b><sub>2</sub><i>). The scalar result is replicated in each component of the </i><span class="code">XMVECTOR</span><i>. For example, for the dot product, the returned vector would be (</i><b>v</b><sub>1 </sub>&#x00B7;<sub> </sub><b>v</b><sub>2, </sub><b>v</b><sub>1 </sub>&#x00B7;<sub> </sub><b>v</b><sub>2</sub><i>,</i><b>v</b><sub>1</sub> &#x00B7; <b>v</b><sub>2</sub><i>,</i><b>v</b><sub>1 </sub>&#x00B7;<sub> </sub><b>v</b><sub>2</sub><i>)</i><sub>. </sub><i>One reason for this is to minimize mixing of scalar and SIMD vector operations; it is more efficient to keep everything SIMD until you are done with your calculations. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">The following demo program shows how to use most of these functions, as well as some of the overloaded operators:<a id="page28"/></p>
+<p class="code"><span class="code">#include &lt;windows.h&gt; // for XMVerifyCPUSupport</span></p>
+<p class="code"><span class="code">#include &lt;DirectXMath.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;DirectXPackedVector.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;iostream&gt;</span></p>
+<p class="code"><span class="code">using namespace std;</span></p>
+<p class="code"><span class="code">using namespace DirectX;</span></p>
+<p class="code"><span class="code">using namespace DirectX::PackedVector;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Overload the "&lt;&lt;" operators so that we can use cout to&nbsp;</span></p>
+<p class="code"><span class="code">// output XMVECTOR objects.</span></p>
+<p class="code"><span class="code">ostream&amp; XM_CALLCONV operator&lt;&lt;(ostream&amp; os, FXMVECTOR v)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 dest;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;dest, v);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;os &lt;&lt; "(" &lt;&lt; dest.x &lt;&lt; ", " &lt;&lt; dest.y &lt;&lt; ", " &lt;&lt; dest.z &lt;&lt; ")";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return os;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">int main()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout.setf(ios_base::boolalpha);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Check support for SSE2 (Pentium4, AMD K8, and above).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (!XMVerifyCPUSupport())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "directx math not supported" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR n&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR u&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(1.0f, 2.0f, 3.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR v&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(-2.0f, 1.0f, -3.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR w&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(0.707f, 0.707f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vector addition: XMVECTOR operator&nbsp;</span>+<span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR a&nbsp;</span>=<span class="code">&nbsp;u&nbsp;</span>+<span class="code">&nbsp;v;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vector subtraction: XMVECTOR operator -&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR b&nbsp;</span>=<span class="code">&nbsp;u - v;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Scalar multiplication: XMVECTOR operator *&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR c&nbsp;</span>=<span class="code">&nbsp;10.0f*u;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// ||u||</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR L&nbsp;</span>=<span class="code">&nbsp;XMVector3Length(u);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// d&nbsp;</span>=<span class="code">&nbsp;u / ||u||</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR d&nbsp;</span>=<span class="code">&nbsp;XMVector3Normalize(u);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// s&nbsp;</span>=<span class="code">&nbsp;u dot v</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR s&nbsp;</span>=<span class="code">&nbsp;XMVector3Dot(u, v);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// e&nbsp;</span>=<span class="code">&nbsp;u x v</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR e&nbsp;</span>=<span class="code">&nbsp;XMVector3Cross(u, v);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Find proj_n(w) and perp_n(w)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR projW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR perpW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVector3ComponentsFromNormal(&amp;projW, &amp;perpW, w, n);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Does projW&nbsp;</span>+<span class="code">&nbsp;perpW&nbsp;</span>==<span class="code">&nbsp;w?</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;bool equal&nbsp;</span>=<span class="code">&nbsp;XMVector3Equal(projW&nbsp;</span>+<span class="code">&nbsp;perpW, w) !</span>=<span class="code">&nbsp;0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;bool notEqual&nbsp;</span>=<span class="code">&nbsp;XMVector3NotEqual(projW&nbsp;</span>+<span class="code">&nbsp;perpW, w) !</span>=<span class="code">&nbsp;0;</span></p>
+<p class="code">&nbsp;<a id="page29"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The angle between projW and perpW should be 90 degrees.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR angleVec&nbsp;</span>=<span class="code">&nbsp;XMVector3AngleBetweenVectors(projW, perpW);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float angleRadians&nbsp;</span>=<span class="code">&nbsp;XMVectorGetX(angleVec);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float angleDegrees&nbsp;</span>=<span class="code">&nbsp;XMConvertToDegrees(angleRadians);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "u&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; u &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; v &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "w&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; w &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "n&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; n &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "a&nbsp;</span>=<span class="code">&nbsp;u&nbsp;</span>+<span class="code">&nbsp;v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; a &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "b&nbsp;</span>=<span class="code">&nbsp;u - v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; b &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "c&nbsp;</span>=<span class="code">&nbsp;10 * u&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; c &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "d&nbsp;</span>=<span class="code">&nbsp;u / ||u||&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; d &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "e&nbsp;</span>=<span class="code">&nbsp;u x v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; e &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "L&nbsp;</span>=<span class="code">&nbsp;||u||&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; L &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "s&nbsp;</span>=<span class="code">&nbsp;u.v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; s &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "projW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; projW &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "perpW&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; perpW &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "projW&nbsp;</span>+<span class="code">&nbsp;perpW&nbsp;</span>==<span class="code">&nbsp;w&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; equal &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "projW&nbsp;</span>+<span class="code">&nbsp;perpW !</span>=<span class="code">&nbsp;w&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; notEqual &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "angle&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; angleDegrees &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">}</span></p>
+    
+
+<p class="caption"><img src="images/Fig1-19.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.19"><b><i>Figure 1.19.</i></b>&nbsp;&nbsp;Output for the above program.</p>
+
+
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><a id="page30"/><i>The DirectX Math library also includes some estimation methods, which are less accurate but faster to compute. If you are willing to sacrifice some accuracy for speed, then use the estimate methods. Here are two examples of estimate functions:</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3LengthEst(&nbsp;&nbsp;&nbsp;</span>// Returns estimated ||<b>v</b>||</p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3NormalizeEst(&nbsp;&nbsp;&nbsp;</span>// Returns estimated <b>v</b>/||<b>v</b>||</p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+<p class="h2" id="c1.6.9"><a href="toc.html#toc-1.6.9"><b>1.6.9 Floating-Point Error</b></a></p>
+<p class="tx1">While on the subject of working with vectors on a computer, we should be aware of the following. When comparing floating-point numbers, care must be taken due to floating-point imprecision. Two floating-point numbers that we expect to be equal may differ slightly. For example, mathematically, we&rsquo;d expect a normalized vector to have a length of 1, but in a computer program, the length will only be approximately 1. Moreover, mathematically, 1<sup>p</sup> = 1 for any real number <i>p</i>, but when we only have a numerical approximation for 1, we see that the approximation raised to the<sup> </sup><i>p</i>th power increases the error; thus, numerical error also accumulates. The following short program illustrates these ideas:</p>
+<p class="code"><span class="code">#include &lt;windows.h&gt; // for XMVerifyCPUSupport</span></p>
+<p class="code"><span class="code">#include &lt;DirectXMath.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;DirectXPackedVector.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;iostream&gt;</span></p>
+<p class="code"><span class="code">using namespace std;</span></p>
+<p class="code"><span class="code">using namespace DirectX;</span></p>
+<p class="code"><span class="code">using namespace DirectX::PackedVector;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">int main()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout.precision(8);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Check support for SSE2 (Pentium4, AMD K8, and above).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (!XMVerifyCPUSupport())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "directx math not supported" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR u&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(1.0f, 1.0f, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR n&nbsp;</span>=<span class="code">&nbsp;XMVector3Normalize(u);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float LU&nbsp;</span>=<span class="code">&nbsp;XMVectorGetX(XMVector3Length(n));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Mathematically, the length should be 1. Is it numerically?</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; LU &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (LU&nbsp;</span>==<span class="code">&nbsp;1.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "Length 1" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "Length not 1" &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Raising 1 to any power should still be 1. Is it?</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float powLU&nbsp;</span>=<span class="code">&nbsp;powf(LU, 1.0e6f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "LU^(10^6)&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; powLU &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">}</span></p>
+
+
+
+<p class="caption"><img src="images/Fig1-20.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.20"><b><i>Figure 1.20.</i></b>&nbsp;&nbsp;Output for the above program.</p>
+
+
+
+
+
+<p class="tx"><a id="page31"/>To compensate for floating-point imprecision, we test if two floating-point numbers are approximately equal. We do this by defining an Epsilon constant, which is a very small value we use as a &ldquo;buffer.&rdquo; We say two values are approximately equal if their distance is less than <span class="code">Epsilon</span>. In other words, <span class="code">Epsilon</span> gives us some tolerance for floating-point imprecision. The following function illustrates how <span class="code">Epsilon</span> can be used to test if two floating-point values are equal:</p>
+<p class="code"><span class="code">const float Epsilon&nbsp;</span>=<span class="code">&nbsp;0.001f;</span></p>
+<p class="code"><span class="code">bool Equals(float lhs, float rhs)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; // Is the distance between lhs and rhs less than EPSILON?</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return fabs(lhs - rhs) &lt; Epsilon ? true : false;</span></p>
+<p class="code"><span class="code">}&nbsp;</span></p>
+<p class="tx">The DirectX Math library provides the <span class="code">XMVector3NearEqual</span> function when testing the equality of vectors with an allowed tolerance <span class="code">Epsilon</span> parameter:</p>
+<p class="code"><span class="code">// Returns&nbsp;</span></p>
+<p class="code"><span class="code">//&nbsp;&nbsp;abs(U.x &ndash; V.x) &lt;</span>=<span class="code">&nbsp;Epsilon.x &amp;&amp;&nbsp;</span></p>
+<p class="code"><span class="code">//&nbsp;&nbsp;abs(U.y &ndash; V.y) &lt;</span>=<span class="code">&nbsp;Epsilon.y &amp;&amp;</span></p>
+<p class="code"><span class="code">//&nbsp;&nbsp;abs(U.z &ndash; V.z) &lt;</span>=<span class="code">&nbsp;Epsilon.z</span></p>
+<p class="code"><span class="code">XMFINLINE bool XM_CALLCONV XMVector3NearEqual(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR U,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Epsilon);</span></p>
+<p class="h1" id="c1.7"><a href="toc.html#toc-1.7"><b>1.7 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Vectors are used to model physical quantities that possess both magnitude and direction. Geometrically, we represent a vector with a directed line segment. A vector is in standard <a id="page32"/>position when it is translated parallel to itself so that its tail coincides with the origin of the coordinate system. A vector in standard position can be described numerically by specifying the coordinates of its head relative to a coordinate system.</li>
+<li>If <b>u</b> = (<i>u</i><sub>x</sub>,<sub> </sub><i>u</i><sub>y</sub>,<sub> </sub><i>u</i><sub>z</sub>) and <b>v</b> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>,<sub> </sub><i>v</i><sub>z</sub>), then we have the following vector operations:
+<ol class="lc-alpha"><li>Addition:<sub> </sub><b>u</b> + <b>v</b> = (<i>u</i><sub>x</sub> + <i>v</i><sub>x</sub>,<sub>  </sub><i>u</i><sub>y</sub> + <i>v</i><sub>y</sub>,<sub> </sub><i>u</i><sub>z </sub>+ <i>v</i><sub>z</sub>)<sub> </sub></li>
+<li>Subtraction: <b>u </b>&minus; <b>v</b> = (<i>u</i><sub>x</sub> &minus; <i>v</i><sub>x</sub>,<sub> </sub><i>u</i><sub>y</sub> &minus; <i>v</i><sub>y</sub>,<sub> </sub><i>u</i><sub>z</sub> &minus; <i>v</i><sub>z</sub>)<sub> </sub></li>
+<li>Scalar Multiplication: <i>k</i><b>u</b> = (<i>ku</i><sub>x</sub>, <i>ku</i><sub>y</sub>,<sub> </sub><i>ku</i><sub>z</sub>)</li>
+<li>Length: <img src="images/eq66-01.jpg" alt="image" width="90" height="20"/></li>
+<li>Normalization: <img src="images/eq66-02.jpg" alt="image" width="120" height="30" style="margin-bottom:-0.5em;"/></li>
+<li>Dot Product: <img src="images/eq66-03.jpg" alt="image" width="250" height="20" style="margin-bottom:-0.5em;"/></li>
+<li>Cross Product: <img src="images/eq66-04.jpg" alt="image" width="250" height="20" style="margin-bottom:-0.5em;"/></li></ol></li>
+<li>We use the DirectX Math <span class="code">XMVECTOR</span><sub> </sub>type to describe vectors efficiently in code using SIMD operations. For class data members, we use the<sub> </sub><span class="code">XMFLOAT2</span>,<sub> </sub><span class="code">XMFLOAT3</span>, and <span class="code">XMFLOAT4</span> classes, and then use the loading and storage methods to convert back and forth between <span class="code">XMVECTOR</span> and <span class="code">XMFLOAT<i>n</i></span>. Constant vectors that require initialization syntax should use the<sub> </sub><span class="code">XMVECTORF32</span> type.</li>
+<li>For efficiency purposes, <span class="code">XMVECTOR</span> values can be passed as arguments to functions in SSE/SSE2 registers instead of on the stack. To do this in a platform independent way, we use the types <span class="code">FXMVECTOR</span>,<sub> </sub><span class="code">GXMVECTOR</span>,<sub> </sub><span class="code">HXMVECTOR</span><sub> </sub>and <span class="code">CXMVECTOR</span> for passing <span class="code">XMVECTOR</span> parameters. Then the rule for passing <span class="code">XMVECTOR</span><sub> </sub>parameters is that the first three <span class="code">XMVECTOR</span> parameters should be of type <span class="code">FXMVECTOR</span>; the fourth <span class="code">XMVECTOR</span> should be of type <span class="code">GXMVECTOR</span>; the fifth and sixth <span class="code">XMVECTOR</span><sub> </sub>parameter should be of type <span class="code">HXMVECTOR</span>; and any additional <span class="code">XMVECTOR</span> parameters should be of type <span class="code">CXMVECTOR</span>.</li>
+<li>The <span class="code">XMVECTOR</span> class overloads the arithmetic operators to do vector addition, subtraction, and scalar multiplication. Moreover, the DirectX Math library provides the following useful functions for computing the length of a vector, the squared length of a vector, computing the dot product of two vectors, computing the cross product of two vectors, and normalizing a vector:<br/><br/>
+<span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMVector3Length(FXMVECTOR V);</span><br/>
+<span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMVector3LengthSq(FXMVECTOR V);</span><br/>
+<span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMVector3Dot(FXMVECTOR V1, FXMVECTOR V2);</span><br/>
+<span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMVector3Cross(FXMVECTOR V1, FXMVECTOR V2);</span><br/>
+<span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMVector3Normalize(FXMVECTOR V);</span><a id="page33"/></li></ol>
+<p class="h1" id="c1.8"><a href="toc.html#toc-1.8"><b>1.8 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Let <b>u</b> = (1, 2) and <b>v</b> = (3, &minus;4). Perform the following computations and draw the vectors relative to a 2D coordinate system.
+<ol class="lc-alpha"><li><b>u</b> + <b>v</b></li>
+<li><b>u</b> &minus; <b>v</b></li>
+<li><img src="images/eq67-01.jpg" alt="image" width="60" height="25" style="margin-bottom:-0.5em;"/></li>
+<li>&minus;2<b>u</b> + <b>v</b></li></ol></li>
+<li>Let <b>u</b> = (&minus;1, 3, 2) and <b>v</b> = (3, &minus;4, 1). Perform the following computations.
+<ol class="lc-alpha"><li><b>u</b> + <b>v</b></li>
+<li><b>u</b> &minus; <b>v</b></li>
+<li>3<b>u</b> + 2<b>v</b></li>
+<li>&minus;2<b>u</b> + <b>v</b></li></ol></li>
+<li>This exercise shows that vector algebra shares many of the nice properties of real numbers (this is not an exhaustive list). Assume <b>u</b> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>,<sub> </sub><i>u</i><sub>z</sub>),<sub>  </sub><b>v</b> = (<i>v</i><sub>x</sub>,<sub> </sub><i>v</i><sub>y</sub>,<sub> </sub><i>v</i><sub>z</sub>), and <b>w</b> = (<i>w</i><sub>x</sub>,<sub> </sub><i>w</i><sub>y</sub>,<sub> </sub><i>w</i><sub>z</sub>). Also assume that <i>c</i><sub> </sub>and <i>k</i><sub> </sub>are scalars. Prove the following vector properties.
+<ol class="lc-alpha"><li><b>u</b> + <b>v</b> = <b>v</b> + <b>u</b><sub> </sub>(Commutative Property of Addition)</li>
+<li><b>u</b> + (<b>v</b> + <b>w</b>) = (<b>u</b> + <b>v</b>) + <b>w</b><sub> </sub>(Associative Property of Addition)</li>
+<li>(<i>ck</i>)<b>u</b> = <i>c</i>(<i>k</i><b>u</b>)<sub> </sub>(Associative Property of Scalar Multiplication)</li>
+<li><i>k</i>(<b>u</b> + <b>v</b>) = <i>k</i><b>u</b> + <i>k</i><b>v</b><sub> </sub>(Distributive Property 1)</li>
+<li><b>u</b>(<i>k</i> + <i>c</i>) = <i>k</i><b>u</b> + <i>c</i><b>u</b><sub> </sub>(Distributive Property 2)
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Just use the definition of the vector operations and the properties of real numbers. For example,</i></p></td></tr>
+</tbody>
+</table>
+<p class="tx1">(<i>ck</i>)<b>u</b> = (<i>ck</i>)(<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= ((<i>ck</i>)<i>u</i><sub>x</sub>, (<i>ck</i>)<i>u</i><sub>y</sub>, (<i>ck</i>)<i>u</i><sub>z)</sub></p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= (<i>c</i>(<i>ku</i><sub>x)</sub>, <i>c</i>(<i>ku</i><sub>y</sub>), <i>c</i>(<i>ku</i><sub>z</sub>))</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= <i>c</i>(<i>ku</i><sub>x</sub>, <i>ku</i><sub>y</sub>, <i>ku</i><sub>z</sub>)</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;= <i>c</i>(<i>k</i><b>u</b>)</p></li></ol></li>
+<li>Solve the equation 2((1, <sub> </sub>2,<sub>  </sub>3) &ndash; <b>x</b>) &minus; (&minus;2, 0, 4) = &minus;2(1, 2, 3) for<sub> </sub><b>x</b>.</li>
+<li>Let <b>u</b> = (&minus;1, 3, 2) and <b>v</b><sub> </sub>= (3, &minus;4, 1) . Normalize <b>u</b> and <b>v</b>.</li>
+<li>Let <i>k</i> be a scalar and let <b>u</b> = (<i>u</i><sub>x</sub>,<sub> </sub><i>u</i><sub>y</sub>,<sub> </sub><i>u</i><sub>z</sub>). Prove that<sub> </sub>||<i>k</i><b>u</b>|| = |<i>k</i>|||<b>u</b>||.</li>
+<li>Is the angle between<sub> </sub><b>u</b> and <b>v</b> orthogonal, acute, or obtuse?
+<ol class="lc-alpha"><li><b>u</b> = (1, 1, 1), <b>v</b> = (2, 3, 4)</li>
+<li><b>u</b> = (1, 1, 0), <b>v</b> = (&minus;2, 2, 0)</li>
+<li><b>u</b> = (&minus;1, &minus;1, &minus;1), <b>v</b> = (3, 1, 0)</li></ol></li>
+<li><a id="page34"/>Let <b>u</b> = (&minus;1, 3, 2) and <b>v</b> = (3, &minus;4, 1). Find the angle &theta; between <b>u</b> and <b>v</b>.</li>
+<li>Let <b>u</b> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>), <b>v</b> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>), and <b>w</b> = (<i>w</i><sub>x</sub>, <i>w</i><sub>y</sub>, <i>w</i><sub>z</sub>). Also let <i>c</i> and <i>k</i> be scalars. Prove the following dot product properties.
+<ol class="lc-alpha"><li><b>u</b><sub> </sub>&#x00B7;<b> v</b> = <b>v</b><sub> </sub>&#x00B7;<sub> </sub><b>u</b></li>
+<li><b>u</b>&#x00B7;(<b>v</b> + <b>w</b>) = <b>u</b> &#x00B7; <b>v</b> + <b>u</b> &#x00B7; <b>w</b></li>
+<li><i>k</i>(<b>u</b> &#x00B7; <b>v</b>) = (<i>k</i><b>u</b>) &#x00B7; <b>v</b> = <b>u</b> &#x00B7; (<i>k</i><b>v</b>)</li>
+<li><b>v</b>&#x00B7;<b>v</b> = ||<b>v</b>||<sup>2</sup></li>
+<li><b>0</b> &#x00B7; <b>v</b> = 0
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Just use the definitions, for example,</i></p></td></tr>
+</tbody>
+</table>
+
+<p class="eq"><img src="images/eq68-01.jpg" alt="image" width="40%"/></p>
+
+</li></ol></li>
+
+<li>Use the law of cosines (<i>c</i><sup>2</sup> = <i>a</i><sup>2</sup> + <i>b</i><sup>2</sup> &ndash; 2<i>ab</i>cos&theta;), where <i>a</i>, <i>b</i>, and <i>c</i> are the lengths of the sides of a triangle and &theta; is the angle between sides <i>a</i> and <i>b</i>) to show <br/>
+<p class="eq"><img src="images/68-0b.jpg" alt="image" width="100%"/></p>
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Consider Figure <a href="ch01.html#fig1.9">1.9</a> and set c</i><sup>2</sup> =<i> ||</i><b>u</b><i> &minus; </i><b>v</b><i>||, a</i><sup>2</sup> =<i> ||</i><b>u</b><i>||</i><sup>2</sup><i> and b</i><sup>2</sup> =<i> ||</i><b>v</b><i>||</i><sup>2</sup><i>, and use the dot product properties from the previous exercise.</i></p></td></tr>
+</tbody>
+</table>
+</li>
+<li>Let <b>n</b> = (&minus;2, 1). Decompose the vector <b>g</b> = (0, &minus;9.8) into the sum of two orthogonal vectors, one parallel to <b>n</b> and the other orthogonal to <b>n</b>. Also, draw the vectors relative to a 2D coordinate system.</li>
+<li>Let <b>u</b> = (&minus;2, 1, 4) and <b>v</b> = (3, &minus;4, 1). Find <b>w</b> = <b>u</b> &times; <b>v</b>, and show <b>w </b>&#x00B7; <b>u</b> = 0 and  <b>w </b>&#x00B7; <b>v</b> = 0.</li>
+<li>Let the following points define a triangle relative to some coordinate system:<sup> </sup><b>A</b><sup> </sup>= (0, 0, 0), <b>B</b> = (0, 1, 3), and <b>C</b> = (5, 1, 0). Find a vector orthogonal to this triangle. 
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Find two vectors on two of the triangle&rsquo;s edges and use the cross product.</i></p></td></tr>
+</tbody>
+</table>
+</li>
+<li>Prove that <img src="images/68-0d.jpg" alt="image" width="150" height="20" style="margin-bottom:-0.5em;"/>. 
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Start with <img src="images/69-0a.jpg" alt="image" width="80" height="20" style="margin-bottom:-0.5em;"/> and use the trigonometric<a id="page35"/> identity <img src="images/69-0b.jpg" alt="image" width="250" height="20" style="margin-bottom:-0.5em;"/> then apply Equation <a href="ch01.html#eq1.4">1.4</a>.</i></p></td></tr>
+</tbody>
+</table>
+</li>
+<li>Prove that <b>||u &times;v||</b> gives the area of the parallelogram spanned by<b> u</b> and <b>v</b>; see Figure <a href="ch01.html#fig1.21">1.21</a>.
+
+
+<p class="caption"><img src="images/Fig1-21.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.21"><b><i>Figure 1.21.</i></b>&nbsp;&nbsp;Parallelogram spanned by two 3D vectors <b>u</b> and<sup> </sup><b>v</b>; the parallelogram has base || <b>v </b>|| and height <b><i>h</i></b></p>
+
+</li>
+<li>Give an example of 3D vectors <b>u</b>, <b>v</b>, and <b>w</b> such that <img src="images/69-0c.jpg" alt="image" width="120" height="20" style="margin-bottom:-0.3em;"/>. This shows the cross product is generally not associative. 
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Consider combinations of the simple vectors </i><b>i</b><sup> </sup>= (1, 0, 0)<i>,</i><sup> </sup><b>j</b> = (0, 1, 0)<i>, and</i><sup>  </sup><b>k</b> = (0, 0, 1).</p></td></tr>
+</tbody>
+</table>
+</li>
+<li>Prove that the cross product of two nonzero parallel vectors results in the null vector; that is, <b>u</b> &times; <i>k</i><b>u</b> = 0.
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Just use the cross product definition.</i></p></td></tr>
+</tbody>
+</table>
+ </li>
+<li>Orthonormalize the set of vectors {(1, 0, 0), (1, 5, 0), (2, 1, &minus;4)} using the Gram-Schmidt<sup> </sup>process.</li>
+<li>Consider the following program and output. Make a conjecture of what each <span class="code">XMVector*</span> function does; then look up each function in the DirectXMath documentation.
+<p class="code"><span class="code">#include &lt;windows.h&gt; // for XMVerifyCPUSupport</span></p>
+<p class="code"><span class="code">#include &lt;DirectXMath.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;DirectXPackedVector.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;iostream&gt;</span></p>
+<p class="code"><span class="code">using namespace std;</span></p>
+<p class="code"><span class="code">using namespace DirectX;</span></p>
+<p class="code"><span class="code">using namespace DirectX::PackedVector;</span></p>
+<p class="code">&nbsp;<a id="page36"/></p>
+<p class="code"><span class="code">// Overload the "&lt;&lt;" operators so that we can use cout to&nbsp;</span></p>
+<p class="code"><span class="code">// output XMVECTOR objects.</span></p>
+<p class="code"><span class="code">ostream&amp; XM_CALLCONV operator&lt;&lt;(ostream&amp; os, FXMVECTOR v)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4 dest;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4(&amp;dest, v);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;os &lt;&lt; "(" &lt;&lt; dest.x &lt;&lt; ", " &lt;&lt; dest.y &lt;&lt; ", "&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &lt;&lt; dest.z &lt;&lt; ", " &lt;&lt; dest.w &lt;&lt; ")";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return os;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">int main()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout.setf(ios_base::boolalpha);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Check support for SSE2 (Pentium4, AMD K8, and above).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (!XMVerifyCPUSupport())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "directx math not supported" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR p&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(2.0f, 2.0f, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR q&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(2.0f, -0.5f, 0.5f, 0.1f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR u&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(1.0f, 2.0f, 4.0f, 8.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR v&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(-2.0f, 1.0f, -3.0f, 2.5f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR w&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(0.0f, XM_PIDIV4, XM_PIDIV2, XM_PI);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorAbs(v)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorAbs(v) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorCos(w)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorCos(w) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorLog(u)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorLog(u) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorExp(p)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorExp(p) &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorPow(u, p)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorPow(u, p) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorSqrt(u)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorSqrt(u) &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorSwizzle(u, 2, 2, 1, 3)&nbsp;</span>=<span class="code">&nbsp;"</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; &lt;&lt; XMVectorSwizzle(u, 2, 2, 1, 3) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorSwizzle(u, 2, 1, 0, 3)&nbsp;</span>=<span class="code">&nbsp;"</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; &lt;&lt; XMVectorSwizzle(u, 2, 1, 0, 3) &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorMultiply(u, v)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorMultiply(u, v) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorSaturate(q)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorSaturate(q) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorMin(p, v&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorMin(p, v) &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "XMVectorMax(p, v)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; XMVectorMax(p, v) &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="caption"><img src="images/Fig1-22.jpg" alt="image" width="100%"/></p>
+<p class="caption" id="fig1.22"><b><i>Figure 1.22</i></b>&nbsp;&nbsp;Output for the above program.</p>
+</li></ol>
+</body>
+</html>

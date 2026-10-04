@@ -1,0 +1,945 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page597"/><a href="toc.html#toc-18" id="chap18">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">18</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-18"><b>C</b><span class="sc">UBE</span><br/><br/><b>M</b><span class="sc">APPING</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/></p>
+
+<p class="tx1">In this chapter, we study cube maps, which are basically arrays of six textures interpreted in a special way. With cube mapping, we can easily texture a sky or model reflections.</p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn what cube maps are and how to sample them in HLSL code.</li>
+<li>To discover how to create cube maps with the DirectX texturing tools.</li>
+<li>To find out how we can use cube maps to model reflections.</li>
+<li>To understand how we can texture a sphere with cube maps to simulate a sky and distant mountains.</li></ol>
+<p class="h1" id="c18.1"><a href="toc.html#toc-18.1"><b>18.1 CUBE MAPPING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The idea of cube mapping is to store six textures and to visualize them as the faces of a cube&mdash;hence the name cube map&mdash;centered and axis aligned about some coordinate system. Since the cube texture is axis aligned, each face corresponds with a direction along the three major axes; therefore, it is natural to a reference a particular face on a cube map based on the axis direction (&plusmn;<i>X</i>, &plusmn;<i>Y</i>, &plusmn;<i>Z</i>) that intersects the face. </p>
+<p class="tx"><a id="page598"/>In Direct3D, a cube map is represented by a texture array with six elements such that</p>
+<ol><li>index 0 refers to the +X face</li>
+<li>index 1 refers to the &ndash;X face</li>
+<li>index 2 refers to the +Y face</li>
+<li>index 3 refers to the &ndash;Y face</li>
+<li>index 4 refers to the +Z face</li>
+<li>index 5 refers to the &ndash;Z face</li></ol>
+<p class="tx1">In contrast to 2D texturing, we can no longer identify a texel with 2D texture coordinates. To identify a texel in a cube map, we use 3D texture coordinates, which define a 3D <i>lookup</i> vector <b>v</b> originating at the origin. The texel of the cube map that <b>v</b> intersects (see Figure <a href="ch18.html#fig18.1">18.1</a>) is the texel corresponding to the 3D coordinates of <b>v</b>. The concepts of texture filtering discussed in Chapter <a href="ch09.html#chap09">9</a> applies in the case <b>v</b> intersects a point between texel samples.  </p>
+
+<p class="caption"><img src="images/Fig18-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.1"><b><i>Figure 18.1.</i></b>&nbsp;&nbsp;We illustrate in 2D for simplicity; in 3D the square becomes a cube. The square denotes the cube map centered and axis-aligned with some coordinate system. We shoot a vector <b>v</b> from the origin. The texel <b>v</b> intersects is the sampled texel. In this illustration, <b>v</b> intersects the cube face corresponding to the +<i>Y</i> axis.</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The magnitude of the lookup vector is unimportant, only the direction matters. Two vectors with the same direction but different magnitudes will sample the same point in the cube map.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">In the HLSL, a cube texture is represented by the <span class="code">TextureCube</span> type. The following code fragment illustrates how we sample a cube map:</p>
+<p class="code"><span class="code">TextureCube gCubeMap;</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// in pixel shader</span></p>
+<p class="code"><span class="code">float3 v = float3(x,y,z); // some lookup vector</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The lookup vector should<a id="page599"/> be in the same space the cube map is relative to. For example, if the cube map is relative to the world space (i.e., the cube faces are axis aligned with the world space axes), then the lookup vector should have world space coordinates. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c18.2"><a href="toc.html#toc-18.2"><b>18.2 ENVIRONMENT MAPS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The primary application of cube maps is <i>environment mapping. </i>The idea is to position a camera at the center of some object <i>O</i> in the scene with a 90&deg; field of view angle (both vertically and horizontally). Then have the camera look down the positive <i>x</i>-axis, negative <i>x</i>-axis, positive <i>y</i>-axis, negative <i>y</i>-axis, positive <i>z</i>-axis, and negative <i>z</i>-axis, and to take a picture of the scene (excluding the object <i>O</i>) from each of these six viewpoints. Because the field of view angle is 90&deg;, these six images will have captured the entire surrounding environment (see Figure <a href="ch18.html#fig18.2">18.2</a>)  from the perspective of the object <i>O</i>. We then store these six images of the surrounding environment in a cube map, which leads to the name environment map. In other words, an environment map is a cube map where the cube faces store the surrounding images of an environment.</p>
+
+<p class="caption"><img src="images/Fig18-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.2"><b><i>Figure 18.2.</i></b>&nbsp;&nbsp;An example of an environment map after &ldquo;unfolding&rdquo; the cube map. Imagine refolding these six faces into a 3D box, and then imagine being at the center of the box. From every direction you look, you see the surrounding environment.</p>
+
+<p class="tx">The above description suggests that we need to create an environment map for each object that is to use environment mapping. While this would be more accurate, it also requires more texture memory. A compromise would be to use a few environment maps that capture the environment at key points in the scene. Then objects will sample the environment map closest to them. This simplification usually works well in practice<a id="page600"/> because with curved objects inaccurate reflections are hard to notice. Another simplification often taken with environment mapping is to omit certain objects from the scene. For example, the environment map in Figure <a href="ch18.html#fig18.2">18.2</a> only captures the distant &ldquo;background&rdquo; information of the sky and mountains that are very far away. Local scene objects are omitted. Although the background environment map is, in some sense, incomplete, it works well in practice to create specular reflections. In order to capture local objects, we would have to use Direct3D to render the six images of our environment map; this is discussed in &#x00A7;18.5. In the demo for this chapter (Figure <a href="ch18.html#fig18.3">18.3</a>), all the objects in the scene share the same environment map shown in Figure <a href="ch18.html#fig18.2">18.2</a>.</p>
+
+<p class="caption"><img src="images/Fig18-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.3"><b><i>Figure 18.3.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Cube Map&rdquo; demo.</p>
+
+<p class="tx">If the axis directions the camera looked down to build the environment map images were the world space axes, then the environment map is said to be generated relative to the world space. You could, of course, capture the environment from a different orientation (say the local space of an object). However, the lookup vector coordinates must be in the space the cube map is relative to.</p>
+<p class="tx">Because cube maps just store texture data, their contents can be pre-generated by an artist (just like the 2D textures we&rsquo;ve been using). Consequently, we do not need to use real-time rendering to compute the images of a cube map. That is, we can create a scene in a 3D world editor, and then pre-render the six cube map face images in the editor. For outdoor environment maps, the program <i>Terragen</i> (<a href="http://www.planetside.co.uk/">http://www.planetside.co.uk/</a>) is common to use (free for personal use), and can create photorealistic outdoor scenes. The environment maps we create for this book, such as the one shown in Figure <a href="ch18.html#fig18.2">18.2</a>, were made with <i>Terragen</i>. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>If you choose to try out Terragen, you need to go to the </i><b>Camera Settings</b><i> dialog box and set the </i><b>zoom</b><i> factor to </i>1.0 <i>to achieve a </i>90&deg;<i> field of view. Also, be sure to set your output image dimensions to be equal so that both the vertical and horizontal field of view angles are the same, namely </i>90&deg;<i>. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>There is a nice </i>Terragen<i> script on the web<a id="page601"/> (<a href="https://developer.valvesoftware.com/wiki/Skybox_(2D)_with_Terragen">https://developer.valvesoftware.com/wiki/Skybox_(2D)_with_Terragen</a>) that will use the current camera position, and render out the six surrounding images with a </i>90&deg;<i> field of view. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Once you have created the six cube map images using some program, we need to create a cube map texture, which stores all six. The DDS texture image format we have been using readily supports cube maps, and we can use the <i>texassemble </i>tool to build a cube map from six images. Below is an example of how to create a cube map using texassemble (taken from the<i> texassemble</i> documentation):</p>
+<p class="code"><span class="code">texassemble -cube -w 256 -h 256 -o cubemap.dds lobbyxposjpg lobbyxneg.jpg lobbyypos.jpg lobbyyneg.jpg lobbyzpos.jpg lobbyzneg.jpg</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>NVIDIA provides Photoshop plugins for saving .DDS and cubemaps in Photoshop; see <a href="http://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop">http://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop</a>.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c18.2.1"><a href="toc.html#toc-18.2.1"><b>18.2.1 Loading and Using Cube Maps in Direct3D</b></a></p>
+<p class="tx1">As mentioned, a cube map is represented in Direct3D by a texture array with six elements. Our DDS texture loading code (<i>DDSTextureLoader.h/.cpp</i>) already supports loading cube maps, and we can load the texture like any other. The loading code will detect that the DDS file contains a cube map, and will create a texture array and load the face data into each element. </p>
+<p class="code"><span class="code">auto skyTex = std::make_unique&lt;Texture&gt;();</span></p>
+<p class="code"><span class="code">skyTex-&gt;Name = "skyTex";</span></p>
+<p class="code"><span class="code">skyTex-&gt;Filename = L"Textures/grasscube1024.dds";</span></p>
+<p class="code"><span class="code">ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), skyTex-&gt;Filename.c_str(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;skyTex-&gt;Resource, skyTex-&gt;UploadHeap));</span></p>
+<p class="tx1">When we create an SRV to a cube map texture resource, we specify the dimension <span class="code">D3D12_SRV_DIMENSION_TEXTURECUBE</span> and use the <span class="code">TextureCube</span> property of the SRV description:</p>
+<p class="code"><span class="code">D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};</span></p>
+<p class="code"><span class="code">srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;</span></p>
+<p class="code"><span class="code">srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;</span></p>
+<p class="code"><span class="code">srvDesc.TextureCube.MostDetailedMip = 0;</span></p>
+<p class="code"><span class="code">srvDesc.TextureCube.MipLevels = skyTex-&gt;GetDesc().MipLevels;</span></p>
+<p class="code"><span class="code">srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;</span></p>
+<p class="code"><span class="code">srvDesc.Format = skyTex-&gt;GetDesc().Format;</span></p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateShaderResourceView(skyTex.Get(), &amp;srvDesc, hDescriptor);</span><a id="page602"/></p>
+<p class="h1" id="c18.3"><a href="toc.html#toc-18.3"><b>18.3 TEXTURING A SKY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We can use an environment map to texture a sky. We create a large sphere that surrounds the entire scene. To create the illusion of distant mountains far in the horizon and a sky, we texture the sphere using an environment map by the method shown in Figure <a href="ch18.html#fig18.4">18.4</a>. In this way, the environment map is projected onto the sphere&rsquo;s surface. </p>
+
+<p class="caption"><img src="images/Fig18-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.4"><b><i>Figure 18.4.</i></b>&nbsp;&nbsp;We illustrate in 2D for simplicity; in 3D the square becomes a cube and the circle becomes a sphere. We assume that the sky and environment map are centered about the same origin. Then to texture a point on the surface of the sphere, we use the vector from the origin to the surface point as the lookup vector into the cube map. This projects the cube map onto the sphere.</p>
+
+<p class="tx">We assume that the sky sphere is infinitely far away (i.e., it is centered about the world space but has infinite radius), and so no matter how the camera moves in the world, we never appear to get closer or farther from the surface of the sky sphere. To implement this infinitely faraway sky, we simply center the sky sphere about the camera in world space so that it is always centered about the camera. Consequently, as the camera moves, we are getting no closer to the surface of the sphere. If we did not do this, and we let the camera move closer to the sky surface, the whole illusion would break down, as the trick we use to simulate the sky would be obvious. </p>
+<p class="tx">The shader file for the sky is given below:<a id="page603"/></p>
+<p class="code"><span class="code">//*********************************************************************</span></p>
+<p class="code"><span class="code">// Sky.hlsl by Frank Luna (C) 2015 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//*********************************************************************</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include common HLSL code.</span></p>
+<p class="code"><span class="code">#include "Common.hlsl"</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH : SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL : POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Use local vertex position as cubemap lookup vector.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosL = vin.PosL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Always center sky about camera.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;posW.xyz += gEyePosW;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Set z = w so that z/w = 1 (i.e., skydome always on far plane).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj).xyww;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return gCubeMap.Sample(gsamLinearWrap, pin.PosL);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The sky shader programs are significantly different than the shader programs for drawing our objects (<i>Default.hlsl</i>). However, it shares the same root signature so that we do not have to change root signatures in the middle of drawing. The code that is common to both <i>Default.hlsl</i> and <i>Sky.hlsl</i> has been moved to <i>Common.hlsl</i> so that the code is not duplicated. For reference, <i>Common.hlsl</i> looks like this:<a id="page604"/></p>
+<p class="code"><span class="code">//****************************************************************************</span></p>
+<p class="code"><span class="code">// Common.hlsl by Frank Luna (C) 2015 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//****************************************************************************</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Defaults for number of lights.</span></p>
+<p class="code"><span class="code">#ifndef NUM_DIR_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_DIR_LIGHTS 3</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_POINT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_POINT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_SPOT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_SPOT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include structures and functions for lighting.</span></p>
+<p class="code"><span class="code">#include "LightingUtil.hlsl"</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct MaterialData</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;DiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3&nbsp;&nbsp;FresnelR0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;Roughness;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 MatTransform;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; DiffuseMapIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">TextureCube gCubeMap : register(t0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// An array of textures, which is only supported in shader model 5.1+. Unlike&nbsp;</span></p>
+<p class="code"><span class="code">// Texture2DArray, the textures in this array can be different sizes and&nbsp;</span></p>
+<p class="code"><span class="code">// formats, making it more flexible than texture arrays.</span></p>
+<p class="code"><span class="code">Texture2D gDiffuseMap[4] : register(t1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Put in space1, so the texture array does not overlap with these resources.&nbsp;</span></p>
+<p class="code"><span class="code">// The texture array will occupy registers t0, t1, &hellip;, t3 in space0.&nbsp;</span></p>
+<p class="code"><span class="code">StructuredBuffer&lt;MaterialData&gt; gMaterialData : register(t0, space1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per frame.</span></p>
+<p class="code"><span class="code">cbuffer cbPerObject : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gWorld;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gTexTransform;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gMaterialIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per material.</span></p>
+<p class="code"><span class="code">cbuffer cbPass : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gAmbientLight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indices [0, NUM_DIR_LIGHTS) are directional lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// are spot lights for a maximum of MaxLights per object.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Light gLights[MaxLights];</span></p>
+<p class="code"><span class="code">};</span><a id="page605"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In the past, applications would draw the sky first and use it as a replacement to clearing the render target and depth/stencil buffer. However, the &ldquo;ATI Radeon HD 2000 Programming Guide&rdquo; (<a href="http://developer.amd.com/media/gpu_assets/ATI_Radeon_HD_2000_programming_guide.pdf">http://developer.amd.com/media/gpu_assets/ATI_Radeon_HD_2000_programming_guide.pdf</a>) now advises against this for the following reasons. First, the depth/stencil buffer needs to be explicitly cleared for internal hardware depth optimizations to perform well. The situation is similar with render targets. Second, typically most of the sky is occluded by other geometry such as buildings and terrain. Therefore, if we draw the sky first, then we are wasting resources by drawing pixels that will only get overridden later by geometry closer to the camera. Therefore, it is now recommended to always clear, and to draw the sky last.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Drawing the sky requires different shader programs, and hence a new PSO. Therefore, we draw the sky as a separate layer in our drawing code:</p>
+<p class="code"><span class="code">// Draw opaque render-items.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["opaque"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Draw the sky render-item.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["sky"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Sky]);</span></p>
+<p class="tx1">In addition, rendering the sky requires some different render states. In particular, because the camera lies inside the sphere, we need to disable back face culling (or making counterclockwise<a id="page606"/> triangles front facing would also work), and we need to change the depth comparison function to <span class="code">LESS_EQUAL</span> so that the sky will pass the depth test:</p>
+<p class="code"><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPsoDesc = opaquePsoDesc;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// The camera is inside the sky sphere, so just turn off culling.</span></p>
+<p class="code"><span class="code">skyPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Make sure the depth function is LESS_EQUAL and not just LESS.&nbsp;</span></p>
+<p class="code"><span class="code">// Otherwise, the normalized depth values at z = 1 (NDC) will&nbsp;</span></p>
+<p class="code"><span class="code">// fail the depth test if the depth buffer was cleared to 1.</span></p>
+<p class="code"><span class="code">skyPsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;</span></p>
+<p class="code"><span class="code">skyPsoDesc.pRootSignature = mRootSignature.Get();</span></p>
+<p class="code"><span class="code">skyPsoDesc.VS =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;reinterpret_cast&lt;BYTE*&gt;(mShaders["skyVS"]-&gt;GetBufferPointer()),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;mShaders["skyVS"]-&gt;GetBufferSize()</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">skyPsoDesc.PS =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;reinterpret_cast&lt;BYTE*&gt;(mShaders["skyPS"]-&gt;GetBufferPointer()),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;mShaders["skyPS"]-&gt;GetBufferSize()</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;skyPsoDesc, IID_PPV_ARGS(&amp;mPSOs["sky"])));</span></p>
+<p class="h1" id="c18.4"><a href="toc.html#toc-18.4"><b>18.4 MODELING REFLECTIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In Chapter <a href="ch08.html#chap08">8</a>, we learned that specular highlights come from light sources where the emitted light strikes a surface and can reflect into the eye based on the Fresnel effect and surface roughness. However, due to light scattering and bouncing, light really strikes a surface from all directions above the surface, not just along the rays from direct light sources. We have modeled indirect diffuse light with our ambient term in our lighting equation. In this section, we show how to use environment maps to model <i>specular reflections</i> coming from the surrounding environment. By specular reflections, we mean that we are just going to look at the light that is reflected off a surface due to the Fresnel effect. An advanced topic we do not discuss uses cube maps to compute diffuse lighting from the surrounding environment as well (e.g., see <i><a href="http://http.developer.nvidia.com/GPUGems2/gpugems2_chapter10.html">http://http.developer.nvidia.com/GPUGems2/gpugems2_chapter10.html</a></i>).</p>
+<p class="tx">When we render a scene about a point <i>O</i> to build an environment map, we are recording light values coming in from all directions about the point <i>O</i>. In other words, the environment map stores the light values coming in from every direction about the point <i>O</i>, and we can think of every texel on the environment map as a source of light. We use this data to approximate specular reflections of light coming from the<a id="page607"/> surrounding environment. To see this, consider Figure <a href="ch18.html#fig18.5">18.5</a>. Light from the environment comes in with incident direction I and reflects off the surface (due to the Fresnel effect) and enters the eye in the direction <b>v</b> = <b>E</b> &minus; <b>p</b>. The light from the environment is obtained by sampling the environment cube map with the lookup vector <b>r</b> = reflect(&minus;<b>v</b>, <b>n</b>). This makes the surface have mirror like properties: the eye looks at <b>p</b> and sees the environment reflected off <b>p</b>.</p>
+
+<p class="caption"><img src="images/Fig18-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.5"><b><i>Figure 18.5.</i></b>&nbsp;&nbsp;Here <b>E</b> is the eye point, and <b>n</b> is the surface normal at the point <b>p</b>. The texel that stores the light that reflects off <b>p</b> and enters the eye is obtained by sampling the cube map with the vector <b>r</b>.</p>
+
+<p class="tx">We compute the reflection vector per-pixel and then use it to sample the environment map:</p>
+<p class="code"><span class="code">const float shininess = 1.0f - roughness;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Add in specular reflections.</span></p>
+<p class="code"><span class="code">float3 r = reflect(-toEyeW, pin.NormalW);</span></p>
+<p class="code"><span class="code">float4 reflectionColor = gCubeMap.Sample(gsamLinearWrap, r);</span></p>
+<p class="code"><span class="code">float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);</span></p>
+<p class="code"><span class="code">litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;</span></p>
+<p class="tx1">Because we are talking about reflections, we need to apply the Fresnel effect, which determines how much light is reflected from the environment into the eye based on the material properties of the surface and the angle between the light vector (reflection vector) and normal. In addition, we scale the amount of reflection based on the shininess of the material&mdash;a rough material should have a low amount of reflection, but still some reflection. </p>
+<p class="tx">Figure <a href="ch18.html#fig18.6">18.6</a> shows that reflections via environment mapping do not work well for flat surfaces.</p>
+
+<p class="caption"><img src="images/Fig18-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.6"><b><i>Figure 18.6.</i></b>&nbsp;&nbsp;The reflection vector corresponding to two different points <b>p</b> and <b>p</b>&prime; when the eye is at positions <b>E</b> and  <b>E</b>&prime;, respectively.</p>
+
+<p class="tx">This is because the reflection vector does not tell the whole story, as it does not incorporate position; we really need a reflection ray and to intersect the ray with the environment map. A ray has position and direction, whereas a vector just has direction. From the figure, we see that the two reflection rays, <b>q</b>(<i>t</i>) = <b>p</b> + <i>t</i><b>r</b> and <b>q</b><b>&prime;</b>(<i>t</i>) = <b>p</b><b>&prime;</b> + <i>t</i><b>r</b>, intersect different texels of the cube map, and thus should be colored differently. However, because both rays have the same direction vector <b>r</b>, and the direction vector <b>r</b> is solely used for the cube map lookup, the same texel gets mapped to <b>p</b> and <b>p</b>&prime; when the eye is at <b>E</b> and <b>E</b>&prime;, respectively. For flat objects this defect of environment<a id="page608"/> mapping is very noticeable. For curvy surfaces, this shortcoming of environment mapping goes largely unnoticed, since the curvature of the surface causes the reflection vector to vary. </p>
+<p class="tx">One solution is to associate some proxy geometry with the environment map. For example, suppose we have an environment map for a square room. We can associate an axis-aligned bounding box with the environment map that has approximately the same dimensions as the room. Figure <a href="ch18.html#fig18.7">18.7</a> then shows how we can do a ray intersection with the box to compute the vector <b>v</b> which gives a better lookup vector than the reflection vector <b>r</b>. If the bounding box associated with the cube map is input into the shader (e.g., via a constant buffer), then the ray/box intersection test can be done in the pixel shader, and we can compute the improved lookup vector in the pixel shader to sample the cube map.</p>
+
+<p class="caption"><img src="images/Fig18-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.7"><b><i>Figure 18.7.</i></b>&nbsp;&nbsp;In steading of using the reflection vector <b>r</b> for the cube map lookup, we use the intersection point <b>v</b> = <b>p</b> + <i>t</i><sub>0</sub><b>r</b> between the ray and the box. Note that the point <b>p</b> is made relative to the center of the bounding box proxy geometry so that the intersection point can be used as a lookup vector for the cube map.</p>
+
+<p class="tx">The following function shows how the cube map look up vector can be computed. <a id="page609"/></p>
+<p class="code"><span class="code">float3 BoxCubeMapLookup(float3 rayOrigin, float3 unitRayDir,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float3 boxCenter, float3 boxExtents)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Based on slab method as described in Real-Time Rendering&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// 16.7.1 (3rd edition).</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Make relative to the box center.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 p = rayOrigin - boxCenter;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The ith slab ray/plane intersection formulas for AABB are:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// t1 = (-dot(n_i, p) + h_i)/dot(n_i, d) = (-p_i + h_i)/d_i</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// t2 = (-dot(n_i, p) - h_i)/dot(n_i, d) = (-p_i - h_i)/d_i</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vectorize and do ray/plane formulas for every slab together.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 t1 = (-p+boxExtents)/unitRayDir;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 t2 = (-p-boxExtents)/unitRayDir;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Find max for each coordinate. Because we assume the ray is inside</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the box, we only want the max intersection parameter.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 tmax = max(t1, t2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Take minimum of all the tmax components:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float t = min(min(tmax.x, tmax.y), tmax.z);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// This is relative to the box center so it can be used as a&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// cube map lookup vector.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return p + t*unitRayDir;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c18.5"><a href="toc.html#toc-18.5"><b>18.5 DYNAMIC CUBE MAPS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">So far we have described static cube maps, where the images stored in the cube map are premade and fixed. This works for many situations and is relatively inexpensive. However, suppose that we want animated actors moving in our scene. With a pre-generated cube map, you cannot capture these animated objects, which means we cannot reflect animated objects. To overcome this limitation, we can build the cube map at runtime. That is, every frame you position the camera in the scene that is to be the origin of the cube map, and then <i>render the scene six times into each cube map face</i> along each coordinate axis direction (see Figure <a href="ch18.html#fig18.8">18.8</a>). Since the cube map is rebuilt every frame, it will capture animated objects in the environment, and the reflection will be animated as well (see Figure <a href="ch18.html#fig18.9">18.9</a>).</p>
+<p class="caption"><img src="images/Fig18-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.8"><b><i>Figure 18.8.</i></b>&nbsp;&nbsp;The camera is placed at position <i>O</i> in the scene, centered about the object we want to generate the dynamic cube map relative to. We render the scene six times along each coordinate axis direction with a field of view angle of 90&deg; so that the image of the entire surrounding environment is captured.</p>
+
+<p class="caption"><img src="images/Fig18-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.9"><b><i>Figure 18.9.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Dynamic CubeMap&rdquo; demo showing off dynamic reflections. The skull orbits the center sphere, and its reflection in the sphere animates accordingly. Moreover, because we are drawing the cube maps ourselves, we can model the reflections of the local objects as well, such as the columns, spheres, and floor.</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Rendering a cube map dynamically is expensive. It requires rendering the scene to six render targets! Therefore, try to minimize the number of dynamic cube maps needed in a scene. For example, perhaps only use dynamic reflections for key objects in your scene that you want to show off or accentuate. Then use static cube maps for the less important objects were dynamic reflections would probably go unnoticed or not be missed. Normally, low resolution cube maps are used for dynamic cube maps, such as 256 &times; 256, to save on pixel processing (i.e., fill rate). </i><a id="page610"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c18.5.1"><a href="toc.html#toc-18.5.1"><b>18.5.1 Dynamic Cube Map Helper Class</b></a></p>
+<p class="tx1">To help render to a cube map dynamically, we create the following <span class="code">CubeRenderTarget</span> class, which encapsulates the actual <span class="code">ID3D12Resource</span> object of the cube map, the various descriptors to the resource, and other useful data for rendering to the cube map:</p>
+<p class="code"><span class="code">class CubeRenderTarget</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CubeRenderTarget(ID3D12Device* device,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT width, UINT height,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DXGI_FORMAT format);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CubeRenderTarget(const CubeRenderTarget&amp; rhs)=delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CubeRenderTarget&amp; operator=(const CubeRenderTarget&amp; rhs)=delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span>&tilde;<span class="code">CubeRenderTarget()=default;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12Resource* Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE Srv();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE Rtv(int faceIndex);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_VIEWPORT Viewport()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RECT ScissorRect()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;void BuildDescriptors(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuRtv[6]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;void OnResize(UINT newWidth, UINT newHeight);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">private:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;void BuildDescriptors();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;void BuildResource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">private:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12Device* md3dDevice = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_VIEWPORT mViewport;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RECT mScissorRect;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT mWidth = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT mHeight = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DXGI_FORMAT mFormat = DXGI_FORMAT_R8G8B8A8_UNORM;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuSrv;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE mhGpuSrv;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE mhCpuRtv[6];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; mCubeMap = nullptr;</span></p>
+<p class="code"><span class="code">};</span><a id="page611"/></p>
+<p class="h2" id="c18.5.2"><a href="toc.html#toc-18.5.2"><b>18.5.2 Building the Cube Map Resource</b></a></p>
+<p class="tx1">Creating a cube map texture is done by creating a texture array with six elements (one for each face). Because we are going to render to the cube map, we must set the <span class="code">D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET</span> flag. Below is the method that builds the cube map resource:</p>
+<p class="code"><span class="code">void CubeRenderTarget::BuildResource()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_DESC texDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ZeroMemory(&amp;texDesc, sizeof(D3D12_RESOURCE_DESC));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Alignment = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Width = mWidth;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Height = mHeight;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;texDesc.DepthOrArraySize = 6;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.MipLevels = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.SampleDesc.Count = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.SampleDesc.Quality = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;texDesc,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(&amp;mCubeMap)));</span></p>
+<p class="code"><span class="code">}</span><a id="page612"/></p>
+<p class="h2" id="c18.5.3"><a href="toc.html#toc-18.5.3"><b>18.5.3 Extra Descriptor Heap Space</b></a></p>
+<p class="tx1">Rendering to a cube map requires six additional render target views, one for each face, and one additional depth/stencil buffer. Therefore, we must override the <span class="code">D3DApp::CreateRtvAndDsvDescriptorHeaps</span> method and allocate these additional descriptors: </p>
+<p class="code"><span class="code">void DynamicCubeMapApp::CreateRtvAndDsvDescriptorHeaps()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add +6 RTV for cube render target.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 6;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rtvHeapDesc.NodeMask = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateDescriptorHeap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;rtvHeapDesc, IID_PPV_ARGS(mRtvHeap.GetAddressOf())));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add +1 DSV for cube render target.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dsvHeapDesc.NumDescriptors = 2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dsvHeapDesc.NodeMask = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateDescriptorHeap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;dsvHeapDesc, IID_PPV_ARGS(mDsvHeap.GetAddressOf())));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCubeDSV = CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mDsvHeap-&gt;GetCPUDescriptorHandleForHeapStart(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mDsvDescriptorSize);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">In addition, we will need one extra SRV so that we can bind the cube map as a shader input after it has been generated. </p>
+<p class="tx">The descriptor handles are passed into the <span class="code">CubeRenderTarget::BuildDescriptors</span> method which saves a copy of the handles and then actually creates the views:<a id="page613"/></p>
+<p class="code"><span class="code">auto srvCpuStart = mSrvDescriptorHeap-&gt;GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">auto srvGpuStart = mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">auto rtvCpuStart = mRtvHeap-&gt;GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Cubemap RTV goes after the swap chain descriptors.</span></p>
+<p class="code"><span class="code">int rtvOffset = SwapChainBufferCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE cubeRtvHandles[6];</span></p>
+<p class="code"><span class="code">for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cubeRtvHandles[i] = CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvCpuStart, rtvOffset + i, mRtvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mDynamicCubeMap-&gt;BuildDescriptors(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;srvCpuStart, mDynamicTexHeapIndex, mCbvSrvDescriptorSize),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;srvGpuStart, mDynamicTexHeapIndex, mCbvSrvDescriptorSize),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cubeRtvHandles);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void CubeRenderTarget::BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuSrv,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuSrv,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuRtv[6])</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Save references to the descriptors.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mhCpuSrv = hCpuSrv;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mhGpuSrv = hGpuSrv;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mhCpuRtv[i] = hCpuRtv[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Create the descriptors</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildDescriptors();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c18.5.4"><a href="toc.html#toc-18.5.4"><b>18.5.4 Building the Descriptors</b></a></p>
+<p class="tx1">In the previous section, we allocated heap space for our descriptors and cached references to the descriptors, but we did not actually create any descriptors to resources. We now need to create an SRV to the cube map resource so that we can sample it in a pixel shader after it is built, and we also need to create a render target view to each element in the cube map texture array, so that we can render onto each cube map face one-by-one. The following method creates the necessary views:</p>
+<p class="code"><span class="code">void CubeRenderTarget::BuildDescriptors()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Format = mFormat;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.TextureCube.MostDetailedMip = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.TextureCube.MipLevels = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Create SRV to the entire cubemap resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateShaderResourceView(mCubeMap.Get(), &amp;srvDesc, mhCpuSrv);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Create RTV to each cube face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RENDER_TARGET_VIEW_DESC rtvDesc;&nbsp;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.Texture2DArray.MipSlice = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.Texture2DArray.PlaneSlice = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Render target to ith element.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.Texture2DArray.FirstArraySlice = i;</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Only view one element of the array.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rtvDesc.Texture2DArray.ArraySize = 1;</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Create RTV to ith cubemap face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;md3dDevice-&gt;CreateRenderTargetView(mCubeMap.Get(), &amp;rtvDesc, mhCpuRtv[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span><a id="page614"/></p>
+<p class="h2" id="c18.5.5"><a href="toc.html#toc-18.5.5"><b>18.5.5 Building the Depth Buffer</b></a></p>
+<p class="tx1">Generally, the cube map faces will have a different resolution than the main back buffer. Therefore, for rendering to the cube map faces, we need a depth buffer with dimensions that matches the resolution of a cube map face. However, because we render to the cube faces one at a time, we only need one depth buffer for the cube map rendering. We build an additional depth buffer and DSV with the following code:</p>
+<p class="code"><span class="code">void DynamicCubeMapApp::BuildCubeDepthStencil()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Create the depth/stencil buffer and view.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_DESC depthStencilDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Alignment = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Width = CubeMapSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Height = CubeMapSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.DepthOrArraySize = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.MipLevels = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Format = mDepthStencilFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.SampleDesc.Count = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.SampleDesc.Quality = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CLEAR_VALUE optClear;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.Format = mDepthStencilFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.DepthStencil.Depth = 1.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;optClear.DepthStencil.Stencil = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;depthStencilDesc,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;optClear,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(mCubeDepthStencilBuffer.GetAddressOf())));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Create descriptor to mip level 0 of entire resource using</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the format of the resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateDepthStencilView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCubeDepthStencilBuffer.Get(), nullptr, mCubeDSV);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transition the resource from its initial state to be used as a depth buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCubeDepthStencilBuffer.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_DEPTH_WRITE));</span></p>
+<p class="code"><span class="code">}</span><a id="page615"/></p>
+<p class="h2" id="c18.5.6"><a href="toc.html#toc-18.5.6"><b>18.5.6 Cube Map Viewport and Scissor Rectangle</b></a></p>
+<p class="tx1">Because the cube map faces will have a different resolution than the main back buffer, we need to define a new viewport and scissor rectangle that covers a cube map face:</p>
+<p class="code"><span class="code">CubeRenderTarget::CubeRenderTarget(ID3D12Device* device,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UINT width, UINT height,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DXGI_FORMAT format)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice = device;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mWidth = width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mHeight = height;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mFormat = format;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;mViewport = { 0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f };</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;mScissorRect = { 0, 0, width, height };</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildResource();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_VIEWPORT CubeRenderTarget::Viewport()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return mViewport;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_RECT CubeRenderTarget::ScissorRect()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return mScissorRect</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c18.5.7"><a href="toc.html#toc-18.5.7"><b>18.5.7 Setting up the Cube Map Camera</b></a></p>
+<p class="tx1">Recall that to generate a cube map idea is to position a camera at the center of some object <i>O</i> in the scene with a 90&deg; field of view angle (both vertically and horizontally). Then have the camera look down the positive <i>x</i>-axis, negative <i>x</i>-axis, positive <i>y</i>-axis, negative <i>y</i>-axis, positive <i>z-</i>axis, and negative <i>z</i>-axis, and to take a picture of the scene (excluding the object <i>O</i>) from each of these six viewpoints.<a id="page616"/> To facilitate this, we generate six cameras, one for each face, centered at the given position (<i>x, y, z</i>):</p>
+<p class="code"><span class="code">Camera mCubeMapCamera[6];</span></p>
+<p class="code"><span class="code">void DynamicCubeMapApp::BuildCubeFaceCamera(float x, float y, float z)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Generate the cube map about the given position.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 center(x, y, z);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 worldUp(0.0f, 1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Look along each coordinate axis.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 targets[6] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x + 1.0f, y, z), // +X</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x - 1.0f, y, z), // -X</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x, y + 1.0f, z), // +Y</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x, y - 1.0f, z), // -Y</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x, y, z + 1.0f), // +Z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(x, y, z - 1.0f) // -Z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Use world up vector (0,1,0) for all directions except +Y/-Y. In these cases, we</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// are looking down +Y or -Y, so we need a different "up" vector.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 ups[6] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 1.0f, 0.0f), // +X</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 1.0f, 0.0f), // -X</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 0.0f, -1.0f), // +Y</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 0.0f, +1.0f), // -Y</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 1.0f, 0.0f),&nbsp;&nbsp;&nbsp; // +Z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, 1.0f, 0.0f)&nbsp;&nbsp;&nbsp; // -Z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCubeMapCamera[i].LookAt(center, targets[i], ups[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCubeMapCamera[i].SetLens(0.5f*XM_PI, 1.0f, 0.1f, 1000.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCubeMapCamera[i].UpdateViewMatrix();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Because rendering to each cube map face utilizes a different camera, each cube face needs its own set of <span class="code">PassConstants</span>.  This is easy enough, as we just increase our <span class="code">PassConstants</span> count by six when we create our frame resources. </p>
+<p class="code"><span class="code">void DynamicCubeMapApp::BuildFrameResources()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; gNumFrameResources; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mFrameResources.push_back(std::make_unique&lt;FrameResource&gt;(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;7, (UINT)mAllRitems.size(), (UINT)mMaterials.size()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Element 0 will correspond<a id="page617"/> to our main rendering pass, and elements 1-6 will correspond to our cube map faces. </p>
+<p class="tx">We implement the following method to set the constant data for each cube map face:</p>
+<p class="code"><span class="code">void DynamicCubeMapApp::UpdateCubeMapFacePassCBs()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;PassConstants cubeFacePassCB = mMainPassCB;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX view = mCubeMapCamera[i].GetView();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX proj = mCubeMapCamera[i].GetProj();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX viewProj = XMMatrixMultiply(view, proj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX invView = XMMatrixInverse(&amp;XMMatrixDeterminant(view), view);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX invProj = XMMatrixInverse(&amp;XMMatrixDeterminant(proj), proj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX invViewProj = XMMatrixInverse(&amp;XMMatrixDeterminant(viewProj), viewProj);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.View, XMMatrixTranspose(view));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.InvView, XMMatrixTranspose(invView));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.Proj, XMMatrixTranspose(proj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.InvProj, XMMatrixTranspose(invProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.ViewProj, XMMatrixTranspose(viewProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;cubeFacePassCB.InvViewProj, XMMatrixTranspose(invViewProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cubeFacePassCB.EyePosW = mCubeMapCamera[i].GetPosition3f();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cubeFacePassCB.RenderTargetSize =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT2((float)CubeMapSize, (float)CubeMapSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cubeFacePassCB.InvRenderTargetSize =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT2(1.0f / CubeMapSize, 1.0f / CubeMapSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto currPassCB = mCurrFrameResource-&gt;PassCB.get();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Cube map pass cbuffers are stored in elements 1-6.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;currPassCB-&gt;CopyData(1 + i, cubeFacePassCB);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c18.5.8"><a href="toc.html#toc-18.5.8"><b>18.5.8 Drawing into the Cube Map</b></a></p>
+<p class="tx1">For this demo we have three render layers:</p>
+<p class="code"><span class="code">enum class RenderLayer : int</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Opaque = 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;OpaqueDynamicReflectors,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Sky,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Count</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The <span class="code">OpaqueDynamicReflectors</span> layer contains the center<a id="page618"/> sphere in Figure () which will use the dynamic cube map to reflect local dynamic objects. Our first step is to draw the scene to each face of the cube map, but not including the center sphere; this means we just need to render the opaque and sky layers to the cube map:</p>
+<p class="code"><span class="code">void DynamicCubeMapApp::DrawSceneToCubeMap()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetViewports(1, &amp;mDynamicCubeMap-&gt;Viewport());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetScissorRects(1, &amp;mDynamicCubeMap-&gt;ScissorRect());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Change to RENDER_TARGET.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mDynamicCubeMap-&gt;Resource(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each cube map face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 6; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Clear the back buffer and depth buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;ClearRenderTargetView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mDynamicCubeMap-&gt;Rtv(i), Colors::LightSteelBlue, 0, nullptr);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;ClearDepthStencilView(mCubeDSV,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1.0f, 0, 0, nullptr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Specify the buffers we are going to render to.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;OMSetRenderTargets(1, &amp;mDynamicCubeMap-&gt;Rtv(i),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;true, &amp;mCubeDSV);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Bind the pass constant buffer for this cube map face so we use&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// the right view/proj matrix for this cube face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS passCBAddress =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;passCB-&gt;GetGPUVirtualAddress() + (1+i)*passCBByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootConstantBufferView(1, passCBAddress);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;SetPipelineState(mPSOs["sky"].Get());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Sky]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;SetPipelineState(mPSOs["opaque"].Get());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Change back to GENERIC_READ so we can read the texture in a shader.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mDynamicCubeMap-&gt;Resource(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Finally, after we rendered<a id="page619"/> the scene to the cube map, we set our main render targets and draw the scene as normal, but with the dynamic cube map applied to the center sphere:</p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code"><span class="code">DrawSceneToCubeMap();</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">// Set main render target settings.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;RSSetViewports(1, &amp;mScreenViewport);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;RSSetScissorRects(1, &amp;mScissorRect);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Indicate a state transition on the resource usage.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;ResourceBarrier(1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CurrentBackBuffer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_PRESENT,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Clear the back buffer and depth buffer.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;ClearRenderTargetView(CurrentBackBufferView(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Colors::LightSteelBlue, 0, nullptr);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;ClearDepthStencilView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DepthStencilView(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;1.0f, 0, 0, nullptr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Specify the buffers we are going to render to.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetRenderTargets(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CurrentBackBufferView(), true, &amp;DepthStencilView());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootConstantBufferView(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;passCB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Use the dynamic cube map for the dynamic reflectors layer.</span></p>
+<p class="code"><span class="code">CD3DX12_GPU_DESCRIPTOR_HANDLE dynamicTexDescriptor(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">dynamicTexDescriptor.Offset(mSkyTexHeapIndex + 1, mCbvSrvDescriptorSize);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootDescriptorTable(3, dynamicTexDescriptor);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(),</span></p>
+<p class="code"><span class="code">mRitemLayer[(int)RenderLayer::OpaqueDynamicReflectors]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Use the static "background" cube map for the other objects (including the sky)</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootDescriptorTable(3, skyTexDescriptor);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["sky"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Sky]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Indicate a state transition on the resource usage.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;ResourceBarrier(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CurrentBackBuffer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_PRESENT));</span></p>
+<p class="code"><span class="code">&hellip;</span><a id="page620"/></p>
+<p class="h1" id="c18.6"><a href="toc.html#toc-18.6"><b>18.6 DYNAMIC CUBE MAPS WITH THE GEOMETRY SHADER</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In the previous section, we redrew the scene six times to generate the cube map&mdash;once for each cube map face. Draw calls are not free, and we should work to minimize them. There is a Direct3D 10 sample called &ldquo;CubeMapGS,&rdquo; which uses the geometry shader to render a cube map by drawing the scene only once. In this section, we highlight the main ideas of how this sample works. Note that even though we show the Direct3D 10 code, the same strategy can be used in Direct3D 12 and porting the code is straightforward.  </p>
+<p class="tx">First, it creates a render target view to the <i>entire</i> texture array (not each individual face texture):</p>
+<p class="code"><span class="code">// Create the 6-face render target view</span></p>
+<p class="code"><span class="code">D3D10_RENDER_TARGET_VIEW_DESC DescRT;</span></p>
+<p class="code"><span class="code">DescRT.Format = dstex.Format;</span></p>
+<p class="code"><span class="code">DescRT.ViewDimension = D3D10_RTV_DIMENSION_TEXTURE2DARRAY;</span></p>
+<p class="code"><span class="code">DescRT.Texture2DArray.FirstArraySlice = 0;</span></p>
+<p class="code"><span class="code">DescRT.Texture2DArray.ArraySize = 6;</span></p>
+<p class="code"><span class="code">DescRT.Texture2DArray.MipSlice = 0;</span></p>
+<p class="code"><span class="code">V_RETURN( pd3dDevice-&gt;CreateRenderTargetView(</span></p>
+<p class="code"><span class="code">g_pEnvMap, &amp;DescRT, &amp;g_pEnvMapRTV ) );</span></p>
+<p class="tx1">Moreover, this technique requires a cube map of depth buffers (one for each face). The depth stencil view to the<i> entire</i> texture array of depth buffers is creates as follows:</p>
+<p class="code"><span class="code">// Create the depth stencil view for the entire cube</span></p>
+<p class="code"><span class="code">D3D10_DEPTH_STENCIL_VIEW_DESC DescDS;</span></p>
+<p class="code"><span class="code">DescDS.Format = DXGI_FORMAT_D32_FLOAT;</span></p>
+<p class="code"><span class="code">DescDS.ViewDimension = D3D10_DSV_DIMENSION_TEXTURE2DARRAY;</span></p>
+<p class="code"><span class="code">DescDS.Texture2DArray.FirstArraySlice = 0;</span></p>
+<p class="code"><span class="code">DescDS.Texture2DArray.ArraySize = 6;</span></p>
+<p class="code"><span class="code">DescDS.Texture2DArray.MipSlice = 0;</span></p>
+<p class="code"><span class="code">V_RETURN( pd3dDevice-&gt;CreateDepthStencilView(&nbsp;</span></p>
+<p class="code"><span class="code">g_pEnvMapDepth, &amp;DescDS, &amp;g_pEnvMapDSV ) );</span></p>
+<p class="tx1"><a id="page621"/>It then binds this render target and depth stencil view to the OM stage of the pipeline:</p>
+<p class="code"><span class="code">ID3D10RenderTargetView* aRTViews[ 1 ] = { g_pEnvMapRTV };</span></p>
+<p class="code"><span class="code">pd3dDevice-&gt;OMSetRenderTargets(sizeof(aRTViews)/sizeof(aRTViews[0]),</span></p>
+<p class="code"><span class="code">aRTViews, g_pEnvMapDSV );</span></p>
+<p class="tx1">That is, we have bound a view to an array of render targets and a view to an array of depth stencil buffers to the OM stage, and we are going to render to each array slice simultaneously.  </p>
+<p class="tx">Now, the scene is rendered once and an array of six view matrices (one to look in the corresponding direction of each cube map face) is available in the constant buffers. The geometry shader replicates the input triangle six times, and assigns the triangle to one of the six render target array slices. Assigning a triangle to a render target array slice is done by setting the system value <span class="code">SV_RenderTargetArrayIndex</span>. This system value is an integer index value that can only be set as an output from the geometry shader to specify the index of the render target array slice the primitive should be rendered onto. This system value can only be used if the render target view is actually a view to an array resource. </p>
+<p class="code"><span class="code">struct PS_CUBEMAP_IN</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 Pos : SV_POSITION;&nbsp;&nbsp; // Projection coord</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 Tex : TEXCOORD0;&nbsp;&nbsp;&nbsp;&nbsp;// Texture coord</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint RTIndex : SV_RenderTargetArrayIndex;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[maxvertexcount(18)]</span></p>
+<p class="code"><span class="code">void GS_CubeMap( triangle GS_CUBEMAP_IN input[3],&nbsp;</span></p>
+<p class="code"><span class="code">inout TriangleStream&lt;PS_CUBEMAP_IN&gt; CubeMapStream )</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each triangle</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for( int f = 0; f &lt; 6; ++f )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Compute screen coordinates</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;PS_CUBEMAP_IN output;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp; // Assign the ith triangle to the ith render target.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;output.RTIndex = f;</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp; // For each vertex in the triangle</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for( int v = 0; v &lt; 3; v++ )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Transform to the view space of the ith cube face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;output.Pos = mul( input[v].Pos, g_mViewCM[f] );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;output.Pos = mul( output.Pos, mProj );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;output.Tex = input[v].Tex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CubeMapStream.Append( output );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CubeMapStream.RestartStrip();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Thus we see that we<a id="page622"/> have rendered the scene to each cube map face by rendering the scene only once instead of six times. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We have summarized the main idea of this sample, but refer to the &ldquo;CubeMapGS&rdquo; Direct3D 10 sample for the full source code to fill in any details. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">This strategy is interesting and demonstrates simultaneous render targets and the <span class="code">SV_RenderTargetArrayIndex</span> system value; however, it is not a definite win. There are two issues that make this method unattractive:</p>
+<ol><li>It uses the geometry shader to output a large set of data. Recall from Chapter <a href="ch12.html#chap12">12</a>  that we mentioned the geometry shader acts inefficiently when outputting a large set of data. Therefore, using a geometry shader for this purpose could hurt performance. </li>
+<li>In a typical scene, a triangle will not overlap more than one cube map face (see again Figure <a href="ch18.html#fig18.9">18.9</a>). Therefore, the act of replicating a triangle and rendering it onto each cube face when it will be clipped by five out of six of the faces is wasteful. Admittedly, our demo for this chapter also renders the entire scene to each cube map face for simplicity. However, in real applications (non-demo), we would use frustum culling (Chapter <a href="ch16.html#chap16">16</a>), and only render the objects visible to a particular cube map face. Frustum culling at the object level cannot be done by a geometry shader implementation.</li></ol>
+
+<p class="tx1">On the other hand, a situation where this strategy does work well would be rendering a mesh that surrounds the scene. For example, suppose that you had a dynamic sky system where the clouds moved and the sky color changed based on the time of day. Because the sky is changing, we cannot use a prebaked cube map texture to reflect the sky, so we have to use a dynamic cube map. Since the sky mesh surrounds the entire scene, it <i>is visible by all six</i> cube map faces. Therefore, the second bullet point above does not apply, and the geometry shader method could be a win by reducing draw calls from six to one, assuming usage of the geometry shader does not hurt performance too much.  </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><a id="page623"/><i>Recent optimizations available in NVIDIA&rsquo;s Maxwell architecture enables geometry to be replicated to multiple render targets with without the penalties of using a geometry shader (see <a href="http://docs.nvidia.com/gameworks/content/gameworkslibrary/graphicssamples/opengl_samples/cascadedshadowmapping.htm">http://docs.nvidia.com/gameworks/content/gameworkslibrary/graphicssamples/opengl_samples/cascadedshadowmapping.htm</a>, which uses the Viewport Multicast and Fast Geometry Shader features). At the time of this writing, these features are not exposed by Direct3D 12, but will probably be in a future update.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c18.7"><a href="toc.html#toc-18.7"><b>18.7 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>A cube map consists of six textures that we visualize as the faces of a cube. In Direct3D 12, a cube map can be represented by the <span class="code">ID3D12Resource interface</span> as a texture array with six elements. In the HLSL, a cube map is represented by the <span class="code">TextureCube</span> type. To identify a texel in a cube map, we use 3D texture coordinates, which define a 3D <i>lookup</i> vector <b>v</b> originating at the center of the cube map. The texel of the cube map that <b>v</b> intersects is the texel corresponding to the 3D coordinates of <b>v</b>. </li>
+<li>An environment map captures the surrounding environment about a point with six images. These images can then be stored in a cube map. With environment maps we can easily texture a sky or approximate reflections. </li>
+<li>Cube maps can be made from six individual images using the <i>texassemble </i>tool.Cube maps can then be saved to file with the DDS image format. Because cube maps store six 2D textures, which can consume a lot of memory, a compressed DDS format should be used. </li>
+<li>Prebaked cube maps do not capture objects that move or objects in the scene that did not exist when the cube map was generated. To overcome this limitation, we can build the cube map at runtime. That is, every frame you position the camera in the scene that is to be the origin of the cube map, and <i>then render the scene six times into each cube map</i> face along each coordinate axis direction. Since the cube map is rebuilt every frame, it will capture animated objects and every object in the environment. Dynamic cube maps are expensive and their use should be minimized to key objects. </li>
+<li>We can bind a render target view to a texture array to the OM stage. Moreover, we can render to each array slice in the texture array simultaneously. Assigning a triangle to a render target array slice is done by setting the system value <span class="code">SV_RenderTargetArrayIndex</span>. A render target view to a texture array, along with the <span class="code">SV_RenderTargetArrayIndex</span> system value allows generating a cube map dynamically by rendering<a id="page624"/> the scene once instead of six times. However, this strategy might not always be a win over rendering the scene six times with frustum culling. </li></ol>
+<p class="h1" id="c18.8"><a href="toc.html#toc-18.8"><b>18.8 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Experiment with different <span class="code">FresnelR0</span> and Roughness material values in the &ldquo;Cube Map&rdquo; demo. Also try to make the cylinders and box reflective.</li>
+<li>Find six image that capture an environment (either find cube map images online or use a program like <i>Terragen</i> to make them), and assemble them into a cube map using the <i>texassemble</i> tool. Test your cube map out in the &ldquo;Cube Map&rdquo; demo.</li>
+<li>A <i>dielectric</i> is a transparent material that refracts light; see Figure <a href="ch18.html#fig18.11">18.11</a>. When a ray strikes a dielectric, some light reflects and some light refracts based on <i>Snell&rsquo;s Law of Refraction. </i>The indices of refraction <i>n</i><sub>1</sub> and <i>n</i><sub>2</sub> determine how much the light bends:
+<p class="tx">1.&nbsp;&nbsp;&nbsp;If <i>n</i><sub>1</sub> = <i>n</i><sub>2</sub>, then &theta;<sub>1</sub> = &theta;<sub>2</sub> (no bending).</p>
+<p class="tx">2.&nbsp;&nbsp;&nbsp;If <i>n</i><sub>2</sub> &gt; <i>n</i><sub>1</sub>, then &theta;<sub>2</sub> &lt; &theta;<sub>1</sub> (ray bends toward normal).</p>
+<p class="tx">3.&nbsp;&nbsp;&nbsp;If <i>n</i><sub>1</sub> &gt; <i>n</i><sub>2</sub>, then &theta;<sub>2</sub> &gt; &theta;<sub>1</sub> (ray bends away from normal).</p>
+<br/>Thus, in Figure <a href="ch18.html#fig18.11">18.11</a>, <i>n</i><sub>2</sub> &gt; <i>n</i><sub>1</sub> since the ray bends toward the normal when we enter the block. Physically, the light ray refracts again when leaving the block, but for real-time graphics, typically only the first refraction is modeled. The HLSL provides the intrinsic <span class="code">refract</span> function to calculate the refraction vector:
+<p class="code"><span class="code">float3 refract(float3 incident, float3 normal, float eta);</span></p>
+<br/>The incident vector is the incoming light ray vector (<b>v</b><sub>0</sub> in Figure <a href="ch18.html#fig18.10">18.10</a>), and the normal vector is the outward surface normal (<b>n</b> in Figure <a href="ch18.html#fig18.10">18.10</a>). The third parameter is the ratio of the indices of refraction <i>n</i><sub>1</sub>/<i>n</i><sub>2</sub>. The index of refraction of a vacuum is 1.0; some other index of refactions: water&mdash;1.33; glass&mdash;1.51. For this exercise, modify the &ldquo;Cube Map&rdquo; demo to do refraction instead of reflection (see Figure <a href="ch18.html#fig18.11">18.11</a>); you may need to adjust the <span class="code">Material::Reflect&nbsp;</span>values. Try out <span class="code">eta = 1.0, eta = 0.95, eta = 0.9</span>.
+<p class="caption"><img src="images/Fig18-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.10"><b><i>Figure 18.10.</i></b>&nbsp;&nbsp;The incident vector v0 travels through a medium with index of refraction <i>n</i><sub>1</sub>. The ray strikes a transparent material with index of refraction <i>n</i><sub>2</sub>, and refracts into the vector <b>v</b><sub>1</sub>. We use the refracted vector <b>v</b><sub>1</sub> as a look up into the cube map. This is almost like alpha blending transparency, except alpha blending transparency does not bend the incident vector.<a id="page625"/></p>
+<p class="caption"><img src="images/Fig18-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig18.11"><b><i>Figure 18.11.</i></b>&nbsp;&nbsp;&ldquo;Cube Demo&rdquo; with refraction instead of reflection.</p>
+</li>
+<li>Just like with specular highlights from light sources, roughness will cause the specular reflections to spread out. Thus rougher surfaces will have blurry reflections as multiple samples from the environment map will average and scatter into the same direction into the eye. Research techniques for modeling blurry reflections with environment maps.</li></ol>
+</body>
+</html>

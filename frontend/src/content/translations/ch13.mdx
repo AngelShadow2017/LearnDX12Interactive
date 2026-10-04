@@ -1,0 +1,1572 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：13.1–13.10 全部小节（含线程与线程组、简单计算着色器与计算 PSO、输入/输出资源与 UAV、线程标识系统值、追加/消耗缓冲、共享内存与同步、Blur 演示全文、更多资源、小结与习题 1–6），依据 EPUB ch13.html 逐段录入 · 状态：录入完成并已完成独立审校（2026-10-05；记录见 REVIEW-CH10-CH13.md）</span></div>
+
+<a id="page469"/>
+
+GPU 已经为从单个位置或连续位置处理大量内存（所谓*流式操作*（streaming operation））做了优化；这与为随机内存访问而设计的 CPU 形成对比 [Boyd10]。此外，由于顶点和像素可以被独立处理，GPU 被构造成大规模并行的；例如，NVIDIA 的"Fermi"架构支持最多 16 个流式多处理器，每个 32 个 CUDA 核心，共计 512 个 CUDA 核心 [NVIDIA09]。
+
+显然，图形受益于这种 GPU 架构，因为该架构本来就是为图形设计的。然而，一些非图形应用也能从 GPU 凭借其并行架构所能提供的巨大计算能力中受益。把 GPU 用于非图形应用称为*通用 GPU 编程*（general purpose GPU programming，GPGPU）。并非所有算法都适合 GPU 实现；GPU 需要数据并行的算法来利用 GPU 的并行架构。也就是说，我们需要大量将对其执行相似操作的数据元素，使这些元素能够并行处理。像为像素着色这样的图形操作就是一个好例子，因为绘制的每个像素片段都由像素着色器处理。再举一个例子，如果你查看前几章波浪模拟的代码，你会发现更新步骤中我们要对每个网格元素执行一次计算。所以这也是一个适合 GPU 实现的好例子，因为每个网格元素都可以由 GPU 并行更新。粒子系统提供了另一个例子<a id="page470"/>，只要我们采取"粒子彼此不交互"的简化，每个粒子的物理就可以独立计算。
+
+对于 GPGPU 编程，用户通常需要在 CPU 上取回计算结果。这要求把结果从显存复制到系统内存，这一过程很慢（见图 13.1），但与在 GPU 上计算带来的加速相比，它可能是可以忽略的问题。对图形而言，我们通常把计算结果作为渲染管线的输入，因此不需要从 GPU 传输到 CPU。例如，我们可以用计算着色器模糊一张纹理，然后把指向该模糊纹理的着色器资源视图绑定为某个着色器的输入。
+
+<Figure src="images/Fig13-1.jpg" alt="CPU 与 RAM、CPU 与 GPU、GPU 与显存之间相对内存带宽速度的示意图；CPU 与 GPU 之间的传输是瓶颈" figureNumber="图 13.1" caption="图像取自 [Boyd10] 并重绘。CPU 与 RAM、CPU 与 GPU、GPU 与 VRAM 之间的相对内存带宽速度。这些数字只是用来说明各带宽之间数量级差异的示意值。注意，CPU 与 GPU 之间的内存传输是瓶颈。" />
+
+计算着色器（Compute Shader）是 Direct3D 暴露的一个可编程着色器，它并不直接属于渲染管线。相反，它位于管线旁边，可以读取 GPU 资源并写入 GPU 资源（图 13.2）。本质上，计算着色器让我们能够访问 GPU 来实现数据并行算法，而不绘制任何东西。如前所述，这对 GPGPU 编程很有用，但仍然有许多图形效果也可以在计算着色器上实现——所以它对图形程序员依然非常重要。而且正如已经提到的，因为计算着色器是 Direct3D 的一部分，它读取和写入的是 Direct3D 资源，这使我们能够把计算着色器的输出直接绑定到渲染管线。
+
+<Figure src="images/Fig13-2.jpg" alt="计算着色器不属于渲染管线，而是位于管线旁边；它可以读写 GPU 资源，可与图形渲染混合使用，也可单独用于 GPGPU 编程" figureNumber="图 13.2" caption="计算着色器不是渲染管线的一部分，而是位于管线旁边。计算着色器可以读写 GPU 资源。计算着色器可以与图形渲染混合使用，也可以单独用于 GPGPU 编程。" />
+
+<a id="page471"/>
+
+**本章目标：**
+
+1. 学习如何编写计算着色器。
+2. 对硬件如何处理线程组以及组内的线程获得一个基本的高层理解。
+3. 了解哪些 Direct3D 资源可以设为计算着色器的输入，哪些可以设为输出。
+4. 理解各种线程 ID 及其用途。
+5. 学习共享内存以及如何用它做性能优化。
+6. 弄清从哪里获得关于 GPGPU 编程的更详细信息。
+
+<section className="lesson-section" id="s131">
+<h2>13.1 线程与线程组</h2>
+
+在 GPU 编程中，想要执行的线程数量被划分成一个*线程组*（thread group）网格。一个线程组在单个多处理器上执行。因此，如果你的 GPU 有十六个多处理器，你会希望把问题拆分成至少十六个线程组，让每个多处理器都有活干。为了更好的性能，你会希望每个多处理器至少有两个线程组，因为多处理器可以切换到处理另一个组中的线程来隐藏停顿（stall）[Fung10]（例如，当着色器需要等待纹理操作结果才能继续下一条指令时，就会发生停顿）。
+
+每个线程组都获得一块该组内所有线程都能访问的共享内存；线程不能访问其他线程组的共享内存。线程同步操作可以在一个线程组内的线程之间进行，但不同线程组之间无法同步。事实上，我们无法控制不同线程组被处理的顺序。这是合理的，因为线程组可能在不同的多处理器上执行。
+
+一个线程组由 *n* 个线程组成。硬件实际上把这些线程划分成*线程束*（warp，每个线程束 32 个线程），多处理器以 SIMD32 的方式处理线程束（即 32 个线程同时执行相同的指令）。每个 CUDA 核心处理一个线程，回忆一下"Fermi"多处理器有 32 个 CUDA 核心（所以一个 CUDA 核心就像一条 SIMD"通道"。）在 Direct3D 中，你可以指定维度不是 32 的倍数的线程组大小，但出于性能原因，线程组维度应当始终是线程束大小的倍数 [Fung10]。
+
+256 的线程组大小<a id="page472"/>似乎是一个良好的起点，应当在各种硬件上都能工作良好。然后再尝试其他大小。改变每组线程数会改变派发的组数。
+
+**注意**：NVIDIA 硬件使用 32 线程的线程束。ATI 使用 64 线程的"wavefront"，并建议线程组大小应当始终是 wavefront 大小的倍数 [Bilodeau10]。此外，线程束或 wavefront 的大小在未来的硬件世代中可能改变。
+
+在 Direct3D 中，线程组通过下面的方法调用启动：
+
+```cpp
+void ID3D12GraphicsCommandList::Dispatch(
+  UINT ThreadGroupCountX,
+  UINT ThreadGroupCountY,
+  UINT ThreadGroupCountZ);
+```
+
+这使你能够启动一个线程组的三维网格；不过，本书只关心线程组的二维网格。下面的示例调用在 *x* 方向启动三个组、在 *y* 方向启动两个组，总计 3 × 2 = 6 个线程组（见图 13.3）。
+
+<Figure src="images/Fig13-3.jpg" alt="派发一个 3×2 的线程组网格，每个线程组有 8×8 个线程" figureNumber="图 13.3" caption="派发一个 3 × 2 的线程组网格。每个线程组有 8 × 8 个线程。" />
+</section>
+
+<section className="lesson-section" id="s132">
+<h2>13.2 一个简单的计算着色器</h2>
+
+下面是一个把两张纹理相加的简单计算着色器，假设所有纹理尺寸相同。这个着色器并不有趣，但它演示了编写计算着色器的基本语法。
+
+```cpp
+cbuffer cbSettings
+{
+  // Compute shader can access values in constant buffers.
+};
+
+// Data sources and outputs.
+Texture2D gInputA; 
+Texture2D gInputB;
+RWTexture2D<float4> gOutput;
+
+// The number of threads in the thread group. The threads in a group can
+// be arranged in a 1D, 2D, or 3D grid layout.
+[numthreads(16, 16, 1)]
+void CS(int3 dispatchThreadID : SV_DispatchThreadID) // Thread ID
+{
+  // Sum the xyth texels and store the result in the xyth texel of
+  // gOutput.
+  gOutput[dispatchThreadID.xy] = 
+    gInputA[dispatchThreadID.xy] +
+    gInputB[dispatchThreadID.xy];
+}
+```
+
+一个计算着色器由<a id="page473"/>以下组件构成：
+
+1. 通过常量缓冲访问全局变量。
+2. 输入与输出资源，在下一节讨论。
+3. `[numthreads(X, Y, Z)]` 属性，它以三维线程网格的形式指定线程组中的线程数。
+4. 包含每个线程要执行的指令的着色器主体。
+5. 线程标识系统值参数（在 §13.4 讨论）。
+
+注意，我们可以定义线程组的不同拓扑；例如，线程组可以是 *X* 个线程的单行 `[numthreads(X, 1, 1)]`，也可以是 *Y* 个线程的单列 `[numthreads(1, Y, 1)]`。*X* × *Y* 个线程的二维线程组可以通过把 *z* 维度设为 1 来构造，即 `[numthreads(X, Y, 1)]`。你选择的拓扑由你正在处理的问题决定。如上一节所述，每组的总线程数应当是线程束大小（NVIDIA 卡为 32）的倍数或 wavefront 大小（ATI 卡为 64）的倍数。wavefront 大小的倍数同时也是线程束大小的倍数，所以选择 wavefront 大小的倍数对两种卡都适用。
+
+<h3 id="s1321">13.2.1 计算 PSO</h3>
+
+要启用计算着色器，我们使用一种特殊的"计算管线状态描述"。这个结构的字段比 `D3D12_GRAPHICS_PIPELINE_STATE_DESC` 少得多，因为计算着色器位于图形管线旁边，所有图形管线状态都不适用于计算着色器，因此也不需要设置。下面展示了创建计算管线状态对象的一个示例：
+
+```cpp
+D3D12_COMPUTE_PIPELINE_STATE_DESC wavesUpdatePSO = {};
+wavesUpdatePSO.pRootSignature = mWavesRootSignature.Get();
+wavesUpdatePSO.CS =
+{
+  reinterpret_cast<BYTE*>(mShaders["wavesUpdateCS"]->GetBufferPointer()),
+  mShaders["wavesUpdateCS"]->GetBufferSize()
+};
+wavesUpdatePSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+ThrowIfFailed(md3dDevice->CreateComputePipelineState(
+  &wavesUpdatePSO, IID_PPV_ARGS(&mPSOs["wavesUpdate"])));
+```
+
+根签名定义<a id="page474"/>了着色器期望的输入参数（CBV、SRV 等）。`CS` 字段是我们指定计算着色器的地方。下面的代码展示了把计算着色器编译成字节码的一个示例：
+
+```cpp
+mShaders["wavesUpdateCS"] = d3dUtil::CompileShader(
+  L"Shaders\\WaveSim.hlsl", nullptr, "UpdateWavesCS", "cs_5_0");
+```
+</section>
+
+<section className="lesson-section" id="s133">
+<h2>13.3 数据输入与输出资源</h2>
+
+可以绑定到计算着色器的资源有两种：缓冲和纹理。我们已经使用过缓冲，比如顶点缓冲、索引缓冲和常量缓冲。我们也从第 9 章起熟悉了纹理资源。
+
+<h3 id="s1331">13.3.1 纹理输入</h3>
+
+上一节定义的计算着色器定义了两个输入纹理资源：
+
+```cpp
+Texture2D gInputA; 
+Texture2D gInputB;
+```
+
+输入纹理 `gInputA` 和 `gInputB` 通过为它们创建着色器资源视图（SRV），再把相应的 SRV 作为实参传给根参数，从而绑定为着色器输入；例如：
+
+```cpp
+cmdList->SetComputeRootDescriptorTable(1, mSrvA);
+cmdList->SetComputeRootDescriptorTable(2, mSrvB);
+```
+
+这与我们把着色器资源视图绑定到像素着色器的方式完全相同。注意，SRV 是只读的。
+
+<h3 id="s1332">13.3.2 纹理输出与无序访问视图（UAV）</h3>
+
+上一节定义的计算着色器定义了一个输出资源：
+
+```cpp
+RWTexture2D<float4> gOutput;
+```
+
+输出资源受到特殊对待，其类型带有特殊前缀"RW"，代表读写（read-write），顾名思义，你可以在计算<a id="page475"/>着色器中读写该资源中的元素。相比之下，纹理 `gInputA` 和 `gInputB` 是只读的。此外，必须用模板尖括号语法 &lt;float4&gt; 指定输出的类型和维度。如果我们的输出是类似 `DXGI_FORMAT_R8G8_SINT` 的 2D 整数，那么我们就会写成：
+
+```cpp
+RWTexture2D<int2> gOutput;
+```
+
+不过，绑定输出资源与绑定输入不同。要绑定一个我们将在计算着色器中写入的资源，我们需要用一种称为*无序访问视图*（unordered access view，UAV）的新视图类型来绑定它，它在代码中由描述符句柄表示，并由 `D3D12_UNORDERED_ACCESS_VIEW_DESC` 结构描述。它的创建方式与着色器资源视图类似。下面是一个为纹理资源创建 UAV 的示例：
+
+```cpp
+D3D12_RESOURCE_DESC texDesc;
+ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
+texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+texDesc.Alignment = 0;
+texDesc.Width = mWidth;
+texDesc.Height = mHeight;
+texDesc.DepthOrArraySize = 1;
+texDesc.MipLevels = 1;
+texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+texDesc.SampleDesc.Count = 1;
+texDesc.SampleDesc.Quality = 0;
+texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+ThrowIfFailed(md3dDevice->CreateCommittedResource(
+  &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+  D3D12_HEAP_FLAG_NONE,
+  &texDesc,
+  D3D12_RESOURCE_STATE_COMMON,
+  nullptr,
+  IID_PPV_ARGS(&mBlurMap0)));
+
+D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+srvDesc.Format = mFormat;
+srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+srvDesc.Texture2D.MostDetailedMip = 0;
+srvDesc.Texture2D.MipLevels = 1;
+
+D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+
+uavDesc.Format = mFormat;
+uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+uavDesc.Texture2D.MipSlice = 0;
+
+md3dDevice->CreateShaderResourceView(mBlurMap0.Get(), 
+  &srvDesc, mBlur0CpuSrv);
+md3dDevice->CreateUnorderedAccessView(mBlurMap0.Get(), 
+  nullptr, &uavDesc, mBlur0CpuUav);
+```
+
+注意，如果一张纹理<a id="page476"/>将被绑定为 UAV，那么它必须以 `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS` 标志创建；在上面的例子中，该纹理将被绑定为 UAV 和 SRV（但不同时绑定）。这很常见，因为我们经常用计算着色器对一张纹理执行某种操作（所以该纹理会作为 UAV 绑定到计算着色器），随后我们又想用它给几何体贴纹理，所以它会作为 SRV 绑定到顶点或像素着色器。
+
+回忆一下，类型为 `D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV` 的描述符堆可以把 CBV、SRV 和 UAV 混放在同一个堆中。因此，我们可以把 UAV 描述符放进那个堆。一旦它们在堆中，我们只需把描述符句柄作为实参传给根参数，即可在 dispatch 调用时把这些资源绑定到管线。考虑下面针对计算着色器的根签名：
+
+```cpp
+void BlurApp::BuildPostProcessRootSignature()
+{
+  CD3DX12_DESCRIPTOR_RANGE srvTable;
+  srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+  CD3DX12_DESCRIPTOR_RANGE uavTable;
+  uavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+  // Root parameter can be a table, root descriptor or root constants.
+  CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+  // Perfomance TIP: Order from most frequent to least frequent.
+  slotRootParameter[0].InitAsConstants(12, 0);
+  slotRootParameter[1].InitAsDescriptorTable(1, &srvTable);
+  slotRootParameter[2].InitAsDescriptorTable(1, &uavTable);
+
+  // A root signature is an array of root parameters.
+  CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,
+    0, nullptr,
+    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+  // create a root signature with a single slot which points to a
+  // descriptor range consisting of a single constant buffer
+  ComPtr<ID3DBlob> serializedRootSig = nullptr;
+  ComPtr<ID3DBlob> errorBlob = nullptr;
+  HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+    serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+  if(errorBlob != nullptr)
+  {
+    ::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+  }
+  ThrowIfFailed(hr);
+
+  ThrowIfFailed(md3dDevice->CreateRootSignature(
+    0,
+    serializedRootSig->GetBufferPointer(),
+    serializedRootSig->GetBufferSize(),
+    IID_PPV_ARGS(mPostProcessRootSignature.GetAddressOf())));
+}
+```
+
+根签名定义<a id="page477"/>着色器期望根参数槽 0 是一个常量缓冲、槽 1 是一个 SRV、槽 2 是一个 UAV。在 dispatch 调用之前，我们为这次 dispatch 调用绑定要使用的常量和描述符：
+
+```cpp
+cmdList->SetComputeRootSignature(rootSig);
+
+cmdList->SetComputeRoot32BitConstants(0, 1, &blurRadius, 0);
+cmdList->SetComputeRoot32BitConstants(0, (UINT)weights.size(), weights.data(), 1);
+
+cmdList->SetComputeRootDescriptorTable(1, mBlur0GpuSrv);
+cmdList->SetComputeRootDescriptorTable(2, mBlur1GpuUav);
+
+UINT numGroupsX = (UINT)ceilf(mWidth / 256.0f);
+cmdList->Dispatch(numGroupsX, mHeight, 1);
+```
+</section>
+
+<section className="lesson-section" id="s1333">
+<h3>13.3.3 索引与采样纹理</h3>
+
+纹理的元素可以用二维索引访问。在 §13.2 定义的计算着色器中，我们基于 dispatch 线程 ID 索引纹理（线程 ID 在 §13.4 讨论）。每个线程都获得一个唯一的 dispatch ID。
+
+```cpp
+[numthreads(16, 16, 1)]
+void CS(int3 dispatchThreadID : SV_DispatchThreadID)
+{
+  // Sum the xyth texels and store the result in the xyth texel of
+  // gOutput.
+  gOutput[dispatchThreadID.xy] = 
+    gInputA[dispatchThreadID.xy] +
+    gInputB[dispatchThreadID.xy];
+}
+```
+
+假设我们派发了足够覆盖纹理的线程组（即每个纹素有一个线程在执行），那么这段代码就把纹理图像相加，并把结果存进纹理 `gOutput`。
+
+**注意**：越界索引的行为在计算着色器中有良好定义。越界读取返回 0，越界写入等效于无操作（no-op）[Boyd08]。
+
+因为计算着色器在 GPU 上执行，它可以访问通常的 GPU 工具。特别是，我们可以用纹理过滤来采样纹理。但有两个问题。第一，我们不能使用 `Sample` 方法，而必须使用 `SampleLevel` 方法。`SampleLevel` 接受一个额外的第三个参数，指定纹理的 mipmap<a id="page478"/>层级；0 取最顶层，1 取第二个 mip 层级，依此类推，如果启用了线性 mip 过滤，小数值用于在两个 mip 层级之间插值。另一方面，`Sample` 会根据纹理将覆盖的屏幕像素数量自动选择最佳 mipmap 层级。由于计算着色器不直接用于渲染，它不知道如何这样自动选择 mipmap 层级，因此在计算着色器中我们必须用 `SampleLevel` 显式指定层级。第二个问题是，当我们采样纹理时，我们使用 [0, 1]² 范围内的归一化纹理坐标而不是整数索引。不过，纹理尺寸（*width*、*height*）可以设为常量缓冲变量，然后归一化纹理坐标可以从整数索引（*x*、*y*）推导出来：
+
+<MathBlock tex="\begin{aligned} u &= \frac{x}{width}\\ v &= \frac{y}{height} \end{aligned}" />
+
+下面的代码展示了一个使用整数索引的计算着色器，以及一个使用纹理坐标和 `SampleLevel` 的等价版本，其中假设纹理尺寸为 512 × 512，且我们只需要最顶层的 mip：
+
+```cpp
+//
+// VERSION 1: Using integer indices.
+//
+
+cbuffer cbUpdateSettings
+{
+   float gWaveConstant0;
+   float gWaveConstant1;
+   float gWaveConstant2;
+   
+   float gDisturbMag;
+   int2 gDisturbIndex;
+};
+
+RWTexture2D<float> gPrevSolInput : register(u0);
+RWTexture2D<float> gCurrSolInput : register(u1);
+RWTexture2D<float> gOutput    : register(u2);
+
+[numthreads(16, 16, 1)]
+void CS(int3 dispatchThreadID : SV_DispatchThreadID)
+{
+   int x = dispatchThreadID.x;
+   int y = dispatchThreadID.y;
+
+   gNextSolOutput[int2(x,y)] = 
+      gWaveConstants0*gPrevSolInput[int2(x,y)].r +
+      gWaveConstants1*gCurrSolInput[int2(x,y)].r +
+      gWaveConstants2*(
+         gCurrSolInput[int2(x,y+1)].r + 
+         gCurrSolInput[int2(x,y-1)].r + 
+         gCurrSolInput[int2(x+1,y)].r + 
+         gCurrSolInput[int2(x-1,y)].r);
+}
+```
+
+**译者注**：上面代码在原书中有两处标识符不一致：输出资源声明为 `gOutput`，代码中却写成 `gNextSolOutput`；常量缓冲成员声明为 `gWaveConstant0/1/2`，代码中却写成 `gWaveConstants0/1/2`。均照录原文。
+
+<a id="page479"/>
+
+```cpp
+//
+// VERSION 2: Using SampleLevel and texture coordinates.
+//
+
+cbuffer cbUpdateSettings
+{
+   float gWaveConstant0;
+   float gWaveConstant1;
+   float gWaveConstant2;
+   
+   float gDisturbMag;
+   int2 gDisturbIndex;
+};
+
+SamplerState samPoint : register(s0);
+
+RWTexture2D<float> gPrevSolInput : register(u0);
+RWTexture2D<float> gCurrSolInput : register(u1);
+RWTexture2D<float> gOutput    : register(u2);
+
+[numthreads(16, 16, 1)]
+void CS(int3 dispatchThreadID : SV_DispatchThreadID)
+{
+ // Equivalently using SampleLevel() instead of operator [].
+ int x = dispatchThreadID.x;
+ int y = dispatchThreadID.y;
+
+ float2 c = float2(x,y)/512.0f;
+ float2 t = float2(x,y-1)/512.0;
+ float2 b = float2(x,y+1)/512.0;
+ float2 l = float2(x-1,y)/512.0;
+ float2 r = float2(x+1,y)/512.0;
+
+ gNextSolOutput[int2(x,y)] = 
+    gWaveConstants0*gPrevSolInput.SampleLevel(samPoint, c, 0.0f).r +
+    gWaveConstants1*gCurrSolInput.SampleLevel(samPoint, c, 0.0f).r +
+    gWaveConstants2*(
+       gCurrSolInput.SampleLevel(samPoint, b, 0.0f).r + 
+       gCurrSolInput.SampleLevel(samPoint, t, 0.0f).r + 
+       gCurrSolInput.SampleLevel(samPoint, r, 0.0f).r + 
+       gCurrSolInput.SampleLevel(samPoint, l, 0.0f).r);
+}
+```
+
+**译者注**：版本 2 的代码与版本 1 有同样的 `gNextSolOutput`/`gWaveConstants` 标识符不一致问题；另外版本 1 中除法写作 `512.0f`，版本 2 中除 `c` 之外写作 `512.0`，均照录原文。
+</section>
+
+<section className="lesson-section" id="s1334">
+<h3>13.3.4 结构化缓冲资源</h3>
+
+下面的例子展示了结构化缓冲在 HLSL 中的定义方式：<a id="page480"/>
+
+```cpp
+struct Data
+{
+   float3 v1;
+   float2 v2;
+};
+
+StructuredBuffer<Data> gInputA : register(t0);
+StructuredBuffer<Data> gInputB : register(t1);
+RWStructuredBuffer<Data> gOutput : register(u0);
+```
+
+结构化缓冲就是一个由相同类型元素组成的缓冲——本质上是一个数组。如你所见，其类型可以是 HLSL 中用户定义的结构体。
+
+用作 SRV 的结构化缓冲可以像我们一直创建顶点缓冲和索引缓冲那样创建。用作 UAV 的结构化缓冲的创建方式几乎相同，只是我们必须指定 `D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS` 标志，并且把它放在 `D3D12_RESOURCE_STATE_UNORDERED_ACCESS` 状态中是良好的做法。
+
+```cpp
+struct Data
+{
+  XMFLOAT3 v1;
+  XMFLOAT2 v2;
+};
+
+// Generate some data to fill the SRV buffers with.
+std::vector<Data> dataA(NumDataElements);
+std::vector<Data> dataB(NumDataElements);
+for(int i = 0; i < NumDataElements; ++i)
+{
+  dataA[i].v1 = XMFLOAT3(i, i, i);
+  dataA[i].v2 = XMFLOAT2(i, 0);
+
+  dataB[i].v1 = XMFLOAT3(-i, i, 0.0f);
+  dataB[i].v2 = XMFLOAT2(0, -i);
+}
+
+UINT64 byteSize = dataA.size()*sizeof(Data);
+
+// Create some buffers to be used as SRVs.
+mInputBufferA = d3dUtil::CreateDefaultBuffer(
+  md3dDevice.Get(),
+  mCommandList.Get(),
+  dataA.data(),
+  byteSize,
+  mInputUploadBufferA);
+
+mInputBufferB = d3dUtil::CreateDefaultBuffer(
+  md3dDevice.Get(),
+  mCommandList.Get(),
+  dataB.data(),
+  byteSize,
+  mInputUploadBufferB);
+
+// Create the buffer that will be a UAV.
+ThrowIfFailed(md3dDevice->CreateCommittedResource(
+  &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+  D3D12_HEAP_FLAG_NONE,
+  &CD3DX12_RESOURCE_DESC::Buffer(byteSize, 
+    D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),
+  D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+  nullptr,
+  IID_PPV_ARGS(&mOutputBuffer)));
+```
+
+结构化缓冲像纹理一样<a id="page481"/>绑定到管线。我们为它们创建 SRV 或 UAV 描述符，并把它们作为实参传给接受描述符表的根参数。或者，我们可以把根签名定义为接受根描述符，这样我们就可以直接把资源的虚拟地址作为根实参传入，而不必经过描述符堆（这只对缓冲资源的 SRV 和 UAV 有效，对纹理无效）。考虑下面的根签名描述：
+
+```cpp
+// Root parameter can be a table, root descriptor or root constants.
+CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+// Perfomance TIP: Order from most frequent to least frequent.
+slotRootParameter[0].InitAsShaderResourceView(0);
+slotRootParameter[1].InitAsShaderResourceView(1);
+slotRootParameter[2].InitAsUnorderedAccessView(0);
+
+// A root signature is an array of root parameters.
+CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,
+   0, nullptr,
+   D3D12_ROOT_SIGNATURE_FLAG_NONE);
+```
+
+然后我们可以像下面这样绑定缓冲，以供 dispatch 调用使用：
+
+```cpp
+mCommandList->SetComputeRootSignature(mRootSignature.Get());
+
+mCommandList->SetComputeRootShaderResourceView(0, 
+  mInputBufferA->GetGPUVirtualAddress());
+mCommandList->SetComputeRootShaderResourceView(1, 
+  mInputBufferB->GetGPUVirtualAddress());
+mCommandList->SetComputeRootUnorderedAccessView(2, 
+  mOutputBuffer->GetGPUVirtualAddress());
+
+mCommandList->Dispatch(1, 1, 1);
+```
+
+**注意**：还有一类称为原始缓冲（raw buffer）的东西，它基本上就是一个字节数组。使用字节偏移，随后可以把数据转换为适当的类型。例如，这对在同一个缓冲中存储不同的数据类型可能有用。要成为原始缓冲，资源必须以 `DXGI_FORMAT_R32_TYPELESS` 格式创建，并且创建 UAV 时必须指定 `D3D12_BUFFER_UAV_FLAG_RAW` 标志。本书不使用原始缓冲<a id="page482"/>；更多细节请参阅 SDK 文档。
+</section>
+
+<section className="lesson-section" id="s1335">
+<h3>13.3.5 把 CS 结果复制到系统内存</h3>
+
+通常，当我们用计算着色器处理一张纹理时，我们会把处理后的纹理显示在屏幕上；因此，我们可以直观地看到结果，验证计算着色器的正确性。对于结构化缓冲计算以及一般的 GPGPU 计算，我们可能根本不显示结果。那么问题来了：我们如何把结果从 GPU 内存（记住，当我们通过 UAV 写入结构化缓冲时，该缓冲存储在 GPU 内存中）取回到系统内存。必需的做法是创建一个堆属性为 `D3D12_HEAP_TYPE_READBACK` 的系统内存缓冲。然后我们可以用 `ID3D12GraphicsCommandList::CopyResource` 方法把 GPU 资源复制到系统内存资源。系统内存资源必须与我们要复制的资源类型和大小相同。最后，我们可以用映射（mapping）API 映射系统内存缓冲，在 CPU 上读取它。之后我们可以把数据复制到一个系统内存数组以便在 CPU 侧进一步处理、把数据保存到文件，等等。
+
+我们为本章包含了一个名为"VecAdd"的结构化缓冲演示，它只是把存储在两个结构化缓冲中的对应向量分量相加：
+
+```cpp
+struct Data
+{
+  float3 v1;
+  float2 v2;
+};
+
+StructuredBuffer<Data> gInputA : register(t0);
+StructuredBuffer<Data> gInputB : register(t1);
+RWStructuredBuffer<Data> gOutput : register(u0);
+
+[numthreads(32, 1, 1)]
+void CS(int3 dtid : SV_DispatchThreadID)
+{
+  gOutput[dtid.x].v1 = gInputA[dtid.x].v1 + gInputB[dtid.x].v1;
+  gOutput[dtid.x].v2 = gInputA[dtid.x].v2 + gInputB[dtid.x].v2;
+}
+```
+
+为简单起见，结构化缓冲只包含 32 个元素；因此我们只需派发一个线程组（因为一个线程组处理 32 个元素）。在本演示的计算着色器完成所有线程的工作之后，我们把结果复制到系统内存并保存到文件。下面的代码展示了如何创建系统内存缓冲以及如何把 GPU 结果复制到 CPU 内存：<a id="page483"/>
+
+```cpp
+// Create a system memory version of the buffer to read the 
+// results back from.
+ThrowIfFailed(md3dDevice->CreateCommittedResource(
+  &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK),
+  D3D12_HEAP_FLAG_NONE,
+  &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+  D3D12_RESOURCE_STATE_COPY_DEST,
+  nullptr,
+  IID_PPV_ARGS(&mReadBackBuffer)));
+
+// …
+//
+// Compute shader finished!
+
+struct Data
+{
+   XMFLOAT3 v1;
+   XMFLOAT2 v2;
+};
+
+// Schedule to copy the data to the default buffer to the readback buffer.
+mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+  mOutputBuffer.Get(), 
+  D3D12_RESOURCE_STATE_COMMON, 
+  D3D12_RESOURCE_STATE_COPY_SOURCE));
+
+mCommandList->CopyResource(mReadBackBuffer.Get(), mOutputBuffer.Get());
+
+mCommandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+  mOutputBuffer.Get(),
+  D3D12_RESOURCE_STATE_COPY_SOURCE, 
+  D3D12_RESOURCE_STATE_COMMON));
+
+// Done recording commands.
+ThrowIfFailed(mCommandList->Close());
+
+// Add the command list to the queue for execution.
+ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };
+mCommandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+// Wait for the work to finish.
+FlushCommandQueue();
+
+// Map the data so we can read it on CPU.
+Data* mappedData = nullptr;
+ThrowIfFailed(mReadBackBuffer->Map(0, nullptr, 
+   reinterpret_cast<void**>(&mappedData)));
+
+std::ofstream fout("results.txt");
+
+for(int i = 0; i < NumDataElements; ++i)
+{
+  fout << "(" << mappedData[i].v1.x << ", " << 
+          mappedData[i].v1.y << ", " << 
+          mappedData[i].v1.z <<   ", " << 
+          mappedData[i].v2.x << ", " << 
+          mappedData[i].v2.y << ")" << std::endl;
+}
+
+mReadBackBuffer->Unmap(0, nullptr);
+```
+
+在演示中，我们用如下初始数据填充两个输入缓冲：
+
+```cpp
+std::vector<Data> dataA(NumDataElements);
+std::vector<Data> dataB(NumDataElements);
+for(int i = 0; i < NumDataElements; ++i)
+{
+  dataA[i].v1 = XMFLOAT3(i, i, i);
+  dataA[i].v2 = XMFLOAT2(i, 0);
+
+  dataB[i].v1 = XMFLOAT3(-i, i, 0.0f);
+  dataB[i].v2 = XMFLOAT2(0, -i);
+}
+```
+
+结果文本文件包含<a id="page484"/>如下数据，它证实计算着色器按预期工作。
+
+```text
+(0, 0, 0, 0, 0)
+(0, 2, 1, 1, -1)
+(0, 4, 2, 2, -2)
+(0, 6, 3, 3, -3)
+(0, 8, 4, 4, -4)
+(0, 10, 5, 5, -5)
+(0, 12, 6, 6, -6)
+(0, 14, 7, 7, -7)
+(0, 16, 8, 8, -8)
+(0, 18, 9, 9, -9)
+(0, 20, 10, 10, -10)
+(0, 22, 11, 11, -11)
+(0, 24, 12, 12, -12)
+(0, 26, 13, 13, -13)
+(0, 28, 14, 14, -14)
+(0, 30, 15, 15, -15)
+(0, 32, 16, 16, -16)
+(0, 34, 17, 17, -17)
+(0, 36, 18, 18, -18)
+(0, 38, 19, 19, -19)
+(0, 40, 20, 20, -20)
+(0, 42, 21, 21, -21)
+(0, 44, 22, 22, -22)
+(0, 46, 23, 23, -23)
+(0, 48, 24, 24, -24)
+(0, 50, 25, 25, -25)
+(0, 52, 26, 26, -26)
+(0, 54, 27, 27, -27)
+(0, 56, 28, 28, -28)
+(0, 58, 29, 29, -29)
+(0, 60, 30, 30, -30)
+(0, 62, 31, 31, -31)
+```
+
+**注意**：从图 13.1 可以看到，CPU 与 GPU 内存之间的复制是最慢的。对图形而言，我们绝不希望每帧都做这种复制，因为它会毁掉性能。对 GPGPU<a id="page485"/>编程来说，通常需要在 CPU 上取回结果；不过这对 GPGPU 编程来说通常不是大问题，因为使用 GPU 的收益超过了从 GPU 复制到 CPU 的成本——而且，对 GPGPU 而言，复制的频率会低于"每帧"。例如，假设一个应用程序用 GPGPU 编程实现一个开销很大的图像处理计算。计算完成后，结果被复制到 CPU。在用户请求下一次计算之前，GPU 不会再被使用。
+</section>
+
+<section className="lesson-section" id="s134">
+<h2>13.4 线程标识系统值</h2>
+
+请看图 13.4。
+
+<Figure src="images/Fig13-4.jpg" alt="线程组网格中标出的线程 T：其组 ID、组内线程 ID、dispatch 线程 ID 与组内线性索引的计算示例" figureNumber="图 13.4" caption="考虑标出的线程 T。线程 T 的组 ID（group ID）为 (1, 1, 0)。它的组内线程 ID（group thread ID）为 (1, 5, 0)。它的 dispatch 线程 ID 为 (1, 1, 0) ⊗ (8, 8, 0) + (2, 5, 0) = (10, 13, 0)。它的组内索引 ID（group index ID）为 5·8 + 2 = 42。" />
+
+**译者注**：图 13.4 的图注在原书中存在两处不一致：一处在"组 ID"前有一个多余的句点（".(1, 1, 0)"）；二是正文说组内线程 ID 为 (1, 5, 0)，但 dispatch 计算却用 (2, 5, 0)。均照录原文。
+
+1. 每个线程组由系统分配一个 ID；这称为*组 ID*（group ID），系统值语义为 `SV_GroupID`。如果派发的线程组数量为 $G_x\times G_y\times G_z$，那么组 ID 的范围从 (0, 0, 0) 到 ($G_x$ − 1, $G_y$ − 1, $G_z$ − 1)。
+2. 在线程组内部，每个线程都获得一个相对于其组的唯一 ID。如果线程组大小为 *X* × *Y* × *Z*，那么*组内线程 ID*（group thread ID）的范围从 (0, 0, 0) 到 (*X* − 1, *Y* − 1, *Z* − 1)。组内线程 ID 的系统值语义是 `SV_GroupThreadID`。
+3. 一次 `Dispatch` 调用派发一个线程组网格。*dispatch 线程 ID*（dispatch thread ID）相对于一次 `Dispatch` 调用产生的*所有*线程唯一标识一个线程。换句话说，组内线程 ID 相对于其线程组唯一标识一个线程，而 dispatch 线程 ID 相对于一次 `Dispatch` 调用派发的所有线程组全部线程的并集唯一标识一个线程。设 `ThreadGroupSize = (X,Y,Z)` 为线程组大小，那么 dispatch 线程 ID<a id="page486"/>可以由组 ID 和组内线程 ID 推导如下：
+
+   ```cpp
+   dispatchThreadID.xyz =  groupID.xyz * ThreadGroupSize.xyz + groupThreadID.xyz;
+   ```
+
+   dispatch 线程 ID 的系统值语义是 `SV_DispatchThreadID`。如果派发 3 × 2 个线程组，每个线程组为 10 × 10，那么总共派发 60 个线程，dispatch 线程 ID 的范围从 (0, 0, 0) 到 (29, 19, 0)。
+
+   **译者注**：原书此处写作“60 个线程”，但 3 × 2 个线程组、每组 10 × 10 个线程应合计 600 个线程；后面的 dispatch ID 范围 (0, 0, 0) 至 (29, 19, 0) 也对应 30 × 20 = 600 个线程。为忠实保留原文，此处未改正文数字。
+4. Direct3D 还通过 SV_GroupIndex 系统值向我们提供组内线程 ID 的线性索引版本；它按如下方式计算：
+
+   ```cpp
+   groupIndex = groupThreadID.z*ThreadGroupSize.x*ThreadGroupSize.y +
+                groupThreadID.y*ThreadGroupSize.x + groupThreadID.x;
+   ```
+
+**注意**：关于索引坐标顺序，第一个坐标给出 x 位置（或列），第二个坐标给出 y 位置（或行）。这与常见的矩阵记号相反，在矩阵记号中 M_ij 表示第 i 行第 j 列的元素。
+
+那么为什么我们需要这些线程 ID 值？这是因为计算着色器通常接受某个输入数据结构并输出到某个数据结构。我们可以用线程 ID 值作为这些数据结构的索引：
+
+```cpp
+Texture2D gInputA; 
+Texture2D gInputB;
+RWTexture2D<float4> gOutput;
+
+[numthreads(16, 16, 1)]
+void CS(int3 dispatchThreadID : SV_DispatchThreadID)
+{
+   // Use dispatch thread ID to index into output and input textures.
+   gOutput[dispatchThreadID.xy] = 
+      gInputA[dispatchThreadID.xy] +
+      gInputB[dispatchThreadID.xy];
+}
+```
+
+`SV_GroupThreadID` 对在组内局部存储内存（§13.6）中索引很有用。
+</section>
+
+<section className="lesson-section" id="s135">
+<h2>13.5 追加与消耗缓冲</h2>
+
+假设我们有一个由如下结构定义的粒子缓冲：
+
+```cpp
+struct Particle
+{
+   float3 Position;
+   float3 Velocity;
+   float3 Acceleration;
+};
+```
+
+我们希望在计算着色器中根据粒子的恒定加速度和速度<a id="page487"/>更新粒子位置。此外，假设我们既不关心粒子被更新的顺序，也不关心它们被写入输出缓冲的顺序。消耗（consume）与追加（append）结构化缓冲正适合这种场景，它们带来的便利是：我们不必操心索引：
+
+```cpp
+struct Particle
+{
+   float3 Position;
+   float3 Velocity;
+   float3 Acceleration;
+};
+
+float TimeStep = 1.0f / 60.0f;
+
+ConsumeStructuredBuffer<Particle> gInput;
+AppendStructuredBuffer<Particle> gOutput;
+[numthreads(16, 16, 1)]
+void CS()
+{
+   // Consume a data element from the input buffer.
+   Particle p = gInput.Consume();
+
+   p.Velocity += p.Acceleration*TimeStep;
+   p.Position += p.Velocity*TimeStep;
+
+   // Append normalized vector to output buffer. 
+   gOutput.Append( p );
+}
+```
+
+一旦某个数据元素被消耗，它就不能被另一个线程再次消耗；一个线程恰好消耗一个数据元素。我们再次强调，元素被消耗和追加的顺序是未知的；因此，输入缓冲中的第 i 个元素通常不会正好被写入输出缓冲的第 *i* 个元素。
+
+**注意**：追加结构化缓冲不会动态增长。它们仍然必须足够大，以存储你将追加到其中的所有元素。
+</section>
+
+<section className="lesson-section" id="s136">
+<h2>13.6 共享内存与同步</h2>
+
+线程组会获得一段所谓的共享内存（shared memory）或线程局部存储（thread local storage）。访问这块内存很快，可以认为与硬件缓存一样快。在计算着色器代码中，共享内存的声明方式如下：
+
+```cpp
+groupshared float4 gCache[256];
+```
+
+数组大小<a id="page488"/>可以随你指定，但组共享内存的最大尺寸是 32kb。由于共享内存对线程组是局部的，所以用 SV_ThreadGroupID 对它索引；例如，你可以让组内每个线程访问共享内存中的一个槽位。
+
+**译者注**：上面一句在原书中写作 "it is indexed with the SV_ThreadGroupID"，该系统值语义应为 `SV_GroupThreadID`（§13.4 所述的组内线程 ID），此处照录原文。
+
+使用过多共享内存可能导致性能问题 [Fung10]，正如下面的例子所示。假设一个多处理器支持 32kb 共享内存，而你的计算着色器需要 20kb 共享内存。这意味着只有一个线程组能放进这个多处理器，因为没有足够的内存留给另一个线程组 [Fung10]，因为 20kb + 20kb = 40kb &gt; 32kb。这限制了 GPU 的并行性，因为多处理器无法在线程组之间切换以隐藏延迟（回忆 §13.1，建议每个多处理器至少两个线程组）。因此，尽管硬件名义上支持 32kb 共享内存，使用更少的空间反而能带来性能提升。
+
+共享内存的一个常见应用是把纹理值存储在其中。某些算法（如模糊）需要多次取回同一个纹素。采样纹理实际上是较慢的 GPU 操作之一，因为内存带宽和内存延迟的改进没有跟上 GPU 原始计算能力的提升 [Möller08]。线程组可以通过把所有需要的纹理样本预加载到共享内存数组中来避免冗余的纹理读取。随后算法在共享内存数组中查找纹理样本，这非常快。假设我们用下面这段有问题的代码来实现这一策略：
+
+```cpp
+Texture2D gInput;
+RWTexture2D<float4> gOutput;
+
+groupshared float4 gCache[256];
+
+[numthreads(256, 1, 1)]
+void CS(int3 groupThreadID : SV_GroupThreadID,
+    int3 dispatchThreadID : SV_DispatchThreadID)
+{
+  // Each thread samples the texture and stores the 
+  // value in shared memory.
+  gCache[groupThreadID.x] = gInput[dispatchThreadID.xy];
+
+  // Do computation work: Access elements in shared memory 
+  // that other threads stored:
+
+  // BAD!!! Left and right neighbor threads might not have
+  // finished sampling tzZhe texture and storing it in shared memory.
+  float4 left = gCache[groupThreadID.x - 1];
+  float4 right = gCache[groupThreadID.x + 1];
+
+  …
+}
+```
+
+**译者注**：上面代码注释中的 "tzZhe" 应为 "the"，原书笔误，照录原文。
+
+这种情况之所以出<a id="page489"/>问题，是因为我们无法保证线程组中的所有线程同时完成。于是一个线程可能去访问一个尚未初始化的共享内存元素，因为负责初始化那些元素的相邻线程还没有完成。为解决这个问题，计算着色器在继续之前必须等到所有线程都完成了把纹理加载到共享内存的操作。这通过一条同步命令实现：
+
+```cpp
+Texture2D gInput;
+RWTexture2D<float4> gOutput;
+
+groupshared float4 gCache[256];
+
+[numthreads(256, 1, 1)]
+void CS(int3 groupThreadID : SV_GroupThreadID,
+    int3 dispatchThreadID : SV_DispatchThreadID)
+{
+  // Each thread samples the texture and stores the 
+  // value in shared memory.
+  gCache[groupThreadID.x] = gInput[dispatchThreadID.xy];
+
+  // Wait for all threads in group to finish.
+  GroupMemoryBarrierWithGroupSync();
+
+  // Safe now to read any element in the shared memory 
+  //and do computation work.
+
+  float4 left = gCache[groupThreadID.x - 1];
+  float4 right = gCache[groupThreadID.x + 1];
+
+  …
+}
+```
+</section>
+
+<section className="lesson-section" id="s137">
+<h2>13.7 模糊演示</h2>
+
+本节解释如何在计算着色器上实现模糊算法。我们先描述模糊的数学理论，然后讨论渲染到纹理（render-to-texture）技术——我们的演示用它生成要模糊的源图像，最后我们审阅计算着色器实现的代码，并讨论如何处理某些使实现略显棘手的细节。
+
+<Figure src="images/Fig13-5.jpg" alt="对像素 Pij 模糊时，计算以该像素为中心的 m×n 像素矩阵的加权平均；图中为 3×3 方阵，模糊半径 a = b = 1，中心权重 w00 与像素 Pij 对齐" figureNumber="图 13.5" caption="要对像素 Pij 模糊，我们计算以该像素为中心的 m × n 像素矩阵的加权平均。在这个例子中，矩阵是 3 × 3 的方阵，模糊半径 a = b = 1。注意，中心权重 w00 与像素 Pij 对齐。" />
+
+<a id="page490"/>
+
+<h3 id="s1371">13.7.1 模糊理论</h3>
+
+我们使用的模糊算法描述如下：对源图像中的每个像素 $P_{ij}$，计算以像素 $P_{ij}$ 为中心的 *m* × *n* 像素矩阵的加权平均（见图 13.5）；这个加权平均就成为模糊图像中的第 *ij* 个像素。用数学表示为：
+
+<MathBlock tex="Blur\left(P_{ij}\right)=\sum_{r=-a}^{a}\sum_{c=-b}^{b}w_{rc}P_{i+r,j+c}\quad\text{for}\quad \sum_{r=-a}^{a}\sum_{c=-b}^{b}w_{rc}=1" />
+
+其中 *m* = 2*a* + 1，*n* = 2*b* + 1。通过强制 *m* 和 *n* 为奇数，我们确保 *m* × *n* 矩阵总有一个自然的"中心"。我们称 *a* 为垂直模糊半径，*b* 为水平模糊半径。若 *a* = *b*，我们直接称之为*模糊半径*（blur radius），无需指明维度。*m* × *n* 权重矩阵称为*模糊核*（blur kernel）。还要注意，权重之和必须为 1。如果权重之和小于 1，模糊图像会显得更暗，因为颜色被移除了。如果权重之和大于 1，模糊图像会显得更亮，因为颜色被加入了。
+
+计算权重有多种方式，只要它们的和为 1。许多图像编辑程序中都有一种著名的模糊算子——高斯模糊（Gaussian blur），它的权重取自高斯函数 $G(x)=\exp\left(-\dfrac{x^2}{2\sigma^2}\right)$。该函数在不同 σ 下的图像如图 13.6 所示。
+
+<Figure src="images/Fig13-6.jpg" alt="高斯函数 G(x) 在 σ = 1、2、3 下的曲线；σ 越大曲线越平缓，给邻近点的权重越大" figureNumber="图 13.6" caption="G(x) 在 σ = 1, 2, 3 时的曲线。注意，σ 越大，曲线越平缓，给相邻点的权重越大。" />
+
+假设我们做一个 1 × 5 的高斯模糊（即水平方向的一维模糊），并令 σ = 1。对 *x* = −2, −1, 0, 1, 2 计算 *G*(*x*)，我们有：
+
+<MathBlock tex="G(-2)=\exp\left(-\frac{(-2)^2}{2}\right)=e^{-2}" />
+
+<MathBlock tex="\begin{aligned} G(-1) &= \exp\left(-\frac{(-1)^2}{2}\right) = e^{-\frac{1}{2}}\\ G(0) &= \exp(0) = 1\\ G(1) &= \exp\left(-\frac{1^2}{2}\right) = e^{-\frac{1}{2}}\\ G(2) &= \exp\left(-\frac{2^2}{2}\right) = e^{-2} \end{aligned}" />
+
+<a id="page491"/>然而，这些值还不是权重，因为它们的和不为 1：
+
+<MathBlock tex="\begin{aligned} \sum_{x=-2}^{x=2}G(x) &= G(-2)+G(-1)+G(0)+G(1)+G(2)\\ &= 1+2e^{-\frac{1}{2}}+2e^{-2}\\ &\approx 2.48373 \end{aligned}" />
+
+如果我们用上面的和式 $\sum_{x=-2}^{x=2}G(x)$ 对其归一化，就得到基于高斯函数且和为 1 的权重：
+
+<MathBlock tex="\frac{G(-2)+G(-1)+G(0)+G(1)+G(2)}{\sum_{x=-2}^{x=2}G(x)}=1" />
+
+<a id="page492"/>因此，高斯模糊的权重为：
+
+<MathBlock tex="\begin{aligned} w_{-2} &= \frac{G(-2)}{\sum_{x=-2}^{x=2}G(x)} = \frac{e^{-2}}{1+2e^{-\frac{1}{2}}+2e^{-2}} \approx 0.0545\\ w_{-1} &= \frac{G(-1)}{\sum_{x=-2}^{x=2}G(x)} = \frac{e^{-\frac{1}{2}}}{1+2e^{-\frac{1}{2}}+2e^{-2}} \approx 0.2442\\ w_{0} &= \frac{G(0)}{\sum_{x=-2}^{x=2}G(x)} = \frac{1}{1+2e^{-\frac{1}{2}}+2e^{-2}} \approx 0.4026\\ w_{1} &= \frac{G(1)}{\sum_{x=-2}^{x=2}G(x)} = \frac{e^{-\frac{1}{2}}}{1+2e^{-\frac{1}{2}}+2e^{-2}} \approx 0.2442\\ w_{2} &= \frac{G(2)}{\sum_{x=-2}^{x=2}G(x)} = \frac{e^{-2}}{1+2e^{-\frac{1}{2}}+2e^{-2}} \approx 0.0545 \end{aligned}" />
+
+高斯模糊是可分离的（separable），这意味着它可以拆分成两个一维模糊：
+
+1. 用一维水平模糊模糊输入图像 I：$I_H=Blur_H(I)$。
+2. 用一维垂直模糊模糊上一步的输出：$Blur(I)=Blur_V(I_H)$。
+
+写得更简洁一些，就是：
+
+<MathBlock tex="Blur(I)=Blur_V\left(Blur_H(I)\right)" />
+
+假设模糊核是一个 9 × 9 矩阵，那么做二维模糊总共需要 81 次采样。把模糊拆分成两个一维模糊之后，我们只需要 9 + 9 = 18 次采样。通常我们要模糊的是纹理；正如本章所说，获取纹理样本是昂贵的，所以通过分离模糊来减少纹理采样是受欢迎的改进。即使某个模糊不可分离（有些模糊算子确实不可分离），我们也常常为了性能而做可分离的简化假设，只要最终图像看起来足够好即可。<a id="page493"/>
+
+<h3 id="s1372">13.7.2 渲染到纹理</h3>
+
+到目前为止，在我们的程序中，我们一直渲染到后台缓冲。但什么是后台缓冲？如果我们回顾 D3DApp 代码，会发现后台缓冲只是交换链中的一张纹理：
+
+```cpp
+Microsoft::WRL::ComPtr<ID3D12Resource> mSwapChainBuffer[SwapChainBufferCount];
+CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(mRtvHeap->GetCPUDescriptorHandleForHeapStart());
+for (UINT i = 0; i < SwapChainBufferCount; i++)
+{
+  ThrowIfFailed(mSwapChain->GetBuffer(i, 
+    IID_PPV_ARGS(&mSwapChainBuffer[i])));
+  md3dDevice->CreateRenderTargetView(
+    mSwapChainBuffer[i].Get(), nullptr, rtvHeapHandle);
+  rtvHeapHandle.Offset(1, mRtvDescriptorSize);
+}
+```
+
+我们通过把后台缓冲的渲染目标视图绑定到渲染管线的 OM 阶段，指示 Direct3D 渲染到后台缓冲：
+
+```cpp
+// Specify the buffers we are going to render to.
+mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(),
+  true, &DepthStencilView());
+```
+
+当后台缓冲通过 `IDXGISwapChain::Present` 方法被呈现时，它的内容最终显示在屏幕上。
+
+**注意**：将被用作渲染目标的纹理必须以 `D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET` 标志创建。
+
+想一想这段代码，没有什么能阻止我们再创建一张纹理、为它创建渲染目标视图，并把它绑定到渲染管线的 OM 阶段。于是我们将绘制到这张不同的"离屏"纹理（可以使用不同的摄像机）而不是后台缓冲。这种技术称为*渲染到离屏纹理*（render-to-off-screen-texture），或简称*渲染到纹理*（render-to-texture）。唯一的区别是，由于这张纹理不是后台缓冲，它在呈现期间不会显示到屏幕上。
+
+<Figure src="images/Fig13-7.jpg" alt="一台摄像机以俯视角度放在玩家上方，把场景渲染进离屏纹理；从玩家视角绘制场景到后台缓冲时，把该纹理映射到屏幕右下角的四边形上显示雷达图" figureNumber="图 13.7" caption="一台摄像机以俯视角度放在玩家上方，把场景渲染进一张离屏纹理。当我们从玩家的眼睛把场景绘制到后台缓冲时，把该纹理映射到屏幕右下角的四边形上以显示雷达图。" />
+
+因此，渲染到纹理乍一看似乎毫无用处，因为它不会被呈现到屏幕上。但是，在渲染到纹理之后，我们可以把后台缓冲重新绑回 OM 阶段，继续向后台缓冲绘制几何体。我们可以用渲染到纹理期间生成的纹理给几何体贴图。这种策略被用来实现各种特殊效果。例如，你可以把场景从俯视角度渲染到纹理；然后在绘制到后台缓冲时，你可以在屏幕右下角绘制一个带<a id="page494"/>俯视纹理的四边形来模拟雷达系统（见图 13.7）。其他渲染到纹理的技术包括：
+
+1. 阴影映射（shadow mapping）
+2. 屏幕空间环境光遮蔽（Screen Space Ambient Occlusion）
+3. 用立方体贴图做动态反射
+
+使用渲染到纹理，在 GPU 上实现模糊算法的工作方式如下：把普通的演示场景渲染到一张离屏纹理。这张纹理就是我们在计算着色器上执行的模糊算法的输入。纹理模糊之后，我们向后台缓冲绘制一个应用了模糊纹理的全屏四边形，以便看到模糊结果来测试我们的模糊实现。步骤概述如下：
+
+1. 照常把场景绘制到一张离屏纹理。
+2. 用计算着色器程序模糊该离屏纹理。
+3. 恢复后台缓冲为渲染目标，并绘制一个应用了模糊纹理的全屏四边形。
+
+用渲染到纹理实现模糊效果很好，而且如果我们要把场景渲染到与后台缓冲不同尺寸的纹理，这是必需的方法。不过，如果我们假设离屏纹理与后台缓冲的格式和尺寸一致，那么我们可以不把渲染重定向到离屏纹理，而是照常渲染到后台缓冲，然后用一次 `CopyResource` 把后台缓冲的内容复制到我们的离屏纹理。然后我们在离屏纹理上做计算工作，最后向后台缓冲绘制一个应用了模糊纹理的全屏四边形，产生最终的屏幕输出。<a id="page495"/>
+
+```cpp
+// Copy the input (back-buffer in this example) to BlurMap0.
+cmdList->CopyResource(mBlurMap0.Get(), input);
+```
+
+这就是我们将用来实现模糊演示的技术，但习题 6 要求你用渲染到纹理实现另一种滤镜。
+
+**注意**：上面的过程要求我们先用常规渲染管线绘制，然后切换到计算着色器做计算工作，最后再切换回常规渲染管线。一般而言，尽量避免在渲染和计算工作之间来回切换，因为上下文切换有开销 [NVIDIA10]。对每一帧，尽量先做完所有计算工作，再做所有渲染工作。有时这是不可能的；例如，在上述过程中，我们需要先把场景渲染到一张纹理，用计算着色器模糊它，然后渲染模糊后的结果。尽管如此，仍要尽量减少切换次数。
+</section>
+
+<section className="lesson-section" id="s1373">
+<h3 id="s1373h">13.7.3 模糊实现概述</h3>
+
+我们假设模糊是可分离的，因此我们把模糊拆成两个一维模糊的计算——一个水平的，一个垂直的。实现它需要两个纹理缓冲，且我们对两者都要读写；因此，我们需要为两张纹理各准备一个 SRV 和一个 UAV。我们把其中一张纹理称为 **A**，另一张称为 **B**。模糊算法流程如下：
+
+1. 把 **A** 的 SRV 绑定为计算着色器的输入（这是将被水平模糊的输入图像）。
+2. 把 **B** 的 UAV 绑定为计算着色器的输出（这是存储模糊结果的输出图像）。
+3. 派发线程组执行水平模糊操作。此后，纹理 **B** 存储水平模糊结果 $Blur_H(I)$，其中 *I* 是要模糊的图像。
+4. 把 **B** 的 SRV 绑定为计算着色器的输入（这是接下来要垂直模糊的水平模糊图像）。
+5. 把 **A** 的 UAV 绑定为计算着色器的输出（这是存储最终模糊结果的输出图像）。
+6. 派发线程组执行垂直模糊操作。此后，纹理 **A** 存储最终模糊结果 $Blur(I)$，其中 *I* 是要模糊的图像。
+
+这一逻辑实现了可分离模糊公式 $Blur(I)=Blur_V(Blur_H(I))$。注意，纹理 **A** 和纹理 **B** 都会在某个时刻充当计算着色器的输入和输出，但不同时充当。（把一个资源同时绑定为输入和输出是 Direct3D 错误。）水平与垂直模糊遍合起来构成一次完整的模糊遍。得到的图像<a id="page496"/>可以继续模糊，只需对它再执行一次模糊遍。我们可以反复模糊一张图像，直到它达到想要的模糊程度。
+
+我们渲染场景所用的纹理与窗口客户区具有相同的分辨率。因此，我们需要重建离屏纹理，以及模糊算法中使用的第二张纹理缓冲 **B**。我们在 OnResize 方法中做这件事：
+
+```cpp
+void BlurApp::OnResize()
+{
+  D3DApp::OnResize();
+
+  // The window resized, so update the aspect ratio and
+  // recompute the projection matrix.
+  XMMATRIX P = XMMatrixPerspectiveFovLH(
+    0.25f*MathHelper::Pi, AspectRatio(),
+    1.0f, 1000.0f);
+  XMStoreFloat4x4(&mProj, P);
+
+  if(mBlurFilter != nullptr)
+  {
+    mBlurFilter->OnResize(mClientWidth, mClientHeight);
+  }
+}
+
+void BlurFilter::OnResize(UINT newWidth, UINT newHeight)
+{
+  if((mWidth != newWidth) || (mHeight != newHeight))
+  {
+    mWidth = newWidth;
+    mHeight = newHeight;
+
+    // Rebuild the off-screen texture resource with new dimensions.
+    BuildResources();
+
+    // New resources, so we need new descriptors to that resource.
+    BuildDescriptors();
+  }
+}
+```
+
+`mBlur` 变量是我们编写的 `BlurFilter` 辅助类的一个实例。这个类封装了纹理 **A** 和 **B** 的纹理资源，封装了指向这些纹理的 SRV 和 UAV，并提供了一个在计算着色器上启动实际模糊操作的方法，其实现稍后就会看到。
+
+`BlurFilter` 类封装了纹理资源。要把这些资源绑定到管线以供绘制/dispatch 命令使用，我们需要为这些资源创建描述符。这意味着我们必须在 `D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV` 描述符堆中分配额外的空间来存储这些描述符。`BlurFilter::BuildDescriptors` 方法接受指向描述符堆中起始位置的描述符句柄，用于存储<a id="page497"/> `BlurFilter` 所用的描述符。该方法缓存它需要的所有描述符的句柄，然后创建对应的描述符。它缓存句柄的原因是，当资源变化时（屏幕调整大小时就会发生）它可以重新创建描述符：
+
+```cpp
+void BlurFilter::BuildDescriptors(
+  CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDescriptor,
+  CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuDescriptor,
+  UINT descriptorSize)
+{
+  // Save references to the descriptors. 
+  mBlur0CpuSrv = hCpuDescriptor;
+  mBlur0CpuUav = hCpuDescriptor.Offset(1, descriptorSize);
+  mBlur1CpuSrv = hCpuDescriptor.Offset(1, descriptorSize);
+  mBlur1CpuUav = hCpuDescriptor.Offset(1, descriptorSize);
+
+  mBlur0GpuSrv = hGpuDescriptor;
+  mBlur0GpuUav = hGpuDescriptor.Offset(1, descriptorSize);
+  mBlur1GpuSrv = hGpuDescriptor.Offset(1, descriptorSize);
+  mBlur1GpuUav = hGpuDescriptor.Offset(1, descriptorSize);
+
+  BuildDescriptors();
+}
+
+void BlurFilter::BuildDescriptors()
+{
+  D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+  srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+  srvDesc.Format = mFormat;
+  srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+  srvDesc.Texture2D.MostDetailedMip = 0;
+  srvDesc.Texture2D.MipLevels = 1;
+
+  D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+
+  uavDesc.Format = mFormat;
+  uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+  uavDesc.Texture2D.MipSlice = 0;
+
+  md3dDevice->CreateShaderResourceView(mBlurMap0.Get(), &srvDesc, mBlur0CpuSrv);
+  md3dDevice->CreateUnorderedAccessView(mBlurMap0.Get(), 
+    nullptr, &uavDesc, mBlur0CpuUav);
+
+  md3dDevice->CreateShaderResourceView(mBlurMap1.Get(), &srvDesc, mBlur1CpuSrv);
+  md3dDevice->CreateUnorderedAccessView(mBlurMap1.Get(), 
+    nullptr, &uavDesc, mBlur1CpuUav);
+}
+
+// In BlurApp.cpp…Offset to location in heap to 
+// store descriptors for BlurFilter
+
+mBlurFilter->BuildDescriptors(
+  CD3DX12_CPU_DESCRIPTOR_HANDLE(
+    mCbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+    3, mCbvSrvUavDescriptorSize),
+  CD3DX12_GPU_DESCRIPTOR_HANDLE(
+    mCbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(),
+    3, mCbvSrvUavDescriptorSize),
+  mCbvSrvUavDescriptorSize);
+```
+
+**注意**：<a id="page498"/>模糊是一项昂贵的操作，所需时间是待模糊图像尺寸的函数。通常，在把场景渲染到离屏纹理时，离屏纹理会被做成后台缓冲四分之一的大小。例如，如果后台缓冲是 800 × 600，离屏纹理就是 400 × 30。这加快了向离屏纹理的绘制（要填充的像素更少）；此外，它还加快了模糊（要模糊的像素更少），而且当纹理从四分之一屏幕分辨率拉伸到全屏分辨率时，放大纹理过滤器还会提供额外的模糊。
+
+**译者注**：上面"400 × 30"在原书中如此（按 800 × 600 的四分之一应为 200 × 150），照录原文。
+
+假设我们的图像宽度为 *w*、高度为 *h*。正如下一节查看计算着色器时将看到的，对于水平一维模糊，我们的线程组是由 256 个线程组成的水平线段，每个线程负责模糊图像中的一个像素。因此，我们需要在 *x* 方向派发 $\mathrm{ceil}\left(\dfrac{w}{256}\right)$ 个线程组、在 *y* 方向派发 *h* 个线程组，才能让图像中的每个像素都被模糊。如果 256 不能整除 *w*，最后一个水平线程组就会有多余的线程（见图 13.8）。对此我们其实无能为力，因为线程组大小是固定的。我们在着色器代码中用钳制检查来处理越界情况。
+
+垂直一维模糊的情形类似<a id="page499"/>。同样，我们的线程组是由 256 个线程组成的垂直线段，每个线程负责模糊图像中的一个像素。因此，我们需要在 *y* 方向派发 $\mathrm{ceil}\left(\dfrac{h}{256}\right)$ 个线程组、在 *x* 方向派发 *w* 个线程组，才能让图像中的每个像素都被模糊。
+
+下面的代码计算每个方向要派发多少个线程组，并在计算着色器上启动实际的模糊操作：
+
+```cpp
+void BlurFilter::Execute(ID3D12GraphicsCommandList* cmdList, 
+             ID3D12RootSignature* rootSig,
+             ID3D12PipelineState* horzBlurPSO,
+             ID3D12PipelineState* vertBlurPSO,
+             ID3D12Resource* input, 
+            int blurCount)
+{
+  auto weights = CalcGaussWeights(2.5f);
+  int blurRadius = (int)weights.size() / 2;
+
+  cmdList->SetComputeRootSignature(rootSig);
+
+  cmdList->SetComputeRoot32BitConstants(0, 1, &blurRadius, 0);
+  cmdList->SetComputeRoot32BitConstants(0, (UINT)weights.size(), weights.
+     data(), 1);
+
+  cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(input,
+    D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE));
+
+  cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap0.
+   Get(),
+    D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST));
+
+  // Copy the input (back-buffer in this example) to BlurMap0.
+  cmdList->CopyResource(mBlurMap0.Get(), input);
+  
+  cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap0.
+    Get(),
+    D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));
+
+  cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap1.
+    Get(),
+    D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+
+  for(int i = 0; i < blurCount; ++i)
+  {
+    //
+    // Horizontal Blur pass.
+    //
+
+    cmdList->SetPipelineState(horzBlurPSO);
+
+    cmdList->SetComputeRootDescriptorTable(1, mBlur0GpuSrv);
+    cmdList->SetComputeRootDescriptorTable(2, mBlur1GpuUav);
+```
+
+<a id="page500"/>
+
+```cpp
+    // How many groups do we need to dispatch to cover a row of pixels, where 
+    // each group covers 256 pixels (the 256 is defined in the ComputeShader).
+    UINT numGroupsX = (UINT)ceilf(mWidth / 256.0f);
+    cmdList->Dispatch(numGroupsX, mHeight, 1);
+
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+      mBlurMap0.Get(),
+      D3D12_RESOURCE_STATE_GENERIC_READ, 
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+      mBlurMap1.Get(),
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 
+      D3D12_RESOURCE_STATE_GENERIC_READ));
+
+    //
+    // Vertical Blur pass.
+    //
+
+    cmdList->SetPipelineState(vertBlurPSO);
+
+    cmdList->SetComputeRootDescriptorTable(1, mBlur1GpuSrv);
+    cmdList->SetComputeRootDescriptorTable(2, mBlur0GpuUav);
+
+    // How many groups do we need to dispatch to cover a column of pixels, 
+    // where each group covers 256 pixels (the 256 is defined in the 
+    // ComputeShader).
+    UINT numGroupsY = (UINT)ceilf(mHeight / 256.0f);
+    cmdList->Dispatch(mWidth, numGroupsY, 1);
+
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+      mBlurMap0.Get(),
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS, 
+      D3D12_RESOURCE_STATE_GENERIC_READ));
+
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+      mBlurMap1.Get(),
+      D3D12_RESOURCE_STATE_GENERIC_READ,
+      D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+  }
+}
+```
+
+<Figure src="images/Fig13-8.jpg" alt="28×14 纹理、水平线程组 8×1、垂直线程组 1×8 时的线程派发示意；最右侧与最下方的线程组含有多余线程" figureNumber="图 13.8" caption="考虑一张 28 × 14 的纹理，我们的水平线程组为 8 × 1，垂直线程组为 1 × 8（X × Y 格式）。对水平遍，为覆盖所有像素，我们需要在 x 方向派发 ceil(28/8) = 4 个线程组、在 y 方向派发 14 个线程组。由于 28 不是 8 的倍数，最右侧的线程组中会有不做任何工作的多余线程。对垂直遍，为覆盖所有像素，我们需要在 y 方向派发 ceil(14/8) = 2 个线程组、在 x 方向派发 28 个线程组。由于 14 不是 8 的倍数，最下方的线程组中会有不做任何工作的多余线程。同样的概念适用于使用 256 大小线程组的更大纹理。" />
+
+<Figure src="images/Fig13-9.jpg" alt="左：图像模糊两次的 Blur 演示截图；右：图像模糊八次的 Blur 演示截图" figureNumber="图 13.9" caption="左：图像已被模糊两次的『Blur』演示截图。右：图像已被模糊八次的『Blur』演示截图。" />
+
+<a id="page501"/>
+</section>
+
+<section className="lesson-section" id="s1374">
+<h3 id="s1374h">13.7.4 计算着色器程序</h3>
+
+本节我们来看真正执行模糊的计算着色器程序。我们只讨论水平模糊的情况。垂直模糊的情况与之类似，只是情形转置了。
+
+正如上一节所说，我们的线程组是由 256 个线程组成的水平线段，每个线程负责模糊图像中的一个像素。一种低效的第一种做法是直接实现模糊算法。也就是说，每个线程简单地计算以它正在处理的像素为中心的行矩阵（行矩阵是因为我们在做一维水平遍）像素的加权平均。这种做法的问题在于它需要多次取回同一个纹素（见图 13.10）。
+
+<Figure src="images/Fig13-10.jpg" alt="输入图像中相邻两个像素使用 1×7 模糊核时，八个不同像素中有六个被采样了两次" figureNumber="图 13.10" caption="只考虑输入图像中两个相邻的像素，并假设模糊核为 1 × 7。注意，八个不同像素中有六个被采样了两次——每个像素各一次。" />
+
+我们可以按照 §13.6 描述的策略利用共享内存来优化。每个线程读入一个纹素值并存储到共享内存。所有线程都把自己的纹素值读入共享内存之后，线程们就可以继续执行模糊，但从共享内存读取纹素，访问很快。唯一棘手之处在于，一个有 *n* = 256 个线程的线程组需要 *n* + 2*R* 个纹素才能执行模糊，其中 *R* 是模糊半径（图 13.11）。
+
+<Figure src="images/Fig13-11.jpg" alt="靠近线程组边界的像素会因模糊半径而读取线程组之外的像素" figureNumber="图 13.11" caption="靠近线程组边界的像素会因模糊半径而读取线程组之外的像素。" />
+
+解决办法很简单：我们分配 *n* + 2*R* 个共享内存元素，让 2*R* 个线程各自查找两个纹素值。唯一棘手的是，这要求在共享内存中索引时多做一些簿记；我们不再有第 i 个组内线程 ID 对应共享内存第 i 个元素的对应关系。图 13.12 显示了 *R* = 4 时从线程到共享内存的映射。
+
+<Figure src="images/Fig13-12.jpg" alt="R = 4 时线程到共享内存的映射：最左侧四个线程各读两个纹素存入共享内存，最右侧四个线程亦然，其余线程各读一个纹素" figureNumber="图 13.12" caption="在这个例子中，R = 4。最左边的四个线程各读取两个纹素值并存入共享内存。最右边的四个线程各读取两个纹素值并存入共享内存。其余每个线程只读取一个纹素值并存入共享内存。这样我们就有了用模糊半径 R 模糊 N 个像素所需的全部纹素值。" />
+
+最后要讨论的一种情形是，最左边的线程组和最右边的线程组可能越界索引输入图像，如图 13.13 所示。
+
+<Figure src="images/Fig13-13.jpg" alt="读取超出图像边界的两种情形" figureNumber="图 13.13" caption="我们会读取到图像边界之外的情形。" />
+
+<a id="page502"/>从越界索引读取并不非法——它被定义为返回 0（而写入越界索引等效于无操作）。然而，我们不希望越界时读到 0，因为那意味着 0 颜色（即黑色）会混入边界处的模糊结果。相反，我们希望实现一种类似于 *clamp* 纹理寻址模式的做法：如果读到越界值，就返回与边界纹素相同的值。这可以通过钳制索引来实现：
+
+```cpp
+// Clamp out of bound samples that occur at left image borders.
+int x = max(dispatchThreadID.x - gBlurRadius, 0);
+gCache[groupThreadID.x] = gInput[int2(x, dispatchThreadID.y)];
+
+// Clamp out of bound samples that occur at right image borders.
+int x = min(dispatchThreadID.x + gBlurRadius, gInput.Length.x-1);
+gCache[groupThreadID.x+2*gBlurRadius] = 
+gInput[int2(x, dispatchThreadID.y)];
+
+// Clamp out of bound samples that occur at image borders.
+gCache[groupThreadID.x+gBlurRadius] = 
+gInput[min(dispatchThreadID.xy, gInput.Length.xy-1)];
+```
+
+完整的着色器代码如下所示：
+
+```cpp
+//====================================================================
+// Performs a separable Guassian blur with a blur radius up to 5 pixels.
+//====================================================================
+
+cbuffer cbSettings : register(b0)
+{
+  // We cannot have an array entry in a constant buffer that gets mapped onto
+  // root constants, so list each element. 
+  
+  int gBlurRadius;
+```
+
+**译者注**：上面注释中的 "Guassian" 应为 "Gaussian"，原书笔误，照录原文。
+
+<a id="page503"/>
+
+```cpp
+  // Support up to 11 blur weights.
+  float w0;
+  float w1;
+  float w2;
+  float w3;
+  float w4;
+  float w5;
+  float w6;
+  float w7;
+  float w8;
+  float w9;
+  float w10;
+};
+
+static const int gMaxBlurRadius = 5;
+
+
+Texture2D gInput       : register(t0);
+RWTexture2D<float4> gOutput : register(u0);
+
+#define N 256
+#define CacheSize (N + 2*gMaxBlurRadius)
+groupshared float4 gCache[CacheSize];
+
+[numthreads(N, 1, 1)]
+void HorzBlurCS(int3 groupThreadID : SV_GroupThreadID,
+            int3 dispatchThreadID : SV_DispatchThreadID)
+{
+  // Put in an array for each indexing.
+  float weights[11] = { w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10 };
+
+  //
+  // Fill local thread storage to reduce bandwidth. To blur 
+  // N pixels, we will need to load N + 2*BlurRadius pixels
+  // due to the blur radius.
+  //
+  
+  // This thread group runs N threads. To get the extra 2*BlurRadius 
+  // pixels, have 2*BlurRadius threads sample an extra pixel.
+  if(groupThreadID.x < gBlurRadius)
+  {
+    // Clamp out of bound samples that occur at image borders.
+    int x = max(dispatchThreadID.x - gBlurRadius, 0);
+    gCache[groupThreadID.x] = gInput[int2(x, dispatchThreadID.y)];
+  }
+  if(groupThreadID.x >= N-gBlurRadius)
+  {
+    // Clamp out of bound samples that occur at image borders.
+    int x = min(dispatchThreadID.x + gBlurRadius, gInput.Length.x-1);
+    gCache[groupThreadID.x+2*gBlurRadius] = gInput[int2(x, dispatchThreadID.y)];
+  }
+
+  // Clamp out of bound samples that occur at image borders.
+  gCache[groupThreadID.x+gBlurRadius] = gInput[min(dispatchThreadID.xy, gInput.Length.xy-1)];
+```
+
+<a id="page504"/>
+
+```cpp
+  // Wait for all threads to finish.
+  GroupMemoryBarrierWithGroupSync();
+  
+  //
+  // Now blur each pixel.
+  //
+
+  float4 blurColor = float4(0, 0, 0, 0);
+  
+  for(int i = -gBlurRadius; i <= gBlurRadius; ++i)
+  {
+    int k = groupThreadID.x + gBlurRadius + i;
+      
+    blurColor += weights[i+gBlurRadius]*gCache[k];
+  }
+  
+  gOutput[dispatchThreadID.xy] = blurColor;
+}
+
+[numthreads(1, N, 1)]
+void VertBlurCS(int3 groupThreadID : SV_GroupThreadID,
+            int3 dispatchThreadID : SV_DispatchThreadID)
+{
+  // Put in an array for each indexing.
+  float weights[11] = { w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10 };
+
+  //
+  // Fill local thread storage to reduce bandwidth. To blur 
+  // N pixels, we will need to load N + 2*BlurRadius pixels
+  // due to the blur radius.
+  //
+  
+  // This thread group runs N threads. To get the extra 2*BlurRadius 
+  // pixels, have 2*BlurRadius threads sample an extra pixel.
+  if(groupThreadID.y < gBlurRadius)
+  {
+    // Clamp out of bound samples that occur at image borders.
+    int y = max(dispatchThreadID.y - gBlurRadius, 0);
+    gCache[groupThreadID.y] = gInput[int2(dispatchThreadID.x, y)];
+  }
+  if(groupThreadID.y >= N-gBlurRadius)
+  {
+    // Clamp out of bound samples that occur at image borders.
+    int y = min(dispatchThreadID.y + gBlurRadius, gInput.Length.y-1);
+    gCache[groupThreadID.y+2*gBlurRadius] = gInput[int2(dispatchThreadID.x, y)];
+  }
+  
+  // Clamp out of bound samples that occur at image borders.
+  gCache[groupThreadID.y+gBlurRadius] = gInput[min(dispatchThreadID.xy, 
+    gInput.Length.xy-1)];
+
+
+  // Wait for all threads to finish.
+  GroupMemoryBarrierWithGroupSync();
+  
+  //
+  // Now blur each pixel.
+  //
+
+  float4 blurColor = float4(0, 0, 0, 0);
+  
+  for(int i = -gBlurRadius; i <= gBlurRadius; ++i)
+  {
+    int k = groupThreadID.y + gBlurRadius + i;
+      
+    blurColor += weights[i+gBlurRadius]*gCache[k];
+  }
+  
+  gOutput[dispatchThreadID.xy] = blurColor;
+}
+```
+
+对最后一行
+
+```cpp
+  gOutput[dispatchThreadID.xy] = blurColor;
+```
+
+<a id="page505"/>在最右侧的线程组中，有可能存在不对应输出纹理中任何元素的多余线程（图 13.13）。也就是说，`dispatchThreadID.xy` 对输出纹理来说会是越界索引。不过，我们不需要操心处理这种情况，因为越界写入等效于无操作。
+</section>
+
+<section className="lesson-section" id="s138">
+<h2>13.8 更多资源</h2>
+
+计算着色器编程本身就是一个独立学科，有几本关于用 GPU 做计算程序的书：
+
+1. David B. Kirk 与 Wen-mei W. Hwu 所著 *Programming Massively Parallel Processors: A Hands-on Approach*。
+2. Aaftab Munshi、Benedict R. Gaster、Timothy G. Mattson、James Fung 与 Dan Ginsburg 所著 *OpenCL Programming Guide*。
+
+CUDA 和 OpenCL 这类技术只是访问 GPU 编写计算程序的不同 API。CUDA 和 OpenCL 程序的最佳实践同样是 Direct Compute 程序的最佳实践，因为这些程序都在同样的硬件上执行。本章我们展示了 DirectCompute 的大部分语法，所以把 CUDA 或 OpenCL 程序移植到 DirectCompute 应当没有困难。
+
+Chuck Walbourn 发布了一个博客页面，包含许多 Direct Compute 演讲的链接：
+
+<a href="http://blogs.msdn.com/b/chuckw/archive/2010/07/14/directcompute.aspx">http://blogs.msdn.com/b/chuckw/archive/2010/07/14/directcompute.aspx</a>
+
+此外，Microsoft 的 Channel 9 有一系列关于<a id="page506"/> Direct Compute 编程的讲座视频：
+
+<a href="http://channel9.msdn.com/tags/DirectCompute-Lecture-Series/">http://channel9.msdn.com/tags/DirectCompute-Lecture-Series/</a>
+
+最后，NVIDIA 有一整个关于 CUDA 培训的版块。
+
+<a href="http://developer.nvidia.com/cuda-training">http://developer.nvidia.com/cuda-training</a>
+
+特别是，其中有一些来自伊利诺伊大学的 CUDA 编程完整视频课程，我们强烈推荐。再次强调，CUDA 只是访问 GPU 计算功能的另一个 API。一旦你理解了语法，GPU 计算的难点在于学习如何为它编写高效的程序。通过学习这些 CUDA 讲座，你会更好地理解 GPU 硬件的工作方式，从而写出最优的代码。
+</section>
+
+<section className="lesson-section" id="s139">
+<h2>13.9 本章小结</h2>
+
+1. `ID3D12GraphicsCommandList::Dispatch` API 调用派发一个线程组网格。每个线程组是一个线程的三维网格；每个线程组的线程数由计算着色器中的 `[numthreads(x,y,z)]` 属性指定。出于性能原因，线程总数应当是线程束大小（NVIDIA 硬件为 32）的倍数或 wavefront 大小（ATI 硬件为 64）的倍数。
+2. 为确保并行性，每个多处理器至少应当派发两个线程组。所以如果你的硬件有十六个多处理器，那么至少应当派发三十二个线程组，使多处理器始终有活干。未来的硬件很可能有更多多处理器，所以线程组数量应当更高，以确保你的程序能良好扩展到未来的硬件。
+3. 一旦线程组被分配到某个多处理器，线程组中的线程在 NVIDIA 硬件上就被划分为 32 线程的线程束。多处理器一次以 SIMD 方式处理一个线程束（即对线程束中的每个线程执行相同的指令）。如果一个线程束停顿，比如要取回纹理内存，多处理器可以快速切换并为另一个线程束执行指令以隐藏这一延迟。这使多处理器始终忙碌。你可以看出为什么建议线程组大小是线程束大小的倍数；如果不是，那么当线程组被划分成线程束时，会出现包含无事可做的线程的线程束。
+4. 纹理资源可以<a id="page507"/>由计算着色器作为输入访问：为纹理创建一个 SRV 并把它绑定到计算着色器。读写纹理（`RWTexture`）是计算着色器可以读写输出的纹理。要为计算着色器设置一个用于读写的纹理，需为该纹理创建一个 UAV（无序访问视图）并绑定到计算着色器。纹理元素可以用 operator [] 记法索引，或通过纹理坐标和采样器状态用 `SampleLevel` 方法采样。
+5. 结构化缓冲是由相同类型元素组成的缓冲，就像数组。其类型可以是用户定义的类型，例如用 struct 定义的类型。只读结构化缓冲在 HLSL 中这样定义：
+
+   ```cpp
+   StructuredBuffer<DataType> gInputA;
+   ```
+
+   读写结构化缓冲在 HLSL 中这样定义：
+
+   ```cpp
+   RWStructuredBuffer<DataType> gOutput;
+   ```
+
+   只读缓冲资源可以由计算着色器作为输入访问：为结构化缓冲创建一个 SRV 并绑定到计算着色器。读写缓冲资源可以由计算着色器读写访问：为结构化缓冲创建一个 UAV 并绑定到计算着色器。
+6. 各种线程 ID 通过系统值传入计算着色器。这些 ID 常用于索引资源和共享内存。
+7. 消耗与追加结构化缓冲在 HLSL 中这样定义：
+
+   ```cpp
+   ConsumeStructuredBuffer<DataType> gInput;
+   AppendStructuredBuffer<DataType> gOutput;
+   ```
+
+   如果你不在乎数据元素被处理和写入输出缓冲的顺序，消耗与追加结构化缓冲就很有用，因为它让你可以避免索引语法。注意，追加缓冲不会自动增长，它们必须足够大，能存储你将追加到其中的所有数据元素。
+8. 线程组会获得一段所谓的共享内存或线程局部存储。访问这块内存很快，可以认为与硬件缓存一样快。这块共享内存缓存可用于优化，或是某些算法实现所必需的。在计算着色器代码中，共享内存的声明方式如下：
+
+   ```cpp
+   groupshared float4 gCache[N];
+   ```
+
+   数组大小 <a id="page508"/>`N` 可以随你指定，但组共享内存的最大尺寸是 32kb。假设多处理器支持 32kb 的共享内存上限，为了性能，一个线程组使用的共享内存不应超过 16kb；否则就不可能把两个线程组放进同一个多处理器。
+9. 尽可能避免在计算处理和渲染之间切换，因为切换有开销。一般而言，每一帧尽量先做完所有计算工作，再做所有渲染工作。
+</section>
+
+<section className="lesson-section" id="s1310">
+<h2>13.10 习题</h2>
+
+1. 编写一个计算着色器，输入一个由 64 个三维向量组成的结构化缓冲，各向量的模长随机分布在 [1, 10] 内。计算着色器计算这些向量的长度，并把结果输出到一个浮点缓冲。把结果复制到 CPU 内存并保存到文件。验证所有长度都在 [1, 10] 内。
+2. 用类型化缓冲重做上一习题；即输入缓冲用 `Buffer<float3>`，输出缓冲用 `Buffer<float>`。
+3. 假设在之前的习题中，我们不关心向量被归一化的顺序。用追加与消耗缓冲重做习题 1。
+4. 调研双边滤波（bilateral blur）技术并在计算着色器上实现它。用双边滤波重做"Blur"演示。
+5. 迄今为止，我们的演示都是用 Waves.h/.cpp 中的 `Waves` 类在 CPU 上做二维波动方程。把它移植到 GPU 实现。用 `float` 类型的纹理存储前一时刻、当前时刻和下一时刻的高度解。因为 UAV 是可读写的，我们可以全程只用 UAV 而不用操心 SRV：
+
+   ```cpp
+   RWTexture2D<float> gPrevSolInput : register(u0);
+   RWTexture2D<float> gCurrSolInput : register(u1);
+   RWTexture2D<float> gOutput    : register(u2); 
+   ```
+
+   用计算着色器执行波动更新计算。可以用单独的计算着色器扰动水面以生成波浪。更新网格高度之后，你可以渲染一个与波动纹理顶点分辨率相同的三角形网格（这样每个网格顶点对应一个纹素），并把当前波动解纹理绑定到一个新的"waves"顶点着色器。然后在顶点着色器中，你可以采样该解纹理<a id="page509"/>来偏移高度（这称为*位移映射*（displacement mapping））并估计法线。
+
+   ```cpp
+   VertexOut VS(VertexIn vin)
+   {
+     VertexOut vout = (VertexOut)0.0f;
+     
+     
+   #ifdef DISPLACEMENT_MAP
+     // Sample the displacement map using non-transformed [0,1]^2 tex-coords.
+     vin.PosL.y += gDisplacementMap.SampleLevel(gsamLinearWrap, vin.TexC, 1.0f).r;
+     // Estimate normal using finite difference.
+     float du = gDisplacementMapTexelSize.x;
+     float dv = gDisplacementMapTexelSize.y;
+     float l = gDisplacementMap.SampleLevel( gsamPointClamp, 
+       vin.TexC-float2(du, 0.0f), 0.0f ).r;
+     float r = gDisplacementMap.SampleLevel( gsamPointClamp, 
+       vin.TexC+float2(du, 0.0f), 0.0f ).r;
+     float t = gDisplacementMap.SampleLevel( gsamPointClamp, 
+       vin.TexC-float2(0.0f, dv), 0.0f ).r;
+     float b = gDisplacementMap.SampleLevel( gsamPointClamp, 
+       vin.TexC+float2(0.0f, dv), 0.0f ).r;
+
+     vin.NormalL = normalize( float3(-r+l, 2.0f*gGridSpatialStep, b-t) );
+     
+   #endif
+     
+     
+     // Transform to world space.
+     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+     vout.PosW = posW.xyz;
+
+     // Assumes nonuniform scaling; otherwise, need to use inverse-transpose of 
+     // world matrix.
+     vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+
+     // Transform to homogeneous clip space.
+     vout.PosH = mul(posW, gViewProj);
+     
+     // Output vertex attributes for interpolation across triangle.
+     float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
+     vout.TexC = mul(texC, gMatTransform).xy;
+
+     return vout;
+   }
+   ```
+
+   把你的性能结果（每帧耗时）与 512 × 512 网格点的 CPU 实现在 release 模式下作比较。
+6. *Sobel 算子*（Sobel Operator）测量图像中的边缘。对每个像素，它估计梯度的模。梯度模大的像素意味着该像素与其相邻像素之间的颜色差异<a id="page510"/>变化剧烈，所以该像素必在边缘上。梯度模小的像素意味着该像素与其相邻像素之间的颜色差异变化缓慢，所以该像素不在边缘上。注意，Sobel 算子并不返回二值结果（在边缘上或不在边缘上）；它返回 [0, 1] 范围内的灰度值，表示边缘"陡峭程度"，其中 0 表示没有边缘（颜色在像素局部不变化），1 表示非常陡峭的边缘或不连续（颜色在像素局部变化很大）。Sobel 图像的反相（1 − *c*）往往更有用，因为白色表示没有边缘、黑色表示边缘（见图 13.14）。
+
+   <Figure src="images/Fig13-14.jpg" alt="应用 Sobel 算子后的图像中白色像素表示边缘；Sobel 算子反相图像中黑色像素表示边缘" figureNumber="图 13.14" caption="左：应用 Sobel 算子之后的图像，白色像素表示边缘。在 Sobel 算子的反相图像中，黑色像素表示边缘。" />
+
+   如果你把原图像与 Sobel 算子生成图像的反相做颜色相乘，就会得到一种风格化的卡通/连环画效果，让边缘看起来像黑色钢笔笔画（见图 13.15）。你还可以把这种风格化卡通/连环画效果更进一步：先模糊原图像以冲淡细节，再对模糊后的图像应用 Sobel 算子生成边缘检测图像，最后把模糊图像与边缘检测图像的反相相乘。
+
+   <Figure src="images/Fig13-15.jpg" alt="把原图像与边缘检测图像的反相相乘，得到边缘像黑色钢笔笔画的风格化效果" figureNumber="图 13.15" caption="把原图像与边缘检测图像的反相相乘，产生边缘看起来像黑色钢笔笔画的风格化效果。" />
+
+   用渲染到纹理和计算着色器实现 *Sobel 算子*。生成边缘检测图像之后，把原图像与 Sobel 算子生成图像的反相<a id="page511"/>相乘，得到图 13.15 所示的结果。所需的着色器代码如下：
+
+   ```cpp
+   //====================================================================
+   // Performs edge detection using Sobel operator.
+   //====================================================================
+
+   Texture2D gInput       : register(t0);
+   RWTexture2D<float4> gOutput : register(u0);
+
+
+   // Approximates luminance ("brightness") from an RGB value. These weights are 
+   // derived from experiment based on eye sensitivity to different wavelengths 
+   // of light.
+   float CalcLuminance(float3 color)
+   {
+     return dot(color, float3(0.299f, 0.587f, 0.114f));
+   }
+
+   [numthreads(16, 16, 1)]
+   void SobelCS(int3 dispatchThreadID : SV_DispatchThreadID)
+   {
+     // Sample the pixels in the neighborhood of this pixel.
+     float4 c[3][3];
+     for(int i = 0; i < 3; ++i)
+     {
+       for(int j = 0; j < 3; ++j)
+       {
+         int2 xy = dispatchThreadID.xy + int2(-1 + j, -1 + i);
+         c[i][j] = gInput[xy]; 
+       }
+     }
+
+     // For each color channel, estimate partial x derivative using Sobel scheme.
+     float4 Gx = -1.0f*c[0][0] - 2.0f*c[1][0] - 1.0f*c[2][0] + 
+       1.0f*c[0][2] + 2.0f*c[1][2] + 1.0f*c[2][2];
+
+     // For each color channel, estimate partial y derivative using Sobel scheme.
+     float4 Gy = -1.0f*c[2][0] - 2.0f*c[2][1] - 1.0f*c[2][1] + 
+       1.0f*c[0][0] + 2.0f*c[0][1] + 1.0f*c[0][2];
+
+     // Gradient is (Gx, Gy). For each color channel, compute magnitude to
+     // get maximum rate of change.
+     float4 mag = sqrt(Gx*Gx + Gy*Gy);
+
+     // Make edges black, and nonedges white.
+     mag = 1.0f - saturate(CalcLuminance(mag.rgb));
+
+     gOutput[dispatchThreadID.xy] = mag;
+   }
+   ```
+
+   **译者注**：上面 `Gy` 的计算在原书中写作 `-1.0f*c[2][0] - 2.0f*c[2][1] - 1.0f*c[2][1]`，按 Sobel 算子的对称结构，第三个减项应为 `c[2][2]`，此处照录原文。
+
+   <a id="page512"/>
+
+   ```cpp
+   //****************************************************************************
+   // Composite.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+   //
+   // Combines two images.
+   //****************************************************************************
+
+   Texture2D gBaseMap : register(t0);
+   Texture2D gEdgeMap : register(t1);
+
+   SamplerState gsamPointWrap    : register(s0);
+   SamplerState gsamPointClamp    : register(s1);
+   SamplerState gsamLinearWrap    : register(s2);
+   SamplerState gsamLinearClamp   : register(s3);
+   SamplerState gsamAnisotropicWrap : register(s4);
+   SamplerState gsamAnisotropicClamp : register(s5);
+
+   static const float2 gTexCoords[6] = 
+   {
+     float2(0.0f, 1.0f),
+     float2(0.0f, 0.0f),
+     float2(1.0f, 0.0f),
+     float2(0.0f, 1.0f),
+     float2(1.0f, 0.0f),
+     float2(1.0f, 1.0f)
+   };
+
+   struct VertexOut
+   {
+     float4 PosH   : SV_POSITION;
+     float2 TexC   : TEXCOORD;
+   };
+
+   VertexOut VS(uint vid : SV_VertexID)
+   {
+     VertexOut vout;
+     
+     vout.TexC = gTexCoords[vid];
+     
+     // Map [0,1]^2 to NDC space.
+     vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f, 
+      1.0f);
+
+     return vout;
+   }
+
+   float4 PS(VertexOut pin) : SV_Target
+   {
+     float4 c = gBaseMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);
+     float4 e = gEdgeMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);
+     
+     // Multiple edge map with original image.
+     return c*e;
+   }
+   ```
+</section>
+
+

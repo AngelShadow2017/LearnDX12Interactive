@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<p class="fm-ct1"><a href="toc.html#toc-int01" id="int01">I<span class="sc">NTRODUCTION</span></a></p>
+<p class="tx1">Direct3D 12 is a rendering library for writing high-performance 3D graphics applications using modern graphics hardware on various Windows 10 platforms (Windows Desktop, Mobile, and Xbox One). Direct3D is a low-level library in the sense that its application programming interface (API) closely models the underlying graphics hardware it controls. The predominant consumer of Direct3D is the games industry, where higher level rendering engines are built on top of Direct3D. However, other industries need high performance interactive 3D graphics as well, such as medical and scientific visualization and architectural walkthrough. In addition, with every new PC being equipped with a modern graphics card, non-3D applications are beginning to take advantage of the GPU (graphics processing unit) to offload work to the graphics card for intensive calculations; this is known as <i>general purpose GPU computing</i>, and Direct3D provides the compute shader API for writing general purpose GPU programs. Although Direct3D 12 is usually programmed from native C++, the SharpDX team (<a href="http://sharpdx.org/">http://sharpdx.org/</a>) is working on .NET wrappers so that you can access this powerful 3D graphics API from managed applications. </p>
+<p class="tx">This book presents an introduction to programming interactive computer graphics, with an emphasis on game development, using Direct3D 12. It teaches the fundamentals of Direct3D and shader programming, after which the reader will be prepared to go on and learn more advanced techniques. The book is divided into three main parts. Part I explains the mathematical tools that will be used throughout this book. Part II shows how to implement fundamental tasks in Direct3D, such as initialization; defining 3D geometry; setting up cameras; creating vertex, pixel, geometry, and compute shaders; lighting; texturing; blending; stenciling; and tessellation. Part III is largely about applying Direct3D to implement a variety of interesting techniques and special effects, such as working with animated character meshes, picking, environment mapping, normal mapping, real-time shadows, and ambient occlusion. </p>
+<p class="tx">For the beginner, this book is best read front to back. The chapters have been organized so that the difficulty increases progressively with each chapter. In this way, there are no sudden jumps in complexity leaving the reader lost. In general, for a particular chapter, we will use the techniques and concepts previously developed. Therefore, it is important that you have mastered the material of a chapter before continuing. Experienced readers can pick the chapters of interest.</p>
+<p class="tx">Finally, you may be wondering what kinds of games you can develop after reading this book. The answer to that question is best obtained by skimming through this book and seeing the types of applications that are developed. From that you should be able to visualize the types of games that can be developed based on the techniques taught in this book and some of your own ingenuity.</p>
+<p class="h1" id="int-h1"><a href="toc.html#toc-int-h1"><b>INTENDED AUDIENCE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">This book was designed with the following three audiences in mind: </p>
+<ol><li>Intermediate level C++ programmers who would like an introduction to 3D programming using the latest iteration of Direct3D.</li>
+<li>3D programmers experienced with an API other than DirectX (e.g., OpenGL) who would like an introduction to Direct3D 12</li>
+<li>Experienced Direct3D programmers wishing to learn the latest version of Direct3D. </li></ol>
+<p class="h1" id="int-h2"><a href="toc.html#toc-int-h2"><b>PREREQUISITES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">It should be emphasized that this is an introduction to Direct3D 12, shader programming, and 3D game programming; it is <i>not</i> an introduction to general computer programming. The reader should satisfy the following prerequisites:</p>
+<ol><li>High School mathematics: algebra, trigonometry, and (mathematical) functions, for example.</li>
+<li>Competence with Visual Studio: should know how to create projects, add files, and specify external libraries to link, for example.</li>
+<li>Intermediate C++ and data structure skills: comfortable with pointers, arrays, operator overloading, linked lists, inheritance and polymorphism, for example. </li>
+<li>Familiarity with Windows programming with the Win32 API is helpful, but not required; we provide a Win32 primer in Appendix A.</li></ol>
+<p class="h1" id="int-h3"><a href="toc.html#toc-int-h3"><b>REQUIRED DEVELOPMENT TOOLS AND HARDWARE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The following are needed to program Direct3D 12 applications:</p>
+<ol><li>Windows 10.</li>
+<li>Visual Studio 2015 or later.</li>
+<li>A graphics card that supports Direct3D 12. The demos in this book were tested on a Geforce GTX 760.</li></ol>
+<p class="h1" id="int-h4"><a href="toc.html#toc-int-h4"><b>USING THE DIRECTX SDK DOCUMENTATION AND SDK SAMPLES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Direct3D is a huge API and we cannot hope to cover all of its details in this one book. Therefore, to obtain extended information it is imperative that you learn how to use the DirectX SDK documentation. The most up to date documentation will be available on MSDN:</p>
+<p class="tx"><i><a href="https://msdn.microsoft.com/en-us/library/windows/desktop/dn899121%28v=vs.85%29.aspx">https://msdn.microsoft.com/en-us/library/windows/desktop/dn899121%28v=vs.85%29.aspx</a></i></p>
+<p class="tx">Figure <a href="intro.html#fig1">1</a> shows a screenshot of the online documentation.</p>
+<p class="tx">The DirectX documentation covers just about every part of the DirectX API; therefore it is very useful as a reference, but because the documentation doesn&rsquo;t go into much depth or assumes some previous knowledge, it isn&rsquo;t the best learning tool. However, it does get better and better with every new DirectX version released.</p>
+<p class="tx">As said, the documentation is primarily useful as a reference. Suppose you come across a DirectX related type or function, say the function <span class="code">ID3D12Device::CreateCommittedResource</span>, which you would like more information on. You simply do a search in the documentation and get a description of the object type, or in this case function; see Figure <a href="intro.html#fig2">2</a>.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In this book we may direct you to the documentation for further details from time to time. </i></p>
+</td></tr>
+</tbody>
+</table>
+<p class="caption"><img src="images/Fig1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig1"><b><i>Figure 1.</i></b>&nbsp;&nbsp;Direct3D Programming Guide in the DirectX documentation.</p>
+<p class="caption"><img src="images/Fig2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig2"><b><i>Figure 2.</i></b>&nbsp;&nbsp;Getting documentation of a function.</p>
+
+<p class="tx">We would also like to point out the available Direct3D 12 sample programs that are available online:</p>
+<p class="tx"><i><a href="https://github.com/Microsoft/DirectX-Graphics-Samples">https://github.com/Microsoft/DirectX-Graphics-Samples</a></i></p>
+<p class="tx">More samples should come in the future, and also be on the lookout for Direct3D 12 samples on NVIDIA&rsquo;s, AMD&rsquo;s, and Intel&rsquo;s websites.</p>
+<p class="h1" id="int-h5"><a href="toc.html#toc-int-h5"><b>CLARITY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Although we strive to write efficient code and follow best Direct3D 12 programming practices, the main goal of each sample program is to demonstrate Direct3D concepts or graphics programming techniques. Writing the most optimal code was not the goal, and would likely obfuscate the ideas trying to be illustrated. Keep this in mind if you are using any of the sample code in your own projects, as you may wish to rework it for better efficiency. Moreover, in order to focus on the Direct3D API, we have built minimal infrastructure on top of Direct3D. This means we hardcode values and define things in the source code that might normally be data driven. In a large 3D application, you will likely implement a rendering engine on top of Direct3D; however, the topic of this book is the Direct3D API, not rendering engine design.  </p>
+<p class="h1" id="int-h6"><a href="toc.html#toc-int-h6"><b>SAMPLE PROGRAMS AND ONLINE SUPPLEMENTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The website for this book (<i><a href="http://www.d3dcoder.net">www.d3dcoder.net</a></i> and <i><a href="http://www.merclearning.com">www.merclearning.com</a></i>) plays an integral part in getting the most out of this book. On the website you will find the complete source code and project files for every samples in this book. In many cases, DirectX programs are too large to fully embed in a textbook; therefore, we only embed relevant code fragments based on the ideas being shown. It is highly recommended that the reader study the corresponding demo code to see the program in its entirety. (We have aimed to make the demos small and focused for easy study.) As a general rule, the reader should be able to implement a chapter&rsquo;s demo(s) on his or her own after reading the chapter and spending some time studying the demo code. In fact, a good exercise is trying to implement the samples on your own using the book and sample code as a reference.</p>
+<p class="h1" id="int-h7"><a href="toc.html#toc-int-h7"><b>DEMO PROJECT SETUP IN VISUAL STUDIO 2010</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The demos for this book can be opened simply by double clicking the corresponding project file (.vcxproj) or solution file (.sln). This section describes how to create and build a project from scratch using the book&rsquo;s demo application framework using Visual Studio 2015 (VS15). As a working example, we will show how to recreate and build the &ldquo;Box&rdquo; demo of Chapter <a href="ch06.html#chap06">6</a>.</p>
+<p class="h2" id="int-h2-1"><a href="toc.html#toc-int-h2-1"><b>Download the Book&rsquo;s Source Code</b></a></p>
+<p class="tx1">First, download the book&rsquo;s source code to some folder on your hard drive. For the sake of discussion, we will assume this folder is <i>C:\d3d12book</i>. In the source code folder, you will see a list of folders for each chapter. Each folder contains the code projects for the given chapter. Note also a folder called <i>Common</i>; this folder contains shared source code that is reused in all of the demo projects. Now, in the source code folder, create a new folder where you want to store your demos. For example, <i>C:\d3d12book\MyDemos</i>. This folder is where you will create new projects based on the book&rsquo;s sample framework.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>This directory structure is not completely necessary, but it is the structure the book demos follow. If you are comfortable with setting additional include paths, you can put your demo projects anywhere so long as you direct Visual Studio how to find the source code in the Common directory.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="int-h2-2"><a href="toc.html#toc-int-h2-2"><b>Create a Win32 Project</b></a></p>
+<p class="tx1">First launch VS15, then go to the main menu and select <b>File-&gt;New-&gt;Project,</b> as shown in Figure <a href="intro.html#fig3">3</a>.</p>
+<p class="tx">The New Project dialog box will appear (Figure <a href="intro.html#fig4">4</a>). Select <b>Visual C++ &gt; Win32</b> from the Visual C++ Project Types tree control on the left. On the right, select <b>Win32 Project.</b> Next, give the project a name and specify the location you wish to store the project folder. Also uncheck <b>Create directory for solution,</b> if it is initially checked by default. Now hit <b>OK.</b></p>
+<p class="tx">A new dialog box will appear. On the left, there are two options: Overview and Application Settings. Select <b>Application Settings,</b> which produces the dialog box shown in Figure <a href="intro.html#fig5">5</a>. From here, be sure that <b>Windows application</b> is chosen, and the <b>Empty project</b> box is checked. Now press the <b>Finish</b> button. At this point, you have successfully created an empty Win32 project, but there are still some things to do before you can build a DirectX project demo.</p>
+
+<p class="caption"><img src="images/Fig3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3"><b><i>Figure 3.</i></b>&nbsp;&nbsp;Creating a new project.</p>
+
+<p class="caption"><img src="images/Fig4.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig4"><b><i>Figure 4.</i></b>&nbsp;&nbsp;New Project settings.</p>
+
+<p class="caption"><img src="images/Fig5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5"><b><i>Figure 5.</i></b>&nbsp;&nbsp;Application settings.</p>
+
+<p class="h2" id="int-h2-3"><a href="toc.html#toc-int-h2-3"><b>Linking the DirectX Libraries</b></a></p>
+<p class="tx1">We link the necessary library files through the source code using <span class="code">#pragma</span>s in <i>Common/d3dApp.h</i> like so: </p>
+<p class="code"><span class="code">// Link necessary d3d12 libraries.</span></p>
+<p class="code"><span class="code">#pragma comment(lib,"d3dcompiler.lib")</span></p>
+<p class="code"><span class="code">#pragma comment(lib, "D3D12.lib")</span></p>
+<p class="code"><span class="code">#pragma comment(lib, "dxgi.lib")</span></p>
+<p class="tx">For making demo applications, this saves us from the additional step of opening the project property pages and specifying additional dependencies under the Linker settings. </p>
+<p class="h2" id="int-h2-4"><a href="toc.html#toc-int-h2-4"><b>Adding the Source Code and Building the Project</b></a></p>
+<p class="tx1">Finally, our project setup is complete. We can now add our source code files to the project and build it. First, copy the &ldquo;Box&rdquo; demo source code (<i>d3d12book\Chapter <a href="ch06.html#chap06">6</a>  Drawing in Direct3D\Box</i>) <i>BoxApp.cpp</i> and the <i>Shaders</i> folder to your project&rsquo;s directory. </p>
+
+
+<p class="caption"><img src="images/Fig6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig6"><b><i>Figure 6.</i></b>&nbsp;&nbsp;Solution Explorer after adding the required source code files for the &ldquo;Box&rdquo; demo.</p>
+
+<p class="tx">After you copy the files, follow these steps to add the code to your project.</p>
+<ol><li>Right click on the project name under the Solution Explorer and select <b>Add &gt; Existing Item&hellip;</b> from the dropdown menu, and add <i>BoxApp.cpp</i> to the project. </li>
+<li>Right click on the project name under the Solution Explorer and select <b>Add &gt;  Existing Item&hellip;</b> from the dropdown menu, navigate to where you placed the book&rsquo;s <i>Common</i> directory code, and add all the <i>.h/.cpp</i> files from that directory to the project. Your solution explorer should look like Figure <a href="intro.html#fig6">6</a>.</li>
+<li>Right click on the project name under the Solution Explorer and select <b>Properties</b> from the context menu. Under <b>Configuration Properties &gt; General</b> tab, make sure the <b>Target Platform Version</b> is set to version <b>10.x</b> to target Windows 10. Then click <b>Apply.</b></li>
+<li>The source code files are now part of the project, and you can now go to the main menu, and select <b>Debug-&gt;Start Debugging</b> to compile, link, and execute the demo. The application in Figure <a href="intro.html#fig7">7</a> should appear. </li></ol>
+
+<p class="caption"><img src="images/Fig7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig7"><b><i>Figure 7.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Box&rdquo; demo.</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>A lot of the code in the Common directory is built up over the course of the book. So we recommend that you do not start looking through the code. Instead, wait until you are reading the chapter in the book where that code is covered. </i></p>
+</td></tr>
+</tbody>
+</table>
+</body>
+</html>

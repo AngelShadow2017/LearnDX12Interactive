@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { renderToString } from 'katex';
 import hljs from 'highlight.js/lib/core';
 import cpp from 'highlight.js/lib/languages/cpp';
+import { pageHref } from '@/content/routes';
 import { InlineFigure } from './InlineFigure';
 import { figureAssetHref } from './figurePath';
+import { isSourceCodeParagraph, parseCodeBlock } from './sourceCodeParser';
 
 hljs.registerLanguage('cpp', cpp);
 
 const sourceLoaders = import.meta.glob('../content/source/*.txt', {
+  query: '?raw',
+  import: 'default',
+}) as Record<string, () => Promise<string>>;
+const oebpsSourceLoaders = import.meta.glob('../content/source-html/*.html', {
   query: '?raw',
   import: 'default',
 }) as Record<string, () => Promise<string>>;
@@ -67,21 +73,32 @@ export type SourceBlock =
   | { kind: 'image'; id: string; text: string; caption?: string; figureNumber?: string }
   | { kind: 'list' | 'objectives'; id: string; ordered: boolean; items: string[] };
 
+type LoadedSource = { format: 'oebps' | 'text'; content: string };
+
 export function OriginalBookText({ chapterId }: { chapterId: string }) {
-  const [source, setSource] = useState('');
+  const [source, setSource] = useState<LoadedSource>();
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
-    setSource('');
+    setSource(undefined);
     setFailed(false);
+    const oebpsLoader = oebpsSourceLoaders[`../content/source-html/${chapterId}.html`];
+    if (oebpsLoader) {
+      oebpsLoader().then((content) => {
+        if (active) setSource({ format: 'oebps', content });
+      }).catch(() => {
+        if (active) setFailed(true);
+      });
+      return () => { active = false; };
+    }
     const loader = sourceLoaders[`../content/source/${chapterId}.txt`];
     if (!loader) {
       setFailed(true);
       return () => { active = false; };
     }
-    loader().then((text) => {
-      if (active) setSource(text);
+    loader().then((content) => {
+      if (active) setSource({ format: 'text', content });
     }).catch(() => {
       if (active) setFailed(true);
     });
@@ -91,7 +108,11 @@ export function OriginalBookText({ chapterId }: { chapterId: string }) {
   if (failed) return <div className="callout callout--warning"><b>暂时无法载入原文</b><p>请检查随书源文档是否包含在构建产物中。</p></div>;
   if (!source) return <p className="source-loading" role="status">正在载入本章原文…</p>;
 
-  const blocks = parseSource(source, chapterId);
+  if (source.format === 'oebps') {
+    return <OebpsBookText html={source.content} chapterId={chapterId} />;
+  }
+
+  const blocks = parseSource(source.content, chapterId);
   return <div className="original-text">
     <div className="source-edition-note"><b>英文原文</b><span>按原书段落顺序排布；公式图可放大查看。</span></div>
     {blocks.map((block) => {
@@ -124,6 +145,286 @@ export function OriginalBookText({ chapterId }: { chapterId: string }) {
       return <SourceParagraph id={block.id} key={block.id} text={block.text} />;
     })}
   </div>;
+}
+
+function OebpsBookText({ html, chapterId }: { html: string; chapterId: string }) {
+  const renderedHtml = useMemo(() => prepareOebpsHtml(html, chapterId), [html, chapterId]);
+  return <div className="original-text oebps-text">
+    <div className="source-edition-note"><b>English 原文</b><span>直接采用 EPUB 的段落、代码、公式和插图结构；插图可放大查看。</span></div>
+    <div
+      className="oebps-content"
+      onClick={(event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const button = target.closest<HTMLButtonElement>('[data-figure="true"]');
+        if (button?.dataset.src) window.dispatchEvent(new CustomEvent('dx12zh:open-image', { detail: { src: button.dataset.src } }));
+      }}
+      dangerouslySetInnerHTML={{ __html: renderedHtml }}
+    />
+  </div>;
+}
+
+const safeBookTags = new Set([
+  'A', 'B', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CITE', 'CODE', 'DD', 'DIV', 'DL', 'DT',
+  'EM', 'FIGCAPTION', 'FIGURE', 'H2', 'H3', 'H4', 'HR', 'I', 'LI', 'OL',
+  'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'TABLE', 'TBODY',
+  'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL', 'IMG',
+]);
+
+function prepareOebpsHtml(source: string, chapterId: string): string {
+  const document = new DOMParser().parseFromString(source, 'text/html');
+  const { body } = document;
+  body.querySelectorAll('script, style, link, meta, iframe, object, embed, form, input, button, svg, video, audio, source').forEach((element) => element.remove());
+
+  // The chapter title is already shown in the app's chapter header. Keep its
+  // original page and TOC anchors while dropping the EPUB's separate title page.
+  if (/^ch\d{2}$/.test(chapterId)) {
+    const cover = Array.from(body.children).find((element) => {
+      if (element.tagName !== 'TABLE') return false;
+      return Array.from(element.querySelectorAll('a[id]')).some((anchor) => anchor.id.startsWith('chap'));
+    });
+    if (cover) {
+      const aliases = Array.from(cover.querySelectorAll<HTMLAnchorElement>('a[id]')).flatMap((anchor) => [anchor.id, ...Array.from(cover.querySelectorAll<HTMLAnchorElement>(`a[href*="#${anchor.id}"]`)).map((link) => link.hash.slice(1))]);
+      const target = cover.querySelector('a[id^="chap"]');
+      const tocHash = target?.getAttribute('href')?.split('#')[1];
+      if (tocHash) aliases.push(tocHash);
+      const afterCover = cover.nextSibling;
+      cover.remove();
+      for (const alias of new Set(aliases)) {
+        if (!/^[\w:.-]+$/.test(alias) || document.getElementById(alias)) continue;
+        const anchor = document.createElement('span');
+        anchor.id = alias;
+        anchor.className = 'source-anchor-alias';
+        body.insertBefore(anchor, afterCover);
+      }
+    }
+  }
+
+  for (const paragraph of Array.from(body.querySelectorAll('p'))) {
+    if (paragraph.classList.contains('h1-rule') || paragraph.classList.contains('h1-rule1') || paragraph.classList.contains('h1-rule2esbhd')) {
+      paragraph.remove();
+      continue;
+    }
+    if (paragraph.classList.contains('h1') || paragraph.classList.contains('h2')) {
+      const isMajor = paragraph.classList.contains('h1');
+      const heading = document.createElement(isMajor ? 'h2' : 'h3');
+      const originalId = paragraph.id;
+      if (originalId) heading.id = originalId;
+      while (paragraph.firstChild) heading.append(paragraph.firstChild);
+      heading.className = isMajor ? 'source-heading source-heading--major' : 'source-heading source-heading--minor';
+      paragraph.replaceWith(heading);
+
+      const tocHref = heading.querySelector('a[href*="toc.html#"]')?.getAttribute('href');
+      const tocAlias = tocHref?.split('#')[1];
+      if (tocAlias) insertSourceAnchor(document, body, heading, tocAlias);
+      if (isMajor && /^ch\d{2}$/.test(chapterId)) {
+        const section = heading.textContent?.match(/^(\d+)\.(\d+)\b/);
+        if (section) insertSourceAnchor(document, body, heading, `s${section[1]}${section[2]}`);
+      }
+      if (heading.id) insertSourceAnchor(document, body, heading, originalId);
+      continue;
+    }
+    if (!paragraph.textContent?.replace(/\u00a0/g, ' ').trim() && !paragraph.querySelector('img, a[id]')) paragraph.remove();
+  }
+
+  for (const link of Array.from(body.querySelectorAll<HTMLAnchorElement>('a[href*="toc.html#"]'))) {
+    const alias = link.getAttribute('href')?.split('#')[1];
+    const target = link.closest('h2, h3, p') ?? link;
+    if (alias && target.parentElement) insertSourceAnchor(document, target.parentElement, target, alias);
+  }
+
+  for (const element of Array.from(body.querySelectorAll('*'))) {
+    const tag = element.tagName;
+    const originalClasses = Array.from(element.classList);
+    if (tag === 'P') {
+      if (originalClasses.includes('tx1')) element.className = 'source-prose source-prose--lead';
+      else if (originalClasses.includes('tx')) element.className = 'source-prose';
+      else if (originalClasses.includes('code')) element.className = 'source-code-row';
+      else if (originalClasses.includes('eq')) element.className = 'source-equation';
+      else if (originalClasses.includes('caption')) element.className = 'source-caption';
+      else if (originalClasses.includes('example')) element.className = 'source-example-heading';
+      else if (originalClasses.includes('note')) element.className = 'source-note';
+      else if (originalClasses.includes('obj')) element.className = 'source-objectives-label';
+      else element.removeAttribute('class');
+    } else if (tag === 'SPAN' && originalClasses.includes('code')) {
+      element.className = 'source-inline-code';
+    } else if (tag === 'SPAN' && originalClasses.includes('sc')) {
+      element.className = 'source-small-caps';
+    } else if (tag === 'TABLE') {
+      element.className = element.querySelector('.source-note') ? 'source-table source-table--note' : 'source-table';
+    } else if (tag === 'OL' || tag === 'UL') {
+      const previous = element.previousElementSibling;
+      element.className = previous?.classList.contains('source-objectives-label') ? 'source-list source-list--objectives' : 'source-list';
+    } else if (tag !== 'H2' && tag !== 'H3') {
+      element.removeAttribute('class');
+    }
+
+    if (tag === 'A') {
+      const href = element.getAttribute('href');
+      if (href) {
+        const safeHref = resolveBookHref(href, chapterId);
+        if (safeHref) element.setAttribute('href', safeHref);
+        else element.removeAttribute('href');
+      }
+    }
+
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value;
+      if (name === 'id' && /^[\w:.-]+$/.test(value)) continue;
+      if (name === 'class' && /^source-[\w\s-]+$/.test(value)) continue;
+      if (tag === 'A' && name === 'href' && /^(?:#|\.\/\?page=|https?:|mailto:)/i.test(value)) continue;
+      if (tag === 'IMG' && name === 'src' && /^images\/[A-Za-z0-9_.-]+$/.test(value)) continue;
+      if (tag === 'IMG' && name === 'alt') continue;
+      if ((name === 'width' || name === 'height') && /^\d+(?:\.\d+)?(?:%|px)?$/.test(value)) continue;
+      if ((name === 'colspan' || name === 'rowspan') && /^\d+$/.test(value)) continue;
+      element.removeAttribute(attribute.name);
+    }
+  }
+
+  unwrapUnsupportedElements(body);
+  convertCodeRows(document, body);
+  convertBookImages(document, body);
+  return body.innerHTML;
+}
+
+function insertSourceAnchor(document: Document, parent: Element, before: Node, id: string): void {
+  if (!/^[\w:.-]+$/.test(id) || document.getElementById(id)) return;
+  const anchor = document.createElement('span');
+  anchor.id = id;
+  anchor.className = 'source-anchor-alias';
+  anchor.setAttribute('aria-hidden', 'true');
+  parent.insertBefore(anchor, before);
+}
+
+function resolveBookHref(href: string, chapterId: string): string | undefined {
+  if (/^(?:https?:|mailto:)/i.test(href)) return href;
+  if (href.startsWith('#')) return href;
+  const [path, fragment = ''] = href.split('#', 2);
+  const fileName = path.split('/').at(-1) ?? '';
+  const section = fragment ? decodeURIComponent(fragment) : undefined;
+  if (fileName === 'toc.html') return section ? `#${encodeURIComponent(section)}` : undefined;
+  if (!fileName || fileName === `${chapterId}.html`) return section ? `#${encodeURIComponent(section)}` : undefined;
+  if (/^app[A-E]\.html$/i.test(fileName)) return pageHref('appendix.html', section, 'original');
+  if (/^(?:ch\d{2}|intro)\.html$/i.test(fileName)) return pageHref(fileName, section, 'original');
+  if (fileName === 'index.html') return pageHref('index.html', section, 'original');
+  return undefined;
+}
+
+function convertCodeRows(document: Document, container: Element): void {
+  let current: ChildNode | null = container.firstChild;
+  while (current) {
+    if (current.nodeType === Node.ELEMENT_NODE && (current as Element).classList.contains('source-code-row')) {
+      const first = current as Element;
+      const rows: Element[] = [];
+      const skippedWhitespace: ChildNode[] = [];
+      let cursor: ChildNode | null = current;
+      while (cursor) {
+        if (cursor.nodeType === Node.TEXT_NODE && !cursor.textContent?.trim()) {
+          skippedWhitespace.push(cursor);
+          cursor = cursor.nextSibling;
+          continue;
+        }
+        if (cursor.nodeType !== Node.ELEMENT_NODE || !(cursor as Element).classList.contains('source-code-row')) break;
+        rows.push(cursor as Element);
+        cursor = cursor.nextSibling;
+      }
+
+      const codeText = rows.map((row) => (row.textContent ?? '').replace(/\u00a0/g, ' ').replace(/[\t ]+$/g, '')).join('\n');
+      const pre = document.createElement('pre');
+      pre.className = 'source-code-block';
+      if (first.id) pre.id = first.id;
+      const code = document.createElement('code');
+      code.className = 'hljs language-cpp';
+      code.innerHTML = hljs.highlight(codeText, { language: 'cpp' }).value;
+      pre.append(code);
+      const pageIds = new Set(rows.flatMap((row) => [row.id, ...Array.from(row.querySelectorAll('[id]')).map((anchor) => anchor.id)]));
+      for (const id of pageIds) {
+        if (!id || id === pre.id) continue;
+        const anchor = document.createElement('span');
+        anchor.id = id;
+        anchor.className = 'source-anchor-alias';
+        pre.append(anchor);
+      }
+      container.insertBefore(pre, first);
+      for (const row of rows) row.remove();
+      for (const whitespace of skippedWhitespace) whitespace.remove();
+      current = cursor;
+      continue;
+    }
+    if (current.nodeType === Node.ELEMENT_NODE) convertCodeRows(document, current as Element);
+    current = current.nextSibling;
+  }
+}
+
+function convertBookImages(document: Document, body: Element): void {
+  for (const image of Array.from(body.querySelectorAll('img'))) {
+    const rawPath = image.getAttribute('src') ?? '';
+    const fileName = rawPath.split('/').at(-1) ?? '';
+    if (!/^[A-Za-z0-9_.-]+$/.test(fileName)) {
+      image.remove();
+      continue;
+    }
+    if (/^(hand|note|hint|cabarij)\.jpg$/i.test(fileName)) {
+      if (fileName.toLowerCase() === 'hand.jpg') {
+        image.remove();
+      } else {
+        const marker = document.createElement('span');
+        marker.className = 'source-marker';
+        marker.textContent = fileName.replace(/\.jpg$/i, '');
+        image.replaceWith(marker);
+      }
+      continue;
+    }
+
+    const latex = formulaLatex[fileName];
+    if (latex) {
+      const displayMode = image.closest('.source-equation') !== null;
+      const formula = document.createElement(displayMode ? 'div' : 'span');
+      formula.className = displayMode ? 'source-equation--latex' : 'source-inline-equation';
+      formula.setAttribute('role', 'img');
+      formula.setAttribute('aria-label', `Formula ${fileName}`);
+      formula.innerHTML = renderToString(latex, { displayMode, throwOnError: false });
+      image.replaceWith(formula);
+      continue;
+    }
+
+    const captionElement = image.closest('.source-caption');
+    const followingCaption = captionElement?.nextElementSibling?.classList.contains('source-caption')
+      ? captionElement.nextElementSibling
+      : undefined;
+    const caption = (followingCaption?.textContent ?? captionElement?.textContent ?? '').replace(/\s+/g, ' ').trim() || `Original book image ${fileName}`;
+    const alt = image.getAttribute('alt');
+    const accessibleAlt = alt && alt.toLowerCase() !== 'image' ? alt : caption;
+    const width = image.getAttribute('width');
+    if (width && /^\d+(?:\.\d+)?(?:%|px)?$/.test(width)) image.style.width = /^\d/.test(width) && !/[a-z%]$/i.test(width) ? `${width}px` : width;
+    image.setAttribute('src', figureAssetHref(`images/${fileName}`));
+    image.setAttribute('alt', accessibleAlt);
+    image.setAttribute('loading', 'lazy');
+
+    const blockImage = Boolean(image.closest('.source-caption, .source-equation'));
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = blockImage ? 'source-image-open source-image-open--block' : 'source-inline-image';
+    button.dataset.figure = 'true';
+    button.dataset.src = figureAssetHref(`images/${fileName}`);
+    button.dataset.alt = accessibleAlt;
+    button.dataset.caption = caption;
+    button.setAttribute('aria-label', `Enlarge image: ${caption}`);
+    button.append(image);
+    image.replaceWith(button);
+  }
+}
+
+function unwrapUnsupportedElements(container: Element): void {
+  for (const element of Array.from(container.querySelectorAll('*')).reverse()) {
+    if (safeBookTags.has(element.tagName)) continue;
+    if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'VIDEO', 'AUDIO'].includes(element.tagName)) {
+      element.remove();
+      continue;
+    }
+    element.replaceWith(...Array.from(element.childNodes));
+  }
 }
 
 function SourceParagraph({ id, text }: { id: string; text: string }) {
@@ -177,7 +478,7 @@ export function parseSource(source: string, chapterId: string): SourceBlock[] {
   for (let index = startAt; index < raw.length; index += 1) {
     let item = raw[index];
     const itemLines = item.split('\n');
-    if (itemLines.length > 1 && /^(-\s+|\d+\.\s+|\([a-z]\)\s+)/i.test(itemLines[0]) && itemLines.slice(1).some(isCodeLine)) {
+    if (itemLines.length > 1 && /^(-\s+|\d+\.\s+|\([a-z]\)\s+)/i.test(itemLines[0]) && itemLines.slice(1).some(isSourceCodeParagraph)) {
       raw.splice(index, 1, ...itemLines);
       item = raw[index];
     }
@@ -235,13 +536,10 @@ export function parseSource(source: string, chapterId: string): SourceBlock[] {
       continue;
     }
 
-    if (isCodeLine(item)) {
-      const code = [item];
-      while (index + 1 < raw.length && isCodeLine(raw[index + 1])) {
-        code.push(raw[index + 1]);
-        index += 1;
-      }
-      add('code', code.join('\n'));
+    const codeBlock = parseCodeBlock(raw, index);
+    if (codeBlock) {
+      add('code', codeBlock.text);
+      index = codeBlock.nextIndex - 1;
       continue;
     }
 
@@ -262,26 +560,6 @@ export function parseSource(source: string, chapterId: string): SourceBlock[] {
     add('paragraph', normalized);
   }
   return blocks;
-}
-
-function isCodeLine(value: string): boolean {
-  const text = value.trim();
-  if (!text) return false;
-  return /^(#\s*(include|if|ifdef|ifndef|elif|else|endif|define|pragma)\b|using namespace\b|namespace\b|typedef\b|struct(?:\s+\w+)?\b|union\b|class\s+\w|template\s*<|inline\b|static const\b|XMVECTOR\b|XMFLOAT\d\b|FXMVECTOR\b|GXMVECTOR\b|HXMVECTOR\b|CXMVECTOR\b|void\s+\w+\s*\(|float\s+XM_CALLCONV\b|return\b|operator\b|if\s*\(|else\b|for\s*\(|while\s*\(|cout\s*<<|std::|ComPtr\s*<|\.{3}$|\{|\}|;\s*(?:\/\/.*)?$|\/\/)/.test(text)
-    || /^(?:u?int(?:8|16|32|64)_t|float\d?|double|bool|char|HRESULT|BOOL|UINT|auto|const|static|explicit|__declspec)\b/.test(text)
-    || /^[A-Z_]\w*\s*(?:\([^;]*\)|&\s*operator\b)/.test(text)
-    // Function signatures may be wrapped across source paragraphs before the
-    // closing parenthesis. Keep the opening line in the same code block.
-    || /^[A-Z_]\w*\s*\([^;]*$/.test(text)
-    // DirectXMath class members can have a return type and calling-convention
-    // macro before the function name, so they do not start with the method
-    // name (for example: `XMMATRIX& XM_CALLCONV operator+= (...)`).
-    || /^(?:friend\s+)?(?:XMMATRIX|XMFLOAT4X4|XMVECTOR|void|float|BOOL|UINT)\s*&?\s+(?:XM_CALLCONV\s+)?(?:operator\s*[^\s(]*|[A-Za-z_]\w*)\s*\(/.test(text)
-    // The source text extractor separates code lines with blank lines. These
-    // syntax markers keep common Direct3D declarations and calls together as
-    // code instead of rendering them as ordinary prose paragraphs.
-    || /^(?:[A-Za-z_]\w*(?:->|::)|(?:HRESULT|void|BOOL|UINT)\s+\w+::\w+\s*\()/.test(text)
-    || /^[A-Z][A-Z0-9_]+[,)]?$/.test(text);
 }
 
 function decodeEntities(value: string): string {

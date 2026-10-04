@@ -1,0 +1,1049 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page359"/><a href="toc.html#toc-09" id="chap09">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">9</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-09"><b>T</b><span class="sc">EXTURING</span><br/><br/></a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+<p class="tx1">Our demos are getting a little more interesting, but real-world objects typically have more details than per-object materials can capture. <i>Texture mapping</i> is a technique that allows us to map image data onto a triangle, thereby enabling us to increase the details and realism of our scene significantly. For instance, we can build a cube and turn it into a crate by mapping a crate texture on each side (Figure <a href="ch09.html#fig9.1">9.1</a>). </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn how to specify the part of a texture that gets mapped to a triangle.</li>
+<li>To find out how to create and enable textures.</li>
+<li>To learn how textures can be filtered to create a smoother image. </li>
+<li>To discover how to tile a texture several<a id="page360"/> times with address modes.</li>
+<li>To find out how multiple textures can be combined to create new textures and special effects.</li>
+<li>To learn how to create some basic effects via texture animation.</li></ol>
+<p class="caption"><img src="images/Fig9-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.1"><b><i>Figure 9.1.</i></b>&nbsp;&nbsp;The Crate demo creates a cube with a crate texture.</p>
+
+<p class="h1" id="c9.1"><a href="toc.html#toc-9.1"><b>9.1 TEXTURE AND RESOURCE RECAP</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Recall that we have already been using textures since Chapter <a href="ch04.html#chap04">4</a>; in particular, the depth buffer and back buffer are 2D texture objects represented by the <span class="code">ID3D12Resource</span> interface with the <span class="code">D3D12_RESOURCE_DESC::Dimension</span> of <span class="code">D3D12_RESOURCE_DIMENSION_TEXTURE2D</span>. For easy reference, in this first section we review much of the material on textures we have already covered in Chapter <a href="ch04.html#chap04">4</a>. </p>
+<p class="tx">A 2D texture is a matrix of data elements. One use for 2D textures is to store 2D image data, where each element in the texture stores the color of a pixel. However, this is not the only usage; for example, in an advanced technique called normal mapping, each element in the texture stores a 3D vector instead of a color. Therefore, although it is common to think of textures as storing image data, they are really more general purpose than that. A 1D texture (<span class="code">D3D12_RESOURCE_DIMENSION_TEXTURE1D</span>) is like a 1D array of data elements, and a 3D texture (<span class="code">D3D12_RESOURCE_DIMENSION_TEXTURE3D</span>) is like a 3D array of data elements. The 1D, 2D, and 3D texture interfaces are all represented by the generic <span class="code">ID3D12Resource</span>.</p>
+<p class="tx">Textures are different than buffer resources, which just store arrays of data; textures can have mipmap levels, and the GPU can do special operations on them, such as apply filters and multisampling. Because of these special operations that are supported for texture resources, they are limited to certain kind of data formats, whereas buffer resources can store arbitrary data. The data formats supported for textures are described by the <span class="code">DXGI_FORMAT</span> enumerated type. Some example formats are:</p>
+<ol><li><span class="code">DXGI_FORMAT_R32G32B32_FLOAT</span>: Each element has three 32-bit floating-point components.</li>
+<li><span class="code">DXGI_FORMAT_R16G16B16A16_UNORM</span>: Each element has four 16-bit components mapped to the [0, 1] range.</li>
+<li><span class="code">DXGI_FORMAT_R32G32_UINT</span>: Each element has two 32-bit unsigned integer components.</li>
+<li><span class="code">DXGI_FORMAT_R8G8B8A8_UNORM</span>: Each element has four 8-bit<a id="page361"/> unsigned components mapped to the [0, 1] range.</li>
+<li><span class="code">DXGI_FORMAT_R8G8B8A8_SNORM</span>: Each element has four 8-bit signed components mapped to the [-1, 1] range.</li>
+<li><span class="code">DXGI_FORMAT_R8G8B8A8_SINT</span>: Each element has four 8-bit signed integer components mapped to the [&minus;128, 127] range.</li>
+<li><span class="code">DXGI_FORMAT_R8G8B8A8_UINT</span>: Each element has four 8-bit unsigned integer components mapped to the [0, 255] range.</li></ol>
+<p class="tx1">Note that the R, G, B, A letters are used to stand for red, green, blue, and alpha, respectively. However, as we said earlier, textures need not store color information; for example, the format </p>
+<p class="code"><span class="code">DXGI_FORMAT_R32G32B32_FLOAT&nbsp;</span></p>
+<p class="tx1">has three floating-point components and can therefore store a 3D vector with floating-point coordinates (not necessarily a color vector). There are also <i>typeless</i> formats, where we just reserve memory and then specify how to reinterpret the data at a later time (sort of like a cast) when the texture is bound to the rendering pipeline; for example, the following typeless format reserves elements with four 8-bit components, but does not specify the data type (e.g., integer, floating-point, unsigned integer):</p>
+     <p class="tx"><span class="code">DXGI_FORMAT_R8G8B8A8_TYPELESS</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The DirectX 11 SDK documentation says: &ldquo;Creating a fully-typed resource restricts the resource to the format it was created with. This enables the runtime to optimize access [&hellip;].&rdquo; Therefore, you should only create a typeless resource if you really need it; otherwise, create a fully typed resource.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">A texture can be bound to different stages of the rendering pipeline; a common example is to use a texture as a render target (i.e., Direct3D draws into the texture) and as a shader resource (i.e., the texture will be sampled in a shader). A texture can also be used as both a render target and as a shader resource, but not at the same time. Rendering to a texture and then using it as a shader resource, a method called <i>render-to-texture</i>, allows for some interesting special effects which we will use later in this book. For a texture to be used as both a render target and a shader resource, we would need to create two descriptors to that texture resource: 1) one that lives in a render target heap (i.e., <span class="code">D3D12_DESCRIPTOR_HEAP_TYPE_RTV</span>) and 2) one that lives in a shader resource heap (i.e., <span class="code">D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV</span>). (Note that a shader resource heap can also store constant buffer view descriptors and unordered access view descriptors.) Then the resource can be bound as a render target or bound as a shader input to a root parameter in the root signature (but never at the same time):</p>
+<p class="code"><span class="code">// Bind as render target.</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE rtv = &hellip;;</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE dsv = &hellip;;</span></p>
+<p class="code"><span class="code">cmdList-&gt;OMSetRenderTargets(1, &amp;rtv, true, &amp;dsv);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">// Bind as shader input to root parameter.</span></p>
+<p class="code"><span class="code">CD3DX12_GPU_DESCRIPTOR_HANDLE tex = &hellip;;</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetGraphicsRootDescriptorTable(rootParamIndex, tex);</span></p>
+<p class="tx1">Resource descriptors essentially<a id="page362"/> do two things: they tell Direct3D how the resource will be used (i.e., what stage of the pipeline you will bind it to), and if the resource format was specified as typeless at creation time, then we must now state the type when creating a view. Thus, with typeless formats, it is possible for the elements of a texture to be viewed as floating-point values in one pipeline stage and as integers in another; this essentially amounts to a reinterpret cast of the data. </p>
+<p class="tx">In this chapter, we will only be interested in binding textures as shader resources so that our pixel shaders can sample the textures and use them to color pixels. </p>
+<p class="h1" id="c9.2"><a href="toc.html#toc-9.2"><b>9.2 TEXTURE COORDINATES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Direct3D uses a texture coordinate system that consists of a <i>u</i>-axis that runs horizontally to the image and a <i>v</i>-axis that runs vertically to the image. The coordinates, (<i>u</i>, <i>v</i>) such that 0 &#x2264; <i>u</i>, <i>v</i> &#x2264; 1, identify an element on the texture called a <i>texel</i>. Notice that the <i>v</i>-axis is positive in the &ldquo;down&rdquo; direction (see Figure <a href="ch09.html#fig9.2">9.2</a>). Also, notice the normalized coordinate interval, [0, 1], which is used because it gives Direct3D a dimension independent range to work with; for example, (0.5, 0.5) always specifies the middle texel no matter if the actual texture dimensions are 256 &times; 256, 512 &times; 1024 or 2048 &times; 2048 in pixels. Likewise, (0.25, 0.75) identifies the texel a quarter of the total width in the horizontal direction, and three-quarters of the total height in the vertical direction. For now, texture coordinates are always in the range [0, 1], but later we explain what can happen when you go outside this range.</p>
+
+<p class="caption"><img src="images/Fig9-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.2"><b><i>Figure 9.2.</i></b>&nbsp;&nbsp;The texture coordinate system, sometimes called texture space.</p>
+<p class="caption"><img src="images/Fig9-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.3"><b><i>Figure 9.3.</i></b>&nbsp;&nbsp;On the left is a triangle in 3D space, and on the right we define a 2D triangle on the texture that is going to be mapped onto the 3D triangle.</p>
+
+<p class="tx">For each 3D triangle, we<a id="page363"/> want to define a corresponding triangle on the texture that is to be mapped onto the 3D triangle (see Figure <a href="ch09.html#fig9.3">9.3</a>). Let <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>,<sub> </sub>and <b>p</b><sub>2</sub> be the vertices of a 3D triangle with respective texture coordinates <b>q</b><sub>0</sub>, <b>q</b><sub>1</sub>, and <b>q</b><sub>2</sub>. For an arbitrary point (<i>x</i>, <i>y</i>, <i>z</i>) on the 3D triangle, its texture coordinates (<i>u</i>,<sub> </sub><i>v</i>) are found by linearly interpolating the vertex texture coordinates across the 3D triangle by the same <i>s</i>, <i>t</i> parameters; that is, if </p>
+
+<p class="tx"><img src="images/eq397-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">In this way, every point on the triangle has a corresponding texture coordinate.</p>
+<p class="tx">To implement this, we modify our vertex structure once again and add a pair of texture coordinates that identify a point on the texture. Now every 3D vertex has a corresponding 2D texture vertex. Thus, every 3D triangle defined by three vertices also defines a 2D triangle in texture space (i.e., we have associated a 2D texture triangle for every 3D triangle).</p>
+<p class="code"><span class="code">struct Vertex</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 Normal;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT2 TexC;</span></p>
+<p class="code"><span class="code">};</span>>>>>>>>>>>>>>>>>>></p>
+
+<p class="code"><span class="code">std::vector&lt;D3D12_INPUT_ELEMENT_DESC&gt; mInputLayout =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },</span></p>
+<p class="code"><span class="code">};</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>You can create &ldquo;odd&rdquo; texture mappings where the<a id="page364"/> 2D texture triangle is much different than the 3D triangle. Thus, when the 2D texture is mapped onto the 3D triangle, a lot of stretching and distortion occurs making the results not look good. For example, mapping an acute angled triangle to a right angled triangle requires stretching. In general, texture distortion should be minimized, unless the texture artist desires the distortion look.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Observe that in Figure <a href="ch09.html#fig9.3">9.3</a>, we map the entire texture image onto each face of the cube. This is by no means required. We can map only a subset of a texture onto geometry. In fact, we can place several unrelated images on one big texture map (this is called a <i>texture atlas</i>), and use it for several different objects  (Figure <a href="ch09.html#fig9.4">9.4</a>). The texture coordinates are what will determine what part of the texture gets mapped on the triangles. </p>
+
+<p class="caption"><img src="images/Fig9-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.4"><b><i>Figure 9.4.</i></b>&nbsp;&nbsp;A texture atlas storing four subtextures on one large texture. The texture coordinates for each vertex are set so that the desired part of the texture gets mapped onto the geometry.</p>
+
+<p class="h1" id="c9.3"><a href="toc.html#toc-9.3"><b>9.3 TEXTURE DATA SOURCES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The most prevalent way of creating textures for games is for an artist to make them in Photoshop or some other image editor, and then save them as an image file like BMP, DDS, TGA, or PNG. Then the game application will load the image data at load time into an <span class="code">ID3D12Resource</span> object. For real-time graphics applications, the DDS (DirectDraw Surface format)<a id="page365"/> image file format is preferred, as it supports a variety of image formats that are natively understood by the GPU; in particular, it supports compressed image formats that can be natively decompressed by the GPU. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Artists should not use the DDS format as a working image format. Instead they should use their preferred format for saving work. Then when the texture is complete, they export out to DDS for the game application.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c9.3.1"><a href="toc.html#toc-9.3.1"><b>9.3.1 DDS Overview</b></a></p>
+<p class="tx1">The DDS format is ideal for 3D graphics because it supports special formats and texture types that are specifically used for 3D graphics. It is essentially an image format built for GPUs. For example, DDS textures support the following features (not yet discussed) used in 3D graphics development:</p>
+<ol><li>mipmaps</li>
+<li>compressed formats that the GPU can natively decompress</li>
+<li>texture arrays</li>
+<li>cube maps</li>
+<li>volume textures</li></ol>
+<p class="tx1">The DDS format can support different pixel formats. The pixel format is described by a member of the <span class="code">DXGI_FORMAT</span> enumerated type; however, not all formats apply to DDS textures. Typically, for uncompressed image data you will use the formats:</p>
+<ol><li><span class="code">DXGI_FORMAT_B8G8R8A8_UNORM</span> or <span class="code">DXGI_FORMAT_B8G8R8X8_UNORM</span>: For low-dynamic-range images.</li>
+<li><span class="code">DXGI_FORMAT_R16G16B16A16_FLOAT</span>: For high-dynamic-range images.</li></ol>
+<p class="tx1">The GPU memory requirements for textures add up quickly as your virtual worlds grow with hundreds of textures (remember we need to keep all these textures in GPU memory to apply them quickly). To help alleviate these memory requirements, Direct3D supports compressed texture formats: BC1, BC2, BC3, BC4, BC5, BC6, and BC7: </p>
+<ol><li>BC1 (<span class="code">DXGI_FORMAT_BC1_UNORM</span>): Use this format if you need<a id="page366"/> to compress a format that supports three color channels, and only a 1-bit (on/off) alpha component.</li>
+<li>BC2 (<span class="code">DXGI_FORMAT_BC2_UNORM</span>): Use this format if you need to compress a format that supports three color channels, and only a 4-bit alpha component.</li>
+<li>BC3 (<span class="code">DXGI_FORMAT_BC3_UNORM</span>): Use this format if you need to compress a format that supports three color channels, and a 8-bit alpha component.</li>
+<li>BC4 (<span class="code">DXGI_FORMAT_BC4_UNORM</span>): Use this format if you need to compress a format that contains one color channel (e.g., a grayscale image).</li>
+<li>BC5 (<span class="code">DXGI_FORMAT_BC5_UNORM</span>): Use this format if you need to compress a format that supports two color channels.</li>
+<li>BC6 (<span class="code">DXGI_FORMAT_BC6_UF16</span>): Use this format for compressed HDR (high dynamic range) image data.</li>
+<li>BC7 (<span class="code">DXGI_FORMAT_BC7_UNORM</span>): Use this format for high quality RGBA compression. In particular, this format significantly reduces the errors caused by compressing normal maps.</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>A compressed texture can only be used as an input to the shader stage of the rendering pipeline, not as a render target.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Because the block compression algorithms work with 4 </i>&times;<i> 4 pixel blocks, the dimensions of the texture must be multiples of 4. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Again, the advantage of these formats is that they can be stored compressed in GPU memory, and then decompressed on the fly by the GPU when needed. An additional advantage of storing your textures compressed in DDS files is that they also take up less hard disk space.</p>
+<p class="h2" id="c9.3.2"><a href="toc.html#toc-9.3.2"><b>9.3.2 Creating DDS Files</b></a></p>
+<p class="tx1">If you are new to graphics programming, you are probably unfamiliar with DDS and are probably more used to using formats like BMP, TGA, or PNG. Here are two ways to convert traditional image formats to the DDS format: </p>
+<ol><li>NVIDIA supplies a plugin for Adobe Photoshop that can export images to the DDS format. The plugin is available at <i><a href="https://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop">https://developer.nvidia.com/nvidia-texture-tools-adobe-photoshop</a></i>. Among other options, it allows you to specify the <span class="code">DXGI_FORMAT</span> of the DDS file, and generate mipmaps. </li>
+<li>Microsoft provides a command line tool called <i>texconv</i> that can be used to convert traditional image formats to DDS. In addition, the <i>texconv</i> program can be used for more such as resizing images, changing pixel formats, generating mipmaps and even more. You can find the documentation and download link at the following website <i><a href="https://directxtex.codeplex.com/wikipage?title=Texconv&amp;referringTitle=Documentation">https://directxtex.codeplex.com/wikipage?title=Texconv&amp;referringTitle=Documentation</a></i>.</li></ol>
+<p class="tx1">The following example inputs a BMP file <i>bricks.bmp</i> and outpts a DDS file <i>bricks.dds</i> with format BC3_UNORM and generates a mipmaps chain with 10 mipmaps.</p>
+<p class="code"><span class="code">texconv -m 10 -f BC3_UNORM treeArray.dds</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Microsoft provides an additional<a id="page367"/> command line tool called texassemble, which is used to create DDS files that store texture arrays, volume maps, and cube maps. We will need this tool later in the book. Its documentation and download link can be found at <a href="https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Documentation">https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Documentation</a>.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Visual Studio 2015 has a built-in image editor that supports DDS in addition to other popular formats. You can drag an image into Visual Studio 2015 and it should open it in the image editor. For DDS files, you can view the mipmap levels, change the DDS format, and view the various color channels.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c9.4"><a href="toc.html#toc-9.4"><b>9.4 CREATING AND ENABLING A TEXTURE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c9.4.1"><a href="toc.html#toc-9.4.1"><b>9.4.1 Loading DDS Files</b></a></p>
+<p class="tx1">Microsoft provides lightweight source code to load DDS files at:</p>
+<p class="tx"><i><a href="https://github.com/Microsoft/DirectXTK/wiki/DDSTextureLoader">https://github.com/Microsoft/DirectXTK/wiki/DDSTextureLoader</a></i></p>
+<p class="tx1">However, at the time of this writing, the code only supports DirectX 11. We have modified the <i>DDSTextureLoader.h/.cpp</i> files and provided an additional method for DirectX 12 (these modified files can be found in the <i>Common</i> folder on the DVD or downloadable source):</p>
+<p class="code"><span class="code">HRESULT DirectX::CreateDDSTextureFromFile12(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ ID3D12Device* device,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ ID3D12GraphicsCommandList* cmdList,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_z_ const wchar_t* szFileName,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_Out_ Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt;&amp; texture,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_Out_ Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt;&amp; textureUploadHeap);</span></p>
+<ol><li><span class="code">device</span>: Pointer to the D3D device to create the texture resources.</li>
+<li><span class="code">cmdList</span>: Command list to submit GPU commands (e.g., copying texture data from an upload heap to a default heap).</li>
+<li><span class="code">szFileName</span>: Filename of the image to load.</li>
+<li><span class="code">texture</span>: Returns the texture resource with the loaded image data.</li>
+<li><span class="code">textureUploadHeap</span>: Returns the texture resource that was used as an upload heap to copy the image data into the default heap texture resource. This resource cannot be destroyed until the GPU finished the copy command.</li></ol>
+<p class="tx1">To create a texture from an image called <i>WoodCreate01.dds</i>, we would write the following:<a id="page368"/></p>
+<p class="code"><span class="code">struct Texture</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Unique material name for lookup.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string Name;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::wstring Filename;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; Resource = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; UploadHeap = nullptr;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">auto woodCrateTex = std::make_unique&lt;Texture&gt;();</span></p>
+<p class="code"><span class="code">woodCrateTex-&gt;Name = "woodCrateTex";</span></p>
+<p class="code"><span class="code">woodCrateTex-&gt;Filename = L"Textures/WoodCrate01.dds";</span></p>
+<p class="code"><span class="code">ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice.Get(), mCommandList.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;woodCrateTex-&gt;Filename.c_str(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;woodCrateTex-&gt;Resource, woodCrateTex-&gt;UploadHeap));&nbsp;&nbsp;&nbsp;</span></p>
+<p class="h2" id="c9.4.2"><a href="toc.html#toc-9.4.2"><b>9.4.2 SRV Heap </b></a></p>
+<p class="tx1">Once a texture resource is created, we need to create an SRV descriptor to it which we can set to a root signature parameter slot for use by the shader programs. In order to do that, we first need to create a descriptor heap with <span class="code">ID3D12Device::CreateDescriptorHeap</span> to store the SRV descriptors. The following code builds a heap with three descriptors that can store either CBV, SRV, or UAV descriptors, and is visible to shaders:</p>
+<p class="code"><span class="code">D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};</span></p>
+<p class="code"><span class="code">srvHeapDesc.NumDescriptors = 3;</span></p>
+<p class="code"><span class="code">srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;</span></p>
+<p class="code"><span class="code">srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateDescriptorHeap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;srvHeapDesc, IID_PPV_ARGS(&amp;mSrvDescriptorHeap)));</span></p>
+<p class="h2" id="c9.4.3"><a href="toc.html#toc-9.4.3"><b>9.4.3 Creating SRV Descriptors</b></a></p>
+<p class="tx1">Once we have an SRV heap, we need to create the actual descriptors. An SRV descriptor is described by filling out a <span class="code">D3D12_SHADER_RESOURCE_VIEW_DESC</span> object, which describes how the resource is used and other information&mdash;its format, dimension, mipmaps count, etc.</p>
+<p class="code"><span class="code">typedef struct D3D12_SHADER_RESOURCE_VIEW_DESC</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DXGI_FORMAT Format;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_SRV_DIMENSION ViewDimension;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT Shader4ComponentMapping;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;union&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_BUFFER_SRV Buffer;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX1D_SRV Texture1D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX1D_ARRAY_SRV Texture1DArray;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX2D_SRV Texture2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX2D_ARRAY_SRV Texture2DArray;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX2DMS_SRV Texture2DMS;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX2DMS_ARRAY_SRV Texture2DMSArray;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEX3D_SRV Texture3D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXCUBE_SRV TextureCube;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXCUBE_ARRAY_SRV TextureCubeArray;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">} D3D12_SHADER_RESOURCE_VIEW_DESC;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">typedef struct D3D12_TEX2D_SRV</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MostDetailedMip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MipLevels;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT PlaneSlice;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT ResourceMinLODClamp;</span></p>
+<p class="code"><span class="code">} D3D12_TEX2D_SRV;</span></p>
+<p class="tx1">For 2D textures, we are only<a id="page369"/> interested in the <span class="code">D3D12_TEX2D_SRV</span> part of the union.</p>
+<ol><li><span class="code">Format</span>: The format of the resource. Set this to the <span class="code">DXGI_FORMAT</span> of the resource you are creating a view to if the format was non-typeless. If you specified a typeless <span class="code">DXGI_FORMAT</span> for the resource during creation, then you must specify a non-typeless format for the view here so that the GPU knows how to interpret the data. <br/>
+typeless format when creating </li>
+<li><span class="code">ViewDimension</span>: The resource dimension; for now, we are using 2D textures so we specify <span class="code">D3D12_SRV_DIMENSION_TEXTURE2D</span>. Other common texture dimensions would be:
+<ol class="lc-alpha">
+<li><span class="code">D3D12_SRV_DIMENSION_TEXTURE1D</span>: The resource is a 1D texture.</li>
+<li><span class="code">D3D12_SRV_DIMENSION_TEXTURE3D</span>: The resource is a 3D texture.</li>
+<li><span class="code">D3D12_SRV_DIMENSION_TEXTURECUBE</span>: The resource is a cube texture.</li></ol></li>
+<li><span class="code">Shader4ComponentMapping</span>: When a texture is sampled in a shader, it will return a vector of the texture data at the specified texture coordinates. This field provides a way to reorder the vector components returned when sampling the texture. For example, you could use this field to swap the red and green color components. This would be used in special scenarios, which we do not need in this book. So we just specify <span class="code">D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING</span> which will not reorder the components and just return the data in the order it is stored in the texture resource.  </li>
+<li><span class="code">MostDetailedMip</span>: Specifies the index of the most detailed mipmap level to view. This will be a number between 0 and <i>MipCount</i>-1.</li>
+<li><span class="code">MipLevels</span>: The number of mipmap levels to view, starting at <span class="code">MostDetailedMip</span>. This field, along with <span class="code">MostDetailedMip</span> allows us to specify a subrange of mipmap levels to view. You<a id="page370"/> can specify -1 to indicate to view all mipmap levels from <span class="code">MostDetailedMip</span> down to the last mipmap level.</li>
+<li><span class="code">PlaneSlice</span>: Plane index.</li>
+<li><span class="code">ResourceMinLODClamp</span>: Specifies the minimum mipmap level that can be accessed. 0.0 means all the mipmap levels can be accessed. Specifying 3.0 means mipmap levels 3.0 to <i>MipCount</i>-1 can be accessed.</li></ol>
+<p class="tx1">The following populates the heap we created in the previous section with actual descriptors to three resources:</p>
+<p class="code"><span class="code">// Suppose the following texture resources are already created.</span></p>
+<p class="code"><span class="code">// ID3D12Resource* bricksTex;</span></p>
+<p class="code"><span class="code">// ID3D12Resource* stoneTex;</span></p>
+<p class="code"><span class="code">// ID3D12Resource* tileTex;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Get pointer to the start of the heap.</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSrvDescriptorHeap-&gt;GetCPUDescriptorHandleForHeapStart());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};</span></p>
+<p class="code"><span class="code">srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;</span></p>
+<p class="code"><span class="code">srvDesc.Format = bricksTex-&gt;GetDesc().Format;</span></p>
+<p class="code"><span class="code">srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MostDetailedMip = 0;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MipLevels = bricksTex-&gt;GetDesc().MipLevels;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;</span></p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateShaderResourceView(bricksTex.Get(), &amp;srvDesc, hDescriptor);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// offset to next descriptor in heap</span></p>
+<p class="code"><span class="code">hDescriptor.Offset(1, mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">srvDesc.Format = stoneTex-&gt;GetDesc().Format;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MipLevels = stoneTex-&gt;GetDesc().MipLevels;</span></p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateShaderResourceView(stoneTex.Get(), &amp;srvDesc, hDescriptor);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// offset to next descriptor in heap</span></p>
+<p class="code"><span class="code">hDescriptor.Offset(1, mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">srvDesc.Format = tileTex-&gt;GetDesc().Format;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MipLevels = tileTex-&gt;GetDesc().MipLevels;</span></p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateShaderResourceView(tileTex.Get(), &amp;srvDesc, hDescriptor);</span></p>
+<p class="h2" id="c9.4.4"><a href="toc.html#toc-9.4.4"><b>9.4.4 Binding Textures to the Pipeline</b></a></p>
+<p class="tx1">Right now we specify materials per draw call by changing the material constant buffer. This means that all geometry in the draw call will have the same material values. This is quite limited as we cannot specify per pixel material variations so our scenes lack detail. The idea of texturing mapping is to get the material data from texture maps instead of the material constant buffer. This allows for per pixel variation which increases the details<a id="page371"/> and realism of our scene, as Figure <a href="ch09.html#fig9.1">9.1</a> showed. </p>
+
+<p class="tx">In this chapter, we add a diffuse albedo texture map to specify the diffuse albedo component of our material. The <span class="code">FresnelR0</span> and <span class="code">Roughness</span> material values will still be specified at the per draw call frequency via the material constant buffer; however, in the chapter on &ldquo;Normal Mapping&rdquo; we will describe how to use texturing to specify roughness at a per-pixel level. Note that with texturing we will still keep the <span class="code">DiffuseAlbedo</span> component in the material constant buffer. In fact, we will combine it with the texture diffuse albedo value in the following way in the pixel-shader:</p>
+<p class="code"><span class="code">// Get diffuse albedo at this pixel from texture.</span></p>
+<p class="code"><span class="code">float4 texDiffuseAlbedo = gDiffuseMap.Sample(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gsamAnisotropicWrap, pin.TexC);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Multiple texture sample with constant buffer albedo.</span></p>
+<p class="code"><span class="code">float4 diffuseAlbedo = texDiffuseAlbedo * gDiffuseAlbedo;</span></p>
+<p class="tx1">Usually, we will set <span class="code">DiffuseAlbedo=(1,1,1,1)</span> so that to does not modify <span class="code">texDiffuseAlbedo</span>. However, sometimes it is useful to slightly tweak the diffuse albedo without having to author a new texture. For example, suppose we had a brick texture and an artist wanted to slightly tint it blue. This could be accomplished by reducing the red and green components by setting <span class="code">DiffuseAlbedo=(0.9,0.9,1,1)</span>. </p>
+<p class="tx">We add an index to our material definition, which references an SRV in the descriptor heap specifying the texture associated with the material:</p>
+<p class="code"><span class="code">struct Material</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Index into SRV heap for diffuse texture.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int DiffuseSrvHeapIndex = -1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Then, assuming the root signature has been defined to expect a table of shader resource views to be bound to the 0th slot parameter, we can draw our render items with texturing using the following code:</p>
+<p class="code"><span class="code">void CrateApp::DrawRenderItems(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;RenderItem*&gt;&amp; ritems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto objectCB = mCurrFrameResource-&gt;ObjectCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto matCB = mCurrFrameResource-&gt;MaterialCB-&gt;Resource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each render item&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; ritems.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto ri = ritems[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetVertexBuffers(0, 1, &amp;ri-&gt;Geo-&gt;VertexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetIndexBuffer(&amp;ri-&gt;Geo-&gt;IndexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetPrimitiveTopology(ri-&gt;PrimitiveType);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE tex(</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;tex.Offset(ri-&gt;Mat-&gt;DiffuseSrvHeapIndex, mCbvSrvDescriptorSize);</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS objCBAddress =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;objectCB-&gt;GetGPUVirtualAddress() +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;ObjCBIndex*objCBByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS matCBAddress =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;matCB-&gt;GetGPUVirtualAddress() +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;Mat-&gt;MatCBIndex*matCBByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootDescriptorTable(0, tex);</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(1, objCBAddress);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(3, matCBAddress);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1, ri-&gt;StartIndexLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>A texture resource can actually be used<a id="page372"/> by any shader (vertex, geometry, or pixel shader). For now, we will just be using them in pixel shaders. As we mentioned, textures are essentially special arrays that support special operations on the GPU, so it is not hard to imagine that they could be useful in other shader programs, too.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Texture atlases can improve performance because it can lead to drawing more geometry with one draw call. For example, suppose we used the texture atlas as in Figure <a href="ch09.html#fig9.4">9.4</a> that contains the crate, grass, and brick textures. Then, by adjusting the texture coordinates for each object to its corresponding subtexture, we could put all the geometry in one render item (assuming no other parameters needed to be changed per object). There is overhead to draw calls, so it is desirable to minimize them with techniques like this, although we note that the overhead has significantly been reduced with Direct3D 12 compared to earlier versions of Direct3D.   </i><a id="page373"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c9.5"><a href="toc.html#toc-9.5"><b>9.5 FILTERS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c9.5.1"><a href="toc.html#toc-9.5.1"><b>9.5.1 Magnification</b></a></p>
+<p class="tx1">The elements of a texture map should be thought of as discrete color samples from a continuous image; they should not be thought of as rectangles with areas. So the question is: What happens if we have texture coordinates (<i>u</i>, <i>v</i>) that do not coincide with one of the texel points? This can happen in the following situation. Suppose the player zooms in on a wall in the scene so that the wall covers the entire screen. For the sake of example, suppose the monitor resolution is 1024 &times; 1024 and the wall&rsquo;s texture resolution is 256 &times; 256. This illustrates texture <i>magnification</i>&mdash;we are trying to cover many pixels with a few texels. In our example, between every texel point lies four pixels. Each pixel will be given a pair of unique texture coordinates when the vertex texture coordinates are interpolated across the triangle. Thus there will be pixels with texture coordinates that do not coincide with one of the texel points. Given the colors at the texels we can approximate the colors between texels using interpolation. There are two methods of interpolation graphics hardware supports: constant interpolation and linear interpolation. In practice, linear interpolation is almost always used.</p>
+<p class="tx">Figure <a href="ch09.html#fig9.5">9.5</a> illustrates these methods in 1D: Suppose we have a 1D texture with 256 samples and an interpolated texture coordinate <i>u</i> = 0.126484375. This normalized texture coordinate refers to the  0.126484375 &times; 256 = 32.38 texel. Of course, this value lies between two of our texel samples, so we must use interpolation to approximate it.</p>
+
+<p class="caption"><img src="images/Fig9-5a.jpg" alt="image" width="40%"/> <img src="images/Fig9-5b.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig9.5"><b><i>Figure 9.5.</i></b>&nbsp;&nbsp;(a) Given the texel points, we construct a piecewise constant function to approximate values between the texel points; this is sometimes called <i>nearest neighbor point sampling</i>, as the value of the nearest texel point is used. (b) Given the texel points, we construct a piecewise linear function to approximate values between texel points.</p>
+
+<p class="tx">2D linear interpolation is called bilinear interpolation and is illustrated in Figure <a href="ch09.html#fig9.6">9.6</a>. Given a pair of texture coordinates between four texels, we do two 1D linear interpolations in the <i>u</i>-direction, followed by one 1D interpolation in the <i>v</i>-direction.</p>
+
+<p class="caption"><img src="images/Fig9-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.6"><b><i>Figure 9.6.</i></b>&nbsp;&nbsp;Here we have four texel points: <b>c</b><sub><i>ij</i>, </sub><b>c</b><sub><i>i,j</i> + 1</sub>, <b>c</b><sub><i>i + 1, j</i></sub>, and <b>c</b><sub><i>i + 1,j</i> + 1</sub>. We want to approximate the color of <b>c</b>, which lies between these four texel points, using interpolation; in this example, <b>c</b> lies 0.75 units to the right of <b>c</b><i><sub>ij</sub></i> and 0.38 units below <b>c</b><i><sub>ij</sub></i>. We first do a 1D linear interpolation between the top two colors to get <b>c</b><i><sub>T</sub></i>. Likewise, we do a 1D linear interpolate between the bottom two colors to get <b>c</b><i><sub>B</sub></i>. Finally, we do a 1D linear interpolation between <b>c</b><i><sub>T</sub></i> and <b>c</b><i><sub>B</sub></i> to get c.</p>
+
+<p class="tx">Figure <a href="ch09.html#fig9.7">9.7</a> shows the difference between constant and linear interpolation. As you can see, constant interpolation has the characteristic of creating a blocky looking image. Linear<a id="page374"/> interpolation is smoother, but still will not look as good as if we had real data (e.g., a higher resolution texture) instead of derived data via interpolation.</p>
+
+<p class="caption"><img src="images/Fig9-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.7"><b><i>Figure 9.7.</i></b>&nbsp;&nbsp;We zoom in on a cube with a crate texture so that magnification occurs. On the left we use constant interpolation, which results in a blocky appearance; this makes sense because the interpolating function has discontinuities (Figure <a href="ch09.html#fig9.5">9.5</a><i>a</i>), which makes the changes abrupt rather than smooth. On the right we use linear filtering, which results in a smoother image due to the continuity of the interpolating function.</p>
+
+<p class="tx">One thing to note about this discussion is that there is no real way to get around magnification in an interactive 3D program where the virtual eye is free to move around and explore. From some distances, the textures will look great, but will start to break down as the eye gets too close to them. Some games limit how close the virtual eye can get to a surface to avoid excessive magnification. Using higher resolution textures can help. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In the context of texturing, using constant interpolation to find texture values for texture coordinates between texels is also called </i>point filtering<i>. And using linear interpolation to find texture values for texture coordinates between texels is also called called linear filtering. Point and </i>linear filtering<i> is the terminology Direct3D uses.</i><a id="page375"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c9.5.2"><a href="toc.html#toc-9.5.2"><b>9.5.2 Minification</b></a></p>
+<p class="tx1"><i>Minification</i> is the opposite of magnification. In minification, too many texels are being mapped to too few pixels. For instance, consider the following situation where we have a wall with a 256 &times;<sub> </sub>256 texture mapped over it. The eye, looking at the wall, keeps moving back so that the wall gets smaller and smaller until it only covers 64 &times; 64 pixels on screen. So now we have 256 &times; 256 texels getting mapped to 64 &times; 64 screen pixels. In this situation, texture coordinates for pixels will still generally not coincide with any of the texels of the texture map, so constant and linear interpolation filters still apply to the minification case. However, there is more that can be done with minification. Intuitively, a sort of average downsampling of the 256 &times; 256 texels should be taken to reduce it to 64 &times; 64. The technique of mipmapping offers an efficient approximation for this at the expense of some extra memory. At initialization time (or asset creation time), smaller versions of the texture are made by downsampling the image to create a mipmap chain (see Figure <a href="ch09.html#fig9.8">9.8</a>). Thus the averaging work is precomputed for the mipmap sizes. At runtime, the graphics hardware will do two different things based on the mipmap settings specified by the programmer:</p>
+
+<ol><li>Pick and use the mipmap level that best matches the projected screen geometry resolution for texturing, applying constant or linear interpolation as needed. This is called <i>point filtering </i>for mipmaps because it is like constant interpolation&mdash;you just choose the nearest mipmap level and use that for texturing.</li>
+<li>Pick the two nearest mipmap levels that best match the projected screen geometry resolution for texturing (one will be bigger and one will be smaller than the screen geometry resolution). Next, apply constant or linear filtering to both of these mipmap levels to produce a texture color for each one. Finally, interpolate between these two texture color results. This is called<i> linear filtering</i> for mipmaps because it is like linear interpolation&mdash;you linearly interpolate between the two nearest mipmap levels.  </li></ol>
+<p class="tx">By choosing the best texture levels of detail from the mipmap chain, the amount of minification is greatly reduced. </p>
+<p class="caption"><img src="images/Fig9-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.8"><b><i>Figure 9.8.</i></b>&nbsp;&nbsp;A chain of mipmaps; each successive mipmap is half the size, in each dimension, of the previous mipmap level of detail down to 1 &times; 1.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>As mentioned in &#x00A7;9.3.2, mipmaps can be created<a id="page376"/> using the Photoshop DDS exporter plugin, or using the texconv program. These programs use a downsampling algorithm to generate the lower mipmap levels from the base image data. Sometimes these algorithms do not preserve the details we want and an artist has to manually create/edit the lower mipmap levels to keep the important details.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c9.5.3"><a href="toc.html#toc-9.5.3"><b>9.5.3 Anisotropic Filtering</b></a></p>
+<p class="tx1">Another type of filter that can be used is called <i>anisotropic filtering</i>. This filter helps alleviate the distortion that occurs when the angle between a polygon&rsquo;s normal vector and camera&rsquo;s look vector is wide (e.g., when a polygon is orthogonal to the view window). This filter is the most expensive, but can be worth the cost for correcting the distortion artifacts. Figure <a href="ch09.html#fig9.9">9.9</a> shows a screenshot comparing anisotropic filtering with linear filtering. </p>
+
+<p class="caption"><img src="images/Fig9-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.9"><b><i>Figure 9.9.</i></b>&nbsp;&nbsp;The top face of the crate is nearly orthogonal to the view window. (Left) Using linear filtering the top of the crate is badly blurred. (Right) Anisotropic filtering does a better job at rendering the top face of the crate from this angle.</p>
+
+<p class="h1" id="c9.6"><a href="toc.html#toc-9.6"><b>9.6 ADDRESS MODES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A texture, combined with constant or linear interpolation, defines a vector-valued function <i>T</i>(<i>u</i>, <i>v</i>) = (<i>r</i>, <i>g</i>, <i>b</i>, <i>a</i>). That is, given the texture coordinates (<i>u</i>, <i>v</i>) &#x2208;  [0, 1]<sup>2</sup> the texture function <i>T</i> returns a color (<i>r</i>, <i>g</i>, <i>b</i>, <i>a</i>). Direct3D allows us to extend the domain of this function in four different ways (called <i>address modes</i>): <i>wrap</i>, <i>border color</i>, <i>clamp</i>, and <i>mirror</i>.</p>
+<ol><li><i>wrap</i> extends the texture function by repeating the image at every integer junction (see Figure <a href="ch09.html#fig9.10">9.10</a>). 
+<p class="caption"><img src="images/Fig9-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.10"><b><i>Figure 9.10.</i></b>&nbsp;&nbsp;Wrap address mode.</p>
+</li>
+<li><i>border color</i> extends the texture function by mapping each (<i>u</i>, <i>v</i>) not in [0, 1]<sup>2</sup> to some color specified by the programmer (see Figure <a href="ch09.html#fig9.11">9.11</a>). 
+
+<p class="caption"><img src="images/Fig9-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.11"><b><i>Figure 9.11.</i></b>&nbsp;&nbsp;Border color address mode.</p>
+</li>
+<li>clamp extends the texture function by mapping each (<i>u</i>, <i>v</i>) not in [0, 1]<sup>2</sup> to the color <i>T</i>(<i>u</i><sub>0</sub>,<sub> </sub><i>v</i><sub>0</sub>), where (<i>u</i><sub>0</sub>, <i>v</i><sub>0</sub>) is the nearest point to (<i>u</i><sub>, </sub><i>v</i>) contained in [0, 1]<sup>2 </sup>(see Figure <a href="ch09.html#fig9.12">9.12</a>).
+
+<p class="caption"><img src="images/Fig9-12.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.12"><b><i>Figure 9.12.</i></b>&nbsp;&nbsp;Clamp address mode.</p>
+</li>
+<li><i>mirror</i> extends the texture function by mirroring the image at every<a id="page377"/> integer junction (see Figure <a href="ch09.html#fig9.13">9.13</a>).
+
+<p class="caption"><img src="images/Fig9-13.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.13"><b><i>Figure 9.13.</i></b>&nbsp;&nbsp;Mirror address mode.</p>
+</li></ol>
+<p class="tx">An address mode is always<a id="page378"/> specified (wrap mode is the default), so therefore, texture coordinates outside the [0, 1] range are always defined. </p>
+<p class="tx">The wrap address mode is probably the most often employed; it allows us to tile a texture repeatedly over some surface. This effectively enables us to increase the texture resolution without supplying additional data (although the extra resolution is repetitive). With tiling, it is usually important that the texture is seamless. For example, the crate texture is not seamless, as you can see the repetition clearly. However, Figure <a href="ch09.html#fig9.14">9.14</a> shows a seamless brick texture repeated 2 &times; 3 times. </p>
+
+<p class="caption"><img src="images/Fig9-14.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.14"><b><i>Figure 9.14.</i></b>&nbsp;&nbsp;A brick texture tiled 2 &times; 3 times. Because the texture is seamless, the repetition pattern is harder to notice.</p>
+
+<p class="tx">Address modes are described in Direct3D via the <span class="code">D3D12_TEXTURE_ADDRESS_MODE</span> enumerated type: </p>
+<p class="code"><span class="code">typedef enum D3D12_TEXTURE_ADDRESS_MODE</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_MIRROR&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_BORDER&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 4,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE = 5</span></p>
+<p class="code"><span class="code">} D3D12_TEXTURE_ADDRESS_MODE;</span></p>
+<p class="h1" id="c9.7"><a href="toc.html#toc-9.7"><b>9.7 SAMPLER OBJECTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">From the previous two sections, we see that in addition to texture data, there are two other key concepts involved with using textures: texture filtering and address modes. What filter and address mode<a id="page379"/> to use when sampling a texture resource is defined by a <i>sampler object</i>. An application will usually need several sampler objects to sample textures in different ways. </p>
+<p class="h2" id="c9.7.1"><a href="toc.html#toc-9.7.1"><b>9.7.1 Creating Samplers</b></a></p>
+<p class="tx1">As we will see in the next section, samplers are used in shaders. In order to bind samplers to shaders for use, we need to bind descriptors to sampler objects. The following code shows an example root signature such that the second slot takes a table of one sampler descriptor bound to sampler register slot 0.</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE descRange[3];</span></p>
+<p class="code"><span class="code">descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);</span></p>
+<p class="code"><span class="code">descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);</span></p>
+<p class="code"><span class="code">descRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER rootParameters[3];</span></p>
+<p class="code"><span class="code">rootParameters[0].InitAsDescriptorTable(1, &amp;descRange[0], D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code"><span class="code">rootParameters[1].InitAsDescriptorTable(1, &amp;descRange[1], D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code"><span class="code">rootParameters[2].InitAsDescriptorTable(1, &amp;descRange[2], D3D12_SHADER_VISIBILITY_ALL);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC descRootSignature;</span></p>
+<p class="code"><span class="code">descRootSignature.Init(3, rootParameters, 0, nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="tx1">If we are going to be setting sampler descriptors, we need a sampler heap. A sampler heap is created by filling out a <span class="code">D3D12_DESCRIPTOR_HEAP_DESC</span> instance and specifying the heap type <span class="code">D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER</span>:</p>
+<p class="code"><span class="code">D3D12_DESCRIPTOR_HEAP_DESC descHeapSampler = {};</span></p>
+<p class="code"><span class="code">descHeapSampler.NumDescriptors = 1;</span></p>
+<p class="code"><span class="code">descHeapSampler.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;</span></p>
+<p class="code"><span class="code">descHeapSampler.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">ComPtr&lt;ID3D12DescriptorHeap&gt; mSamplerDescriptorHeap;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(mDevice-&gt;CreateDescriptorHeap(&amp;descHeapSampler,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;__uuidof(ID3D12DescriptorHeap),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;(void**)&amp;mSamplerDescriptorHeap));</span></p>
+<p class="tx1">Once we have a sampler heap, we can create sampler descriptors. It is here that we specify the address mode and filter type, as well as other parameters by filling out a <span class="code">D3D12_SAMPLER_DESC</span> object:</p>
+<p class="code"><span class="code">typedef struct D3D12_SAMPLER_DESC</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_FILTER Filter;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE AddressU;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE AddressV;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE AddressW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT MipLODBias;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MaxAnisotropy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_FUNC ComparisonFunc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT BorderColor[ 4 ];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT MinLOD;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT MaxLOD;</span></p>
+<p class="code"><span class="code">} D3D12_SAMPLER_DESC;</span></p>
+<ol><li><span class="code">Filter</span>: A member of the <span class="code">D3D12_FILTER</span> enumerated type to specify<a id="page380"/> the kind of filtering to use. </li>
+<li><span class="code">AddressU</span>: The address mode in the horizontal <i>u</i>-axis direction of the texture.</li>
+<li><span class="code">AddressV</span>: The address mode in the vertical <i>v</i>-axis direction of the texture.</li>
+<li><span class="code">AddressW</span>: The address mode in the depth <i>w</i>-axis direction of the texture (applicable to 3D textures only).</li>
+<li><span class="code">MipLODBias</span>: A value to bias the mipmap level picked. Specify 0.0 for no bias. </li>
+<li><span class="code">MaxAnisotropy</span>: The maximum anisotropy value which must be between 1-16 inclusively. This is only applicable for <span class="code">D3D12_FILTER_ANISOTROPIC</span> or <span class="code">D3D12_FILTER_COMPARISON_ANISOTROPIC</span>. Larger values are more expensive, but can give better results. </li>
+<li><span class="code">ComparisonFunc</span>: Advanced options used for some specialized applications like shadow mapping. For now, just set to <span class="code">D3D12_COMPARISON_FUNC_ALWAYS</span> until the shadow mapping chapter.</li>
+<li><span class="code">BorderColor</span>: Used to specify the border color for address mode <span class="code">D3D12_TEXTURE_ADDRESS_MODE_BORDER</span>.</li>
+<li><span class="code">MinLOD</span>: Minimum mipmap level that can be selected.</li>
+<li><span class="code">MaxLOD</span>: Maximum mipmap level that can be selected.</li></ol>
+<p class="tx">Below are some examples of commonly used <span class="code">D3D12_FILTER</span> types:</p>
+<ol><li>D3D12<span class="code">_FILTER_MIN_MAG_MIP_POINT</span>: Point filtering over a texture map, and point filtering across mipmap levels (i.e., the nearest mipmap level is used).</li>
+<li>D3D12<span class="code">_FILTER_MIN_MAG_LINEAR_MIP_POINT</span>: Bilinear filtering over a texture map, and point filtering across mipmap levels (i.e., the nearest mipmap level is used).</li>
+<li><span class="code">D3D12_FILTER_MIN_MAG_MIP_LINEAR</span>: Bilinear filtering over a texture map, and linear filtering between the two nearest lower and upper mipmap levels. This is often called trilinear filtering.</li>
+<li><span class="code">D3D12_FILTER_ANISOTROPIC</span>: Anisotropic filtering for minification, magnification, and mipmapping.</li></ol>
+<p class="tx1">You can figure out the other<a id="page381"/> possible permutations from these examples, or you can look up the <span class="code">D3D12_FILTER</span> enumerated type in the SDK documentation. </p>
+<p class="tx">The following example shows how to create a descriptor to a sampler in the heap that uses linear filtering, wrap address mode, and typical default values for the other parameters:</p>
+<p class="code"><span class="code">D3D12_SAMPLER_DESC samplerDesc = {};</span></p>
+<p class="code"><span class="code">samplerDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;</span></p>
+<p class="code"><span class="code">samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;</span></p>
+<p class="code"><span class="code">samplerDesc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;</span></p>
+<p class="code"><span class="code">samplerDesc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;</span></p>
+<p class="code"><span class="code">samplerDesc.MinLOD = 0;</span></p>
+<p class="code"><span class="code">samplerDesc.MaxLOD = D3D12_FLOAT32_MAX;</span></p>
+<p class="code"><span class="code">samplerDesc.MipLODBias = 0.0f;</span></p>
+<p class="code"><span class="code">samplerDesc.MaxAnisotropy = 1;</span></p>
+<p class="code"><span class="code">samplerDesc.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateSampler(&amp;samplerDesc,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSamplerDescriptorHeap-&gt;GetCPUDescriptorHandleForHeapStart());</span></p>
+<p class="tx1">The following code shows how to bind a sampler descriptor to a root signature parameter slot for use by the shader programs:</p>
+<p class="code"><span class="code">commandList-&gt;SetGraphicsRootDescriptorTable(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;samplerDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="h2" id="c9.7.2"><a href="toc.html#toc-9.7.2"><b>9.7.2 Static Samplers</b></a></p>
+<p class="tx1">It turns out that a graphics application usually only uses a handful of samplers. Therefore, Direct3D provides a special shortcut to define an array of samplers and set them without going through the process of creating a sampler heap. The <span class="code">Init</span> function of the <span class="code">CD3DX12_ROOT_SIGNATURE_DESC</span> class has two parameters that allow you to define an array of so-called static samplers your application can use. Static samplers are described by the <span class="code">D3D12_STATIC_SAMPLER_DESC</span> structure. This structure is very similar to <span class="code">D3D12_SAMPLER_DESC</span>, with the following exceptions: </p>
+<ol><li>There are some limitations on what the border color can be. Specifically, the border color of a static sampler must be a member of:
+<p class="code"><span class="code">enum D3D12_STATIC_BORDER_COLOR</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK&nbsp;&nbsp;&nbsp;= 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK&nbsp;&nbsp;&nbsp;= (&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK + 1 ) ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE&nbsp;&nbsp;&nbsp;= (&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK + 1 )&nbsp;</span></p>
+<p class="code"><span class="code">}D3D12_STATIC_BORDER_COLOR;</span></p></li>
+<li>It contains additional fields to specify the shader register, register space, and shader visibility, which would normally be specified as part of the sampler heap. </li></ol>
+<p class="tx">In addition, you can only define<a id="page382"/> 2032 number of static samplers, which is more than enough for most applications. If you do need more, however, you can just use non-static samplers and go through a sampler heap. </p>
+<p class="tx">We use static samplers in our demos. The following code shows how we define our static samplers. Note that we do not need all these static samplers in our demos, but we define them anyway so that they are there if we do need them. It is only a handful anyway, and it does not hurt to define a few extra samplers that may or may not be used. </p>
+<p class="code"><span class="code">std::array&lt;const CD3DX12_STATIC_SAMPLER_DESC, 6&gt;&nbsp;&nbsp;&nbsp;&nbsp;TexColumnsApp::GetStaticSamplers()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Applications usually only need a handful of samplers. So just define them&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// all up front and keep them available as part of the root signature.&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC pointWrap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_MIN_MAG_MIP_POINT, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC pointClamp(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_MIN_MAG_MIP_POINT, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC linearWrap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;2, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC linearClamp(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;3, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;4, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_ANISOTROPIC, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_WRAP, // addressW</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // mipLODBias</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;8);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// maxAnisotropy</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;5, // shaderRegister</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_FILTER_ANISOTROPIC, // filter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressU</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressV</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_TEXTURE_ADDRESS_MODE_CLAMP, // addressW</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // mipLODBias</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;8);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// maxAnisotropy</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return {&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;pointWrap, pointClamp,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;linearWrap, linearClamp,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;anisotropicWrap, anisotropicClamp };</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void TexColumnsApp::BuildRootSignature()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_DESCRIPTOR_RANGE texTable;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_PARAMETER slotRootParameter[4];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[0].InitAsDescriptorTable(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;texTable, D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[1].InitAsConstantBufferView(0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[2].InitAsConstantBufferView(1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[3].InitAsConstantBufferView(2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto staticSamplers = GetStaticSamplers();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;(UINT)staticSamplers.size(), staticSamplers.data(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// create a root signature with a single slot which points to a</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// descriptor range consisting of a single constant buffer</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ComPtr&lt;ID3DBlob&gt; serializedRootSig = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ComPtr&lt;ID3DBlob&gt; errorBlob = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HRESULT hr = D3D12SerializeRootSignature(&amp;rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(errorBlob != nullptr)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;::OutputDebugStringA((char*)errorBlob-&gt;GetBufferPointer());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(hr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateRootSignature(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig-&gt;GetBufferPointer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig-&gt;GetBufferSize(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(mRootSignature.GetAddressOf())));</span></p>
+<p class="code"><span class="code">}</span><a id="page384"/></p>
+<p class="h1" id="c9.8"><a href="toc.html#toc-9.8"><b>9.8 SAMPLING TEXTURES IN A SHADER</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A texture object is defined in HLSL and assigned to a texture register with the following syntax:</p>
+<p class="code"><span class="code">Texture2D gDiffuseMap : register(t0);</span></p>
+<p class="tx1">Note that texture registers use specified by tn where n is an integer identifying the texture register slot. The root signature definition specifies the mapping from slot parameter to shader register; this is how the application code can bind an SRV to a particular <span class="code">Texture2D</span> object in a shader.</p>
+<p class="tx">Similarly, sampler objects are defined HLSL and assigned to a sampler register with the following syntax:</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="tx1">These samplers correspond to the static sampler array we set in the previous section. Note that texture registers use specified by sn where n is an integer identifying the sampler register slot. </p>
+<p class="tx">Now, given a pair of texture coordinate (u, v) for a pixel in the pixel shader, we actually sample a texture using the <span class="code">Texture2D::Sample</span> method:</p>
+<p class="code"><span class="code">Texture2D gDiffuseMap : register(t0);</span></p>
+
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="tx1">We pass a <span class="code">SamplerState</span> object for the first parameter indicating how<a id="page385"/> the texture data will be sampled, and we pass in the pixel&rsquo;s (<i>u</i>, <i>v</i>) texture coordinates for the second parameter. This method returns the interpolated color from the texture map at the specified (<i>u</i>, <i>v</i>) point using the filtering methods specified by the <span class="code">SamplerState</span> object.</p>
+<p class="h1" id="c9.9"><a href="toc.html#toc-9.9"><b>9.9 CRATE DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We now review the key points of adding a crate texture to a cube (as shown in Figure <a href="ch09.html#fig9.1">9.1</a>). </p>
+<p class="h2" id="c9.9.1"><a href="toc.html#toc-9.9.1"><b>9.9.1 Specifying Texture Coordinates</b></a></p>
+<p class="tx1">The <span class="code">GeometryGenerator::CreateBox</span> generates the texture coordinates for the box so that the entire texture image is mapped onto each face of the box. For brevity, we only show the vertex definitions for the front, back, and top face. Note also that we omit the coordinates for the normal and tangent vectors in the <span class="code">Vertex</span> constructor (the texture coordinates are bolded).</p>
+<p class="code"><span class="code">GeometryGenerator::MeshData GeometryGenerator::CreateBox(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float width, float height, float depth,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 numSubdivisions)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshData meshData;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Vertex v[24];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w2 = 0.5f*width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float h2 = 0.5f*height;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float d2 = 0.5f*depth;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fill in the front face vertex data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[0] = Vertex(-w2, -h2, -d2, &hellip;, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[1] = Vertex(-w2, +h2, -d2, &hellip;, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[2] = Vertex(+w2, +h2, -d2, &hellip;, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[3] = Vertex(+w2, -h2, -d2, &hellip;, 1.0f, 1.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fill in the back face vertex data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[4] = Vertex(-w2, -h2, +d2, &hellip;, 1.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[5] = Vertex(+w2, -h2, +d2, &hellip;, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[6] = Vertex(+w2, +h2, +d2, &hellip;, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[7] = Vertex(-w2, +h2, +d2, &hellip;, 1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fill in the top face vertex data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[8] = Vertex(-w2, +h2, -d2, &hellip;, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[9] = Vertex(-w2, +h2, +d2, &hellip;, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[10] = Vertex(+w2, +h2, +d2, &hellip;, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;v[11] = Vertex(+w2, +h2, -d2, &hellip;, 1.0f, 1.0f);</span></p>
+<p class="tx1">Refer back to Figure <a href="ch09.html#fig9.3">9.3</a> if you need help seeing why the texture<a id="page386"/> coordinates are specified this way.</p>
+<p class="h2" id="c9.9.2"><a href="toc.html#toc-9.9.2"><b>9.9.2 Creating the Texture</b></a></p>
+<p class="tx1">We create the texture from file at initialization time as follows:</p>
+<p class="code"><span class="code">// Helper structure to group data related to the texture.</span></p>
+<p class="code"><span class="code">struct Texture</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Unique material name for lookup.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string Name;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::wstring Filename;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; Resource = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; UploadHeap = nullptr;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, std::unique_ptr&lt;Texture&gt;&gt; mTextures;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void CrateApp::LoadTextures()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto woodCrateTex = std::make_unique&lt;Texture&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;woodCrateTex-&gt;Name = "woodCrateTex";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;woodCrateTex-&gt;Filename = L"Textures/WoodCrate01.dds";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), woodCrateTex-&gt;Filename.c_str(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;woodCrateTex-&gt;Resource, woodCrateTex-&gt;UploadHeap));</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mTextures[woodCrateTex-&gt;Name] = std::move(woodCrateTex);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">We store all of our unique textures in an unordered map so that we can look them up by name. In production code, before loading a texture, you would want to check if the texture data has already been loaded (i.e., is it already contained in the unordered map) so that it does not get loaded multiple times. </p>
+<p class="h2" id="c9.9.3"><a href="toc.html#toc-9.9.3"><b>9.9.3 Setting the Texture</b></a></p>
+<p class="tx1">Once a texture has been created and an SRV has been created for it in a descriptor heap, binding the texture to the pipeline so that it can be used in shader programs is simply a matter of setting it to the root signature parameter that expects the texture: <a id="page387"/></p>
+<p class="code"><span class="code">// Get SRV to texture we want to bind.</span></p>
+<p class="code"><span class="code">CD3DX12_GPU_DESCRIPTOR_HANDLE tex(</span></p>
+<p class="code"><span class="code">mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">tex.Offset(ri-&gt;Mat-&gt;DiffuseSrvHeapIndex, mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Bind to root parameter 0. The root parameter description specifies which&nbsp;</span></p>
+<p class="code"><span class="code">// shader register slot this corresponds to.</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetGraphicsRootDescriptorTable(0, tex);</span></p>
+<p class="h2" id="c9.9.4"><a href="toc.html#toc-9.9.4"><b>9.9.4 Updated HLSL</b></a></p>
+<p class="tx1">Below is the revised Default.hlsl file that now supports texturing (texturing code has been bolded):</p>
+<p class="code"><span class="code">// Defaults for number of lights.</span></p>
+<p class="code"><span class="code">#ifndef NUM_DIR_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_DIR_LIGHTS 3</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_POINT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_POINT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_SPOT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_SPOT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include structures and functions for lighting.</span></p>
+<p class="code"><span class="code">#include "LightingUtil.hlsl"</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Texture2D&nbsp;&nbsp;gDiffuseMap : register(t0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per frame.</span></p>
+<p class="code"><span class="code">cbuffer cbPerObject : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gWorld;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 gTexTransform;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per material.</span></p>
+<p class="code"><span class="code">cbuffer cbPass : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gAmbientLight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indices [0, NUM_DIR_LIGHTS) are directional lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp; NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// are spot lights for a maximum of MaxLights per object.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Light gLights[MaxLights];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbMaterial : register(b2)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;gDiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3&nbsp;&nbsp;gFresnelR0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gRoughness;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 gMatTransform;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosW = posW.xyz;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to use&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// inverse-transpose of world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, gMatTransform).xy;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolating normal can unnormalize it, so renormalize it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.NormalW = normalize(pin.NormalW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vector from point being lit to eye.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 toEyeW = normalize(gEyePosW - pin.PosW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Light terms.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ambient = gAmbientLight*diffuseAlbedo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float shininess = 1.0f - gRoughness;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Material mat = { diffuseAlbedo, gFresnelR0, shininess };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 shadowFactor = 1.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 directLight = ComputeLighting(gLights, mat, pin.PosW,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;pin.NormalW, toEyeW, shadowFactor);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 litColor = ambient + directLight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Common convention to take alpha from diffuse albedo.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;litColor.a = diffuseAlbedo.a;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return litColor;</span></p>
+<p class="code"><span class="code">}</span><a id="page389"/></p>
+<p class="h1" id="c9.10"><a href="toc.html#toc-9.10"><b>9.10 TRANSFORMING TEXTURES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Two constant buffer variables we have not discussed are <span class="code">gTexTransform</span> and <span class="code">gMatTransform</span>. These variables are used in the vertex shader to transform the input texture coordinates:</p>
+<p class="code"><span class="code">// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">vout.TexC = mul(texC, gMatTransform).xy;</span></p>
+<p class="tx1">Texture coordinates represent<a id="page390"/> 2D points in the texture plane. Thus, we can translate, rotate, and scale them like we could any other point. Here are some example uses for transforming textures:</p>
+<ol><li>A brick texture is stretched along a wall. The wall vertices currently have texture coordinates in the range [0, 1]. We scale the texture coordinates by 4 to scale them to the range [0, 4], so that the texture will be repeated four-by-four times across the wall.</li>
+<li>We have cloud textures stretches over a clear blue sky. By translating the texture coordinates as a function of time, the clouds are animated over the sky. </li>
+<li>Texture rotation is sometimes useful for particle like effects, where we rotate a fireball texture over time, for example. </li></ol>
+<p class="tx1">In the &ldquo;Crate&rdquo; demo, we use an identity matrix transformation so that the input texture coordinates are left unmodified, but in the next section we explain a demo that does use texture transforms. </p>
+<p class="tx">Note that to transform the 2D texture coordinates by a 4 &times; 4 matrix, we augment it to a 4D vector:</p>
+<p class="code"><span class="code">vin.TexC ---&gt; float4(vin.Tex, 0.0f, 1.0f)</span></p>
+<p class="tx">After the multiplication is done, the resulting 4D vector is cast back to a 2D vector by throwing away the z- and w-components. That is, </p>
+<p class="code"><span class="code">vout.TexC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform).xy;</span></p>
+<p class="tx1">We use two separate texture transformation matrices <span class="code">gTexTransform</span> and <span class="code">gMatTransform</span> because sometimes it makes more sense for the material to transform the textures (for animated materials like water), but sometimes it makes more sense for the texture transform to be a property of the object.</p>
+<p class="tx">Because we are working with 2D texture coordinates, we only care about transformations done to the first two coordinates. For instance, if the texture matrix translated the z-coordinate, it would have no effect on the resulting texture coordinates.</p>
+<p class="h1" id="c9.11"><a href="toc.html#toc-9.11"><b>9.11 TEXTURED HILLS AND WAVES DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this demo, we add textures to our land and water scene. The first key issue is that we tile a grass texture over the land. Because the land mesh is a large surface, if we simply stretched a texture over it, then too few texels would cover each triangle. In other words, there is not enough texture resolution for the surface; we would thus get magnification artifacts. Therefore, we repeat the grass texture over the land mesh to get more resolution<a id="page391"/>. The second key issue is that we scroll the water texture over the water geometry as a function of time. This added motion makes the water a bit more convincing. Figure <a href="ch09.html#fig9.15">9.15</a> shows a screenshot of the demo. </p>
+
+<p class="caption"><img src="images/Fig9-15.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.15"><b><i>Figure 9.15.</i></b>&nbsp;&nbsp;Screenshot of the Land Tex demo.</p>
+
+<p class="h2" id="c9.11.1"><a href="toc.html#toc-9.11.1"><b>9.11.1 Grid Texture Coordinate Generation</b></a></p>
+<p class="tx1">Figure <a href="ch09.html#fig9.16">9.16</a> shows an <i>m</i> &times; <i>n</i> grid in the <i>xz</i>-plane and a corresponding grid in the normalized texture space domain [0, 1]<sup>2</sup>. From the picture, it is clear that the texture coordinates of the <i>ij</i>th grid vertex in the <i>xz</i>-plane are the coordinates of the <i>ij</i>th grid vertex in the texture space. The texture space coordinates of the <i>ij</i>th vertex are:</p>
+<p class="eq"><img src="images/eq425-01.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/Fig9-16.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.16"><b><i>Figure 9.16.</i></b>&nbsp;&nbsp;The texture coordinates of the grid vertex <b>v</b><i><sub>ij</sub></i> in xz-space are given by the <i>ij</i>th grid vertex <b>T</b><i><sub>ij</sub></i> in <i>uv</i>-space.</p>
+
+<p class="tx1">Thus, we use the following code to<a id="page392"/> generate texture coordinates for a grid in the <span class="code">GeometryGenerator::CreateGrid</span> method:</p>
+<p class="code"><span class="code">GeometryGenerator::MeshData&nbsp;</span></p>
+<p class="code"><span class="code">GeometryGenerator::CreateGrid(float width, float depth, uint32 m, uint32 n)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshData meshData;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 vertexCount = m*n;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 faceCount&nbsp;&nbsp;= (m-1)*(n-1)*2;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float halfWidth = 0.5f*width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float halfDepth = 0.5f*depth;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dx = width / (n-1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dz = depth / (m-1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float du = 1.0f / (n-1);</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float dv = 1.0f / (m-1);</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Vertices.resize(vertexCount);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; m; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float z = halfDepth - i*dz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(uint32 j = 0; j &lt; n; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float x = -halfWidth + j*dx;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].Position = XMFLOAT3(x, 0.0f, z);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].Normal&nbsp;&nbsp;= XMFLOAT3(0.0f, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TangentU = XMFLOAT3(1.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Stretch texture over grid.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TexC.x = j*du;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TexC.y = i*dv;</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="h2" id="c9.11.2"><a href="toc.html#toc-9.11.2"><b>9.11.2 Texture Tiling</b></a></p>
+<p class="tx1">We said we wanted to tile a grass texture over the land mesh. But so far the texture coordinates we have computed lie in the unit domain [0, 1]<sup>2</sup>; so no tiling will occur. To tile the texture, we specify the wrap address mode and scale the texture coordinates by 5 using a texture transformation matrix. Thus the texture coordinates are mapped to the domain [0, 5]<sup>2</sup> so that the texture is tiled 5 &times; 5 times across the land mesh surface:</p>
+<p class="code"><span class="code">void TexWavesApp::BuildRenderItems()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto gridRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;World = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;gridRitem-&gt;TexTransform,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMatrixScaling(5.0f, 5.0f, 1.0f));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span><a id="page393"/></p>
+<p class="h2" id="c9.11.3"><a href="toc.html#toc-9.11.3"><b>9.11.3 Texture Animation</b></a></p>
+<p class="tx1">To scroll a water texture over the water geometry, we translate the texture coordinates in the texture plane as a function of time in the <span class="code">AnimateMaterials</span> method, which gets called every update cycle. Provided the displacement is small for each frame, this gives the illusion of a smooth animation. We use the wrap address mode along with a seamless texture so that we can seamlessly translate the texture coordinates around the texture space plane. The following code shows how we calculate the offset vector for the water texture, and how we build and set the water&rsquo;s texture matrix:</p>
+<p class="code"><span class="code">void TexWavesApp::AnimateMaterials(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; // Scroll the water material texture coordinates.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; auto waterMat = mMaterials["water"].get();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; float&amp; tu = waterMat-&gt;MatTransform(3, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; float&amp; tv = waterMat-&gt;MatTransform(3, 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; tu += 0.1f * gt.DeltaTime();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; tv += 0.02f * gt.DeltaTime();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; if(tu &gt;= 1.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; tu -= 1.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; if(tv &gt;= 1.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; tv -= 1.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; waterMat-&gt;MatTransform(3, 0) = tu;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; waterMat-&gt;MatTransform(3, 1) = tv;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp; // Material has changed, so need to update cbuffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; waterMat-&gt;NumFramesDirty = gNumFrameResources;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c9.12"><a href="toc.html#toc-9.12"><b>9.12 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Texture coordinates are used to define a triangle on the texture that gets mapped to the 3D triangle.</li>
+<li>The most prevalent way of creating textures for games is for an artist to make them in Photoshop or some other image editor, and then save them as an image file like BMP, DDS, TGA, or PNG. Then the game application will load the image data at load<a id="page394"/> time into an <span class="code">ID3D12Resource</span> object. For real-time graphics applications, the DDS (DirectDraw Surface format) image file format is preferred, as it supports a variety of image formats that are natively understood by the GPU; in particular, it supports compressed image formats that can be natively decompressed by the GPU.</li>
+<li>There are two popular ways to convert traditional image formats to the DDS format: use an image editor that exports to DDS or use a Microsoft command line tool called texconv. </li>
+<li>We can create textures from image files stored on disk using the <span class="code">CreateDDSTextureFromFile12</span> function, which is located on the DVD at <i>Common/DDSTextureLoader.h/.cpp</i>.</li>
+<li>Magnification occurs when we zoom in on a surface and are trying to cover too many screen pixels with a few texels. Minification occurs when we zoom out of a surface and too many texels are trying to cover too few screen pixels. Mipmaps and texture filters are techniques to handle magnification and minification. GPUs support three kinds of texture filtering natively (in order of lowest quality and least expensive to highest quality and most expensive): point, linear, and anisotropic filters.</li>
+<li>Address modes define what Direct3D is supposed to do with texture coordinates outside the [0, 1] range. For example, should the texture be tiled, mirrored, clamped, etc.?</li>
+<li>Texture coordinates can be scaled, rotated, and translated just like other points. By incrementally transforming the texture coordinates by a small amount each frame, we animate the texture. </li></ol>
+<p class="h1" id="c9.13"><a href="toc.html#toc-9.13"><b>9.13 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Experiment with the &ldquo;Crate&rdquo; demo by changing the texture coordinates and using different address mode combinations and filtering options. In particular, reproduce the images in Figures <a href="ch09.html#fig9.7">9.7</a>, <a href="ch09.html#fig9.9">9.9</a>, <a href="ch09.html#fig9.10">9.10</a>, <a href="ch09.html#fig9.11">9.11</a>, <a href="ch09.html#fig9.12">9.12</a>, and <a href="ch09.html#fig9.13">9.13</a>.</li>
+<li>Using the DirectX Texture Tool, we can manually specify each mipmap level (<b>File-&gt;Open Onto This Surface</b>). Create a DDS file with a mipmap chain like the one in Figure <a href="ch09.html#fig9.17">9.17</a>, with a different textual description or color on each level so that you can easily distinguish between each mipmap level. Modify the Crate demo by using this texture and have the camera zoom in and out so that you can explicitly see the mipmap levels changing. Try both point and linear mipmap filtering.<a id="page395"/>
+<p class="caption"><img src="images/Fig9-17.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.17"><b><i>Figure 9.17.</i></b>&nbsp;&nbsp;A mipmap chain manually constructed so that each level is easily distinguishable.</p>
+</li>
+<li>Given two textures of the same size, we can combine them via different operations to obtain a new image. More generally, this is called multitexturing, where multiple textures are used to achieve a result. For example, we can add, subtract, or (component-wise) multiply the corresponding texels of two textures. Figure <a href="ch09.html#fig9.18">9.18</a> shows the result of component-wise multiplying two textures to get a fireball like result. For this exercise, modify the &ldquo;Crate&rdquo; demo by combining the two source textures in Figure <a href="ch09.html#fig9.18">9.18</a> in a pixel shader to produce the fireball texture over each cube face. (The image files for this exercise may be downloaded from the book&rsquo;s website.) Note that you will have to modify the Default.hlsl to support more than one texture.
+<p class="caption"><img src="images/Fig9-18.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.18"><b><i>Figure 9.18.</i></b>&nbsp;&nbsp;Component-wise multiplying corresponding texels of two textures to produce a new texture.</p>
+</li>
+<li>Modify the solution to Exercise 3 by rotating the fireball texture as a function of time over each cube face. </li>
+<li>Let <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>, and <b>p</b><sub>2</sub> be the vertices of a 3D triangle with respective texture coordinates <b>q</b><sub>0</sub>, <b>q</b><sub>1</sub>, and <b>q</b><sub>2</sub>. Recall from &#x00A7;9.2 that for an arbitrary point on a 3D triangle <b>p</b>(<i>s</i>, <i>t</i>) = <b>p</b><sub>0</sub> + <i>s</i>(<b>p</b><sub>1</sub> &minus; <b>p</b><sub>0</sub>) + <i>t</i>(<b>p</b><sub>2</sub> &minus; <b>p</b><sub>0</sub>) where s &#x2265; 0, <i>t</i> &#x2265; 0, <i>s</i> + <i>t</i> &#x2264; 1,  its texture coordinates (<i>u</i>, <i>v</i>) are found by linearly interpolating the vertex texture coordinates across the 3D triangle by the same <i>s</i>, <i>t</i> parameters:
+  <p class="eq">(<i>u</i>, <i>v</i>) = <b>q</b><sub>0</sub> + <i>s</i>(<b>q</b><sub>1</sub> &minus; <b>q</b><sub>0</sub>) + <i>t(</i><b>q</b><sub>2</sub> &minus; <b>q</b><sub>0</sub>)</p>
+<ol class="lc-alpha">
+<li>Given (<i>u</i>, <i>v</i>) and <b>q</b><sub>0</sub>, <b>q</b><sub>1</sub>, and <b>q</b><sub>2</sub>, solve for (<i>s</i>, <i>t</i>)  in terms of <i>u</i> and <i>v</i> (Hint: Consider the vector equation (<i>u</i>, <i>v</i>) =  <b>q</b><sub>0</sub> +  <i>s</i>(<b>q</b><sub>1</sub> &minus; <b>q</b><sub>0</sub>) + <i>t(</i><b>q</b><sub>2</sub> &minus; <b>q</b><sub>0</sub>).</li>
+<li>Express <b>p</b> as a function of <i>u</i> and <i>v</i>; that is, find a formula <b>p</b> = <b>p</b>(<i>u</i>, <i>v</i>).</li>
+<li>Compute &#x2202;<b>p</b>/&#x2202;<i>u</i> and &#x2202;<b>p</b>/&#x2202;<i>v</i> and give a geometric interpretation of what these vectors mean.</li></ol></li>
+<li><a id="page396"/>Modify the &ldquo;LitColumns&rdquo; demo from the previous chapter by adding textures to the ground, columns, and spheres (Figure <a href="ch09.html#fig9.19">9.19</a>). The textures can be found in this chapter&rsquo;s code directory.
+<p class="caption"><img src="images/Fig9-19.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig9.19"><b><i>Figure 9.19.</i></b>&nbsp;&nbsp;Textured column scene.</p>
+</li>
+</ol>
+</body>
+</html>

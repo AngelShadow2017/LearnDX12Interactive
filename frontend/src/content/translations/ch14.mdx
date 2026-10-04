@@ -1,0 +1,763 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：14.1–14.8 全部小节（含细分图元类型与控制点、外壳着色器（常量外壳着色器与控制点外壳着色器）、镶嵌器、域着色器、四边形细分演示、三次贝塞尔四边形面片（贝塞尔曲线、三次贝塞尔曲面、曲面求值代码、面片几何定义）、本章小结与习题 1–9），依据 EPUB ch14.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
+
+<a id="page513"/>
+
+曲面细分阶段（tessellation stages）指渲染管线中参与细分几何的三个阶段。简单地说，曲面细分指的是把几何体细分成更小的三角形，然后以某种方式偏移新顶点。增加三角形数量的动机是为网格添加细节。但为什么不一开始就创建一个高多边形数的精细网格，一劳永逸呢？以下是进行曲面细分的三个理由。
+
+1. GPU 上的动态 LOD。我们可以根据网格到摄像机的距离等因素动态调整网格细节。例如，如果网格非常远，渲染它的高多边形版本就很浪费，因为反正我们也看不清所有那些细节。当物体逐渐靠近摄像机时，我们可以持续增加细分程度来增加物体细节。
+2. 物理与动画效率。我们可以在低多边形网格上执行物理和动画计算，然后再细分到更高多边形的版本。这样，通过以较低频率执行物理和动画计算来节省计算能力。
+3. 节省内存。我们可以在内存（磁盘、RAM 和显存）中存储低多边形网格，然后让 GPU 在运行时即时细分出高多边形版本。
+
+图 14.1 显示，曲面细分阶段位于<a id="page514"/>顶点着色器和几何着色器之间。这些阶段是可选的，因为到目前为止本书一直没有使用它们。
+
+<Figure src="images/Fig14-1.jpg" alt="渲染管线的一个子集：顶点着色器之后是三个曲面细分阶段，再进入几何着色器" figureNumber="图 14.1" caption="渲染管线的一个子集，显示曲面细分阶段。" />
+
+**本章目标：**
+
+1. 了解曲面细分所使用的面片（patch）图元类型。
+2. 理解每个曲面细分阶段做什么，以及每个阶段预期的输入和输出。
+3. 能够通过编写外壳着色器和域着色器程序来细分几何体。
+4. 熟悉判断何时进行细分的不同策略，并熟悉硬件曲面细分的性能注意事项。
+5. 学习贝塞尔（Bézier）曲线和曲面的数学知识，以及如何在曲面细分阶段中实现它们。
+
+<section className="lesson-section lesson-section--intro" id="s141">
+<h2>14.1 细分图元类型</h2>
+
+当我们为曲面细分而渲染时，并不是向 IA 阶段提交三角形。相反，我们提交带有若干*控制点*（control point）的*面片*（patch）。Direct3D 支持具有 1–32 个控制点的面片，这些面片<a id="page515"/>由以下图元类型描述：
+
+```cpp
+  D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST = 33,
+  D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST = 34,
+  D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST = 35,
+  D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST = 36, 
+  .
+  .
+  .
+  D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST = 63,
+  D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST = 64,
+```
+
+三角形可以看作具有三个控制点的三角形面片（`D3D_PRIMITIVE_3_CONTROL_POINT_PATCH`），所以你仍然可以提交平常的三角形网格来细分。一个简单的四边形面片可以用四个控制点提交（`D3D_PRIMITIVE_4_CONTROL_POINT_PATCH`）。这些面片最终由曲面细分阶段细分成三角形。
+
+**注意**：在把控制点图元类型传给 `ID3D12GraphicsCommandList::IASetPrimitiveTopology` 时，需要把 `D3D12_GRAPHICS_PIPELINE_STATE_DESC::PrimitiveTopologyType` 字段设置为 `D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH`：
+
+```cpp
+opaquePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+```
+
+那么控制点数量更多的面片呢？控制点的思想来自某些数学曲线和曲面的构造。如果你曾在 Adobe Illustrator 这样的绘图程序中使用过贝塞尔曲线，你就知道可以通过控制点来塑造曲线的形状。贝塞尔曲线的数学可以推广到贝塞尔曲面。例如，你可以创建一个用九个控制点或十六个控制点来塑形的贝塞尔四边形面片；控制点数量越多，塑造面片的自由度就越大。所以所有这些控制点类图元的动机是为这类曲面提供支持。本章我们会给出贝塞尔四边形面片的讲解和演示。
+
+<h3 id="s1411">14.1.1 曲面细分与顶点着色器</h3>
+
+因为我们向渲染管线提交的是面片控制点，所以流经顶点着色器的正是控制点。因此，启用曲面细分时，顶点着色器实际上是一个"控制点的顶点着色器"，我们可以在曲面细分开始之前完成所需的任何控制点工作。通常，动画或物理计算在几何体被细分之前，以较低的频率在顶点着色器中完成。<a id="page516"/>
+</section>
+
+<section className="lesson-section" id="s142">
+<h2>14.2 外壳着色器</h2>
+
+在接下来的小节中，我们探讨外壳着色器，它实际上由两个着色器组成：
+
+1. 常量外壳着色器（Constant Hull Shader）
+2. 控制点外壳着色器（Control Point Hull Shader）
+
+<h3 id="s1421">14.2.1 常量外壳着色器</h3>
+
+这个*常量外壳着色器*（constant hull shader）逐面片求值，它的任务是输出网格所谓的*细分因子*（tessellation factor）。细分因子指示曲面细分阶段对面片细分的程度。下面是一个具有四个控制点的*四边形面片*（quad patch）的例子，我们把它均匀细分三次。
+
+```cpp
+struct PatchTess
+{
+  float EdgeTess[4]   : SV_TessFactor;
+  float InsideTess[2] : SV_InsideTessFactor;
+
+  // Additional info you want associated per patch. 
+};
+
+PatchTess ConstantHS(InputPatch<VertexOut, 4> patch,
+           uint patchID : SV_PrimitiveID)
+{
+  PatchTess pt;
+   
+  // Uniformly tessellate the patch 3 times.
+
+  pt.EdgeTess[0] = 3; // Left edge
+  pt.EdgeTess[1] = 3; // Top edge
+  pt.EdgeTess[2] = 3; // Right edge
+  pt.EdgeTess[3] = 3; // Bottom edge
+   
+  pt.InsideTess[0] = 3; // u-axis (columns)
+  pt.InsideTess[1] = 3; // v-axis (rows)
+   
+  return pt;
+}
+```
+
+常量外壳着色器输入面片的全部控制点，面片由类型 `InputPatch&lt;VertexOut, 4&gt;` 定义。回忆一下，控制点首先流经顶点着色器，所以它们的类型由顶点着色器的输出类型 `VertexOut` 决定。在这个例子中，我们的面片有四个控制点，所以我们为 `InputPatch` 的第二个模板参数指定 4。系统还通过 `SV_PrimitiveID` 语义提供一个面片 ID 值，需要时可以使用；该 ID 唯一标识一次绘制调用中的各个面片。常量<a id="page517"/>外壳着色器必须输出细分因子；细分因子取决于面片的拓扑。
+
+**注意**：除了细分因子（`SV_TessFactor` 和 `SV_InsideTessFactor`）之外，你还可以从常量外壳着色器输出其他面片信息。域着色器接收常量外壳着色器的输出作为输入，并可以利用这些额外的面片信息。
+
+细分一个四边形面片包括两部分：
+
+1. 四个边缘细分因子控制沿每条边细分的程度。
+2. 两个内部细分因子指示如何细分四边形面片（一个细分因子对应四边形的水平维度，另一个细分因子对应四边形的垂直维度）。
+
+图 14.2 展示了当细分因子不相同时，我们能得到的各种四边形面片配置的例子。请研究这些图，直到你完全理解边缘细分因子和内部细分因子是如何工作的。
+
+细分一个*三角形面片*（triangle patch）同样包括两部分：
+
+1. 三个边缘细分因子控制沿每条边细分的程度。
+2. 一个内部细分因子指示三角形面片细分的程度。
+
+图 14.3 展示了当细分因子不相同时，我们能得到的各种三角形面片配置的例子。
+
+Direct3D 11 硬件支持的最大细分因子是 64。如果所有细分因子都为零，该面片就会被拒绝继续处理。这使我们能够逐面片实现诸如视锥剔除和背面剔除之类的优化。
+
+1. 如果一个面片不被视锥看到，那么我们可以拒绝它继续处理（即使我们细分了它，细分出的三角形也会在三角形裁剪阶段被拒绝）。
+2. 如果一个面片背面朝向（backfacing），那么我们可以拒绝它继续处理（即使我们细分了它，细分出的三角形也会在光栅化的背面剔除部分被拒绝）。
+
+一个自然会问的问题是：应该细分到什么程度。请记住，曲面细分的基本思想是为网格添加细节。然而，如果用户无法察觉这些细节，我们就不希望不必要地添加它们。以下是常用于确定细分量的几种度量：<a id="page518"/>
+
+1. **到摄像机的距离：** 物体离眼睛越远，我们越难注意到精细细节；因此，当物体很远时我们可以渲染它的低多边形版本，当它接近眼睛时再细分得更多。
+2. **屏幕面积覆盖：** 我们可以估计物体在屏幕上覆盖的像素数量。如果这个数字很小，那么我们可以渲染物体的低多边形版本。随着其屏幕面积覆盖的增加，我们可以细分得更多。
+3. **朝向：** 三角形相对于眼睛的朝向也被考虑在内，其思想是沿轮廓边（silhouette edge）的三角形应当比其他三角形更精细。
+4. **粗糙度：** 带有大量细节的粗糙表面比光滑表面需要更多细分。可以通过检查表面纹理预计算一个粗糙度值，用它来决定细分的程度。
+
+[Story10] 给出了以下性能建议：
+
+1. 如果细分因子为 1（这基本上意味着我们并没有真正细分），考虑不细分直接渲染面片，因为在曲面细分阶段什么都不做时还要经过它们，只会白白浪费 GPU 开销。
+2. 出于与 GPU 实现相关的性能原因，不要细分到三角形小到覆盖不足八个像素的程度。
+3. 把使用曲面细分的绘制调用成批处理（也就是说，在绘制调用之间反复开关曲面细分开销很大）。
+
+<h3 id="s1422">14.2.2 控制点外壳着色器</h3>
+
+控制点外壳着色器输入若干控制点，并输出若干控制点。控制点外壳着色器每输出一个控制点就被调用一次。外壳着色器的一个应用是改变曲面表示，比如说从普通三角形（以三个控制点提交到管线）变为三次贝塞尔三角形面片（具有十个控制点的面片）。例如，假设你的网格像往常一样用三角形建模（三个控制点）；你可以用外壳着色器把该三角形扩充为具有 10 个控制点的更高阶三次贝塞尔三角形面片，然后利用额外的控制点添加细节，并把三角形面片细分到想要的
+程度。这一策略就是所谓的 *N-patches 方案或 PN 三角形*（PN triangles）方案 [Vlachos01]；它非常方便，因为它无需修改美术管线就能利用曲面细分改进现有的三角形网格。对于我们的第一个演示，它将是一个简单的*直通*（pass-through）着色器，我们只是不加修改地传递控制点。<a id="page519"/>
+
+**注意**：驱动程序可以检测并优化直通着色器 [Bilodeau10b]。
+
+```cpp
+struct HullOut
+{
+  float3 PosL : POSITION;
+};
+
+[domain("quad")]
+[partitioning("integer")]
+[outputtopology("triangle_cw")]
+[outputcontrolpoints(4)]
+[patchconstantfunc("ConstantHS")]
+[maxtessfactor(64.0f)]
+HullOut HS(InputPatch<VertexOut, 4> p, 
+       uint i : SV_OutputControlPointID,
+       uint patchId : SV_PrimitiveID)
+{
+  HullOut hout;
+   
+  hout.PosL = p[i].PosL;
+   
+  return hout;
+}
+```
+
+外壳着色器通过 `InputPatch` 参数输入面片的全部控制点。系统值 `SV_OutputControlPointID` 给出一个索引，标识外壳着色器正在处理的输出控制点。注意，输入面片的控制点数量*不*需要与输出控制点数量匹配；例如，输入面片可以有 4 个控制点，而输出面片可以有十六个控制点；额外的控制点可以从那四个输入控制点推导出来。
+
+控制点外壳着色器引入了许多属性：
+
+1. `domain`：面片类型。有效实参是 `tri`、`quad` 或 `isoline`。
+2. `partitioning`：指定曲面细分的细分模式。
+
+   1. `integer`：只在整数细分因子值处添加/移除新顶点。细分因子的小数部分被忽略。当网格改变其细分层级时，这会产生明显的"跳变"（popping）。
+   2. 分数细分（`fractional_even`/`fractional_odd`）：同样在整数细分因子值处添加/移除新顶点，但顶点会根据细分因子的小数部分逐渐"滑动"。当你希望通过细分让网格从粗糙版本平滑过渡到精细版本，而不是按整数步进突然变化时，这很有用。整数细分和分数细分的区别最好通过动画来理解，所以本章末尾的习题会让你亲手实验，直观体会这一区别。
+
+3. `outputtopology`：通过细分创建的三角形的环绕顺序（winding order）。
+
+   1. `triangle_cw:` 顺时针环绕顺序。<a id="page520"/>
+   2. `triangle_ccw:` 逆时针环绕顺序。
+   3. `line:` 用于线段细分。
+
+4. `outputcontrolpoints`：外壳着色器执行的次数，每次输出一个控制点。系统值 `SV_OutputControlPointID` 给出一个索引，标识外壳着色器正在处理的输出控制点。
+5. `patchconstantfunc`：一个字符串，指定常量外壳着色器函数的名称。
+6. `maxtessfactor`：给驱动程序的提示，指定你的着色器使用的最大细分因子。如果硬件知道这个上界，就有可能进行优化，因为它会知道细分所需的资源量。Direct3D 11 硬件支持的最大细分因子是 64。
+</section>
+
+<section className="lesson-section" id="s143">
+<h2>14.3 镶嵌器</h2>
+
+作为程序员，我们无法控制曲面细分阶段。该阶段完全由硬件完成，由它（镶嵌器，tessellator）根据常量外壳着色器程序输出的细分因子<a id="page521"/>对面片进行细分。下面的插图展示了基于细分因子的各种细分结果。
+
+<h3 id="s1431">14.3.1 四边形面片细分示例</h3>
+
+<Figure src="images/Fig14-2.jpg" alt="多组四边形面片细分示意图，展示不同边缘细分因子与内部细分因子组合下的细分结果" figureNumber="图 14.2" caption="基于边缘细分因子和内部细分因子的四边形细分。" />
+
+<h3 id="s1432">14.3.2 三角形面片细分示例</h3>
+
+<Figure src="images/Fig14-3.jpg" alt="多组三角形面片细分示意图，展示不同边缘细分因子与内部细分因子组合下的细分结果" figureNumber="图 14.3" caption="基于边缘细分因子和内部细分因子的三角形细分。" />
+</section>
+
+<section className="lesson-section" id="s144">
+<h2>14.4 域着色器</h2>
+
+曲面细分阶段输出我们所有新创建的顶点和三角形。域着色器为曲面细分阶段创建的每个顶点被调用。启用曲面细分时，顶点着色器充当每个控制点的顶点着色器，而外壳着色器实质上就是细分后面片的顶点着色器。特别是，我们正是在这里把细分面片的顶点投影到齐次裁剪空间。
+
+对于四边形面片，域着色器输入细分因子（以及你从常量外壳着色器输出的任何其他逐面片信息）、细分后顶点位置的参数化 (u, v) 坐标，以及从控制点外壳着色器输出的全部面片控制点。注意，域着色器并不会直接给你细分后的顶点位置；相反，它给你这些点在面片域空间（domain space）中的参数化 (u, v) 坐标（图 14.4）。你需要自己用这些参数化坐标和控制点推导出实际的三维顶点位置；在下面的代码中，我们通过双线性插值做到这一点（它的工作方式就像纹理线性过滤一样）。<a id="page522"/>
+
+<Figure src="images/Fig14-4.jpg" alt="具有 4 个控制点的四边形面片在归一化 uv 空间中细分生成 16 个顶点的示意图，坐标位于 [0,1] 的平方范围内" figureNumber="图 14.4" caption="具有 4 个控制点的四边形面片在归一化 uv 空间中细分生成 16 个顶点，坐标位于 [0, 1] 的平方范围内。" />
+
+```cpp
+struct DomainOut
+{
+  float4 PosH : SV_POSITION;
+};
+
+// The domain shader is called for every vertex created by the tessellator. 
+// It is like the vertex shader after tessellation.
+[domain("quad")]
+DomainOut DS(PatchTess patchTess, 
+       float2 uv : SV_DomainLocation, 
+       const OutputPatch<HullOut, 4> quad)
+{
+  DomainOut dout;
+   
+  // Bilinear interpolation.
+  float3 v1 = lerp(quad[0].PosL, quad[1].PosL, uv.x); 
+  float3 v2 = lerp(quad[2].PosL, quad[3].PosL, uv.x); 
+  float3 p = lerp(v1, v2, uv.y); 
+   
+  float4 posW = mul(float4(p, 1.0f), gWorld);
+  dout.PosH = mul(posW, gViewProj);
+   
+  return dout;
+}
+```
+
+**注意**：如图 14.4 所示，四边形面片控制点的排列顺序是逐行的。
+
+三角形面片的域着色器与之类似，区别在于输入的不是参数化 (u, v) 值，而是顶点的 `float3` 重心 (u, v, w) 坐标（重心坐标的解释见 §C.3）。为三角形面片输出重心坐标，原因可能在于贝塞尔三角形面片本来就是用重心坐标定义的。
+</section>
+
+<section className="lesson-section" id="s145">
+<h2>14.5 四边形细分</h2>
+
+在本章的一个演示中，我们向渲染管线提交一个四边形面片，根据它到摄像机的距离进行细分，并用一个与我们过去演示中"山丘"所用的数学函数类似的函数来偏移生成的顶点。<a id="page523"/>
+
+我们存储四个控制点的顶点缓冲按如下方式创建：
+
+```cpp
+void BasicTessellationApp::BuildQuadPatchGeometry()
+{
+  std::array<XMFLOAT3,4> vertices =
+  {
+    XMFLOAT3(-10.0f, 0.0f, +10.0f),
+    XMFLOAT3(+10.0f, 0.0f, +10.0f),
+    XMFLOAT3(-10.0f, 0.0f, -10.0f),
+    XMFLOAT3(+10.0f, 0.0f, -10.0f)
+  };
+
+  std::array<std::int16_t, 4> indices = { 0, 1, 2, 3 };
+
+  const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+  const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+  auto geo = std::make_unique<MeshGeometry>();
+  geo->Name = "quadpatchGeo";
+
+  ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+  CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+  ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+  CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+  geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), vertices.data(), vbByteSize,  geo->VertexBufferUploader);
+
+  geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), indices.data(), ibByteSize,  geo->IndexBufferUploader);
+
+  geo->VertexByteStride = sizeof(XMFLOAT3);
+  geo->VertexBufferByteSize = vbByteSize;
+  geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+  geo->IndexBufferByteSize = ibByteSize;
+
+  SubmeshGeometry quadSubmesh;
+  quadSubmesh.IndexCount = 4;
+  quadSubmesh.StartIndexLocation = 0;
+  quadSubmesh.BaseVertexLocation = 0;
+
+  geo->DrawArgs["quadpatch"] = quadSubmesh;
+
+  mGeometries[geo->Name] = std::move(geo);
+}
+```
+
+四边形面片的渲染项<a id="page524"/>按如下方式创建：
+
+```cpp
+void BasicTessellationApp::BuildRenderItems()
+{
+  auto quadPatchRitem = std::make_unique<RenderItem>();
+  quadPatchRitem->World = MathHelper::Identity4x4();
+  quadPatchRitem->TexTransform = MathHelper::Identity4x4();
+  quadPatchRitem->ObjCBIndex = 0;
+  quadPatchRitem->Mat = mMaterials["whiteMat"].get();
+  quadPatchRitem->Geo = mGeometries["quadpatchGeo"].get();
+  quadPatchRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;
+  quadPatchRitem->IndexCount = quadPatchRitem->Geo->DrawArgs["quadpatch"].IndexCount;
+  quadPatchRitem->StartIndexLocation = 
+    quadPatchRitem->Geo->DrawArgs["quadpatch"].StartIndexLocation;
+  quadPatchRitem->BaseVertexLocation = 
+    quadPatchRitem->Geo->DrawArgs["quadpatch"].BaseVertexLocation;
+  mRitemLayer[(int)RenderLayer::Opaque].push_back(quadPatchRitem.get());
+   
+  mAllRitems.push_back(std::move(quadPatchRitem));
+}
+```
+
+现在我们把注意力转向外壳着色器。该外壳着色器与 §14.2.1 和 §14.2.2 中展示的类似，区别在于我们现在根据到眼睛的距离来确定细分因子。其思想是：远处使用低多边形网格，当网格接近眼睛时增加细分（从而增加三角形数量）（见图 14.5）。外壳着色器只是一个直通着色器。<a id="page525"/>
+
+<Figure src="images/Fig14-5.jpg" alt="同一网格在距眼睛不同距离处被细分出不同细节层次的示意图，距离越近三角形越多" figureNumber="图 14.5" caption="到眼睛的距离越近，网格被细分得越多。" />
+
+```cpp
+struct VertexIn
+{
+  float3 PosL  : POSITION;
+};
+
+struct VertexOut
+{
+  float3 PosL  : POSITION;
+};
+
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout;
+  vout.PosL = vin.PosL;
+  return vout;
+}
+ 
+struct PatchTess
+{
+  float EdgeTess[4]   : SV_TessFactor;
+  float InsideTess[2] : SV_InsideTessFactor;
+};
+
+PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_PrimitiveID)
+{
+  PatchTess pt;
+   
+  float3 centerL = 0.25f*(patch[0].PosL + 
+              patch[1].PosL + 
+              patch[2].PosL + 
+              patch[3].PosL);
+
+  float3 centerW = mul(float4(centerL, 1.0f), gWorld).xyz;
+   
+  float d = distance(centerW, gEyePosW);
+
+  // Tessellate the patch based on distance from the eye such that
+  // the tessellation is 0 if d >= d1 and 64 if d <= d0. The interval
+  // [d0, d1] defines the range we tessellate in.
+   
+  const float d0 = 20.0f;
+  const float d1 = 100.0f;
+  float tess = 64.0f*saturate( (d1-d)/(d1-d0) );
+
+  // Uniformly tessellate the patch.
+
+  pt.EdgeTess[0] = tess;
+  pt.EdgeTess[1] = tess;
+  pt.EdgeTess[2] = tess;
+  pt.EdgeTess[3] = tess;
+   
+  pt.InsideTess[0] = tess;
+  pt.InsideTess[1] = tess;
+   
+  return pt;
+}
+
+struct HullOut
+{
+  float3 PosL : POSITION;
+};
+
+[domain("quad")]
+[partitioning("integer")]
+[outputtopology("triangle_cw")]
+[outputcontrolpoints(4)]
+[patchconstantfunc("ConstantHS")]
+[maxtessfactor(64.0f)]
+HullOut HS(InputPatch<VertexOut, 4> p, 
+       uint i : SV_OutputControlPointID,
+       uint patchId : SV_PrimitiveID)
+{
+  HullOut hout;
+  hout.PosL = p[i].PosL;
+  return hout;
+}
+```
+
+仅仅细分还不足以添加细节，因为新三角形只是位于被细分的面片<a id="page526"/>上。我们必须以某种方式偏移这些额外的顶点，以更好地逼近我们所建模对象的形状。这一步在域着色器中完成。在本演示中，我们用 §7.7.3 引入的"山丘"函数来偏移 y 坐标。
+
+```cpp
+struct DomainOut
+{
+  float4 PosH : SV_POSITION;
+};
+
+// The domain shader is called for every vertex created by the tessellator. 
+// It is like the vertex shader after tessellation.
+[domain("quad")]
+DomainOut DS(PatchTess patchTess, 
+       float2 uv : SV_DomainLocation, 
+       const OutputPatch<HullOut, 4> quad)
+{
+  DomainOut dout;
+   
+  // Bilinear interpolation.
+  float3 v1 = lerp(quad[0].PosL, quad[1].PosL, uv.x); 
+  float3 v2 = lerp(quad[2].PosL, quad[3].PosL, uv.x); 
+  float3 p = lerp(v1, v2, uv.y); 
+   
+  // Displacement mapping
+  p.y = 0.3f*( p.z*sin(p.x) + p.x*cos(p.z) );
+   
+  float4 posW = mul(float4(p, 1.0f), gWorld);
+  dout.PosH = mul(posW, gViewProj);
+   
+  return dout;
+}
+
+float4 PS(DomainOut pin) : SV_Target
+{
+  return float4(1.0f, 1.0f, 1.0f, 1.0f);
+}
+```
+</section>
+
+<section className="lesson-section" id="s146">
+<h2>14.6 三次贝塞尔四边形面片</h2>
+
+在本节中，我们描述三次贝塞尔四边形面片，以展示如何用更多的控制点来构造曲面。不过在进入曲面之前，先从贝塞尔曲线开始会有所帮助。<a id="page527"/>
+
+<h3 id="s1461">14.6.1 贝塞尔曲线</h3>
+
+考虑三个不共线的点 $\mathbf{p}_0$、$\mathbf{p}_1$ 和 $\mathbf{p}_2$，我们把它们称为控制点。这三个控制点按如下方式定义一条贝塞尔曲线。曲线上的点 $\mathbf{p}(t)$ 首先通过在 $\mathbf{p}_0$ 与 $\mathbf{p}_1$ 之间按 $t$、在 $\mathbf{p}_1$ 与 $\mathbf{p}_2$ 之间按 $t$ 线性插值，得到中间点：
+
+$$\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1$$
+
+$$\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2$$
+
+然后，$\mathbf{p}(t)$ 通过在这两个中间点之间按 $t$ 线性插值得到：
+
+**译者注**：原书此句为 "Then p(t) is found by linearly interpolating between  and by t"，漏排了两个中间点记号（应为 $\mathbf{p}_0^1$ 与 $\mathbf{p}_1^1$），照录并按上下文补足语义。
+
+$$\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)\bigl((1-t)\mathbf{p}_0+t\mathbf{p}_1\bigr)+t\bigl((1-t)\mathbf{p}_1+t\mathbf{p}_2\bigr)\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}$$
+
+换句话说，这种反复插值的构造导出了二次（2 次）贝塞尔曲线的参数公式：
+
+$$\mathbf{p}(t)=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2$$
+
+类似地，四个控制点 $\mathbf{p}_0$、$\mathbf{p}_1$、$\mathbf{p}_2$ 和 $\mathbf{p}_3$ 定义一条三次（3 次）贝塞尔曲线，曲线上的点 $\mathbf{p}(t)$ 同样通过反复插值求得。图 14.6 展示了这一情形。首先沿四个给定控制点所定义的各线段做线性插值，得到三个第一代中间点：
+
+$$\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1$$
+
+$$\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2$$
+
+$$\mathbf{p}_2^1=(1-t)\mathbf{p}_2+t\mathbf{p}_3$$
+
+<Figure src="images/Fig14-6.jpg" alt="对三次贝塞尔曲线上的点做反复线性插值的四步示意图，取 t=0.5：(a) 四个控制点与曲线，(b) 第一代中间点，(c) 第二代中间点，(d) 曲线上的点" figureNumber="图 14.6" caption="对三次贝塞尔曲线上的点做反复线性插值。图中取 t = 0.5。(a) 四个控制点及它们定义的曲线。(b) 在控制点之间线性插值，计算第一代中间点。(c) 在第一代中间点之间线性插值，得到第二代中间点。(d) 在第二代中间点之间线性插值，得到曲线上的点。" />
+
+接下来，沿这些第一代中间点所定义的各线段<a id="page528"/>做线性插值，得到两个第二代中间点：
+
+$$\begin{aligned}\mathbf{p}_0^2&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}$$
+
+$$\begin{aligned}\mathbf{p}_1^2&=(1-t)\mathbf{p}_1^1+t\mathbf{p}_2^1\\&=(1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\end{aligned}$$
+
+最后，$\mathbf{p}(t)$ 通过在这最后一代中间点之间线性插值得到：
+
+**译者注**：原书此处 "intermediate pints" 中的 "pints" 应为 "points"，笔误照录。
+
+$$\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^2+t\mathbf{p}_1^2\\&=(1-t)\bigl((1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\bigr)+t\bigl((1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\bigr)\end{aligned}$$
+
+它可化简为三次（3 次）贝塞尔曲线的参数公式：
+
+$$\mathbf{p}(t)=(1-t)^3\mathbf{p}_0+3t(1-t)^2\mathbf{p}_1+3t^2(1-t)\mathbf{p}_2+t^3\mathbf{p}_3\qquad\text{(eq. 14.1)}$$
+
+一般而言，人们止步于三次曲线，因为它们已能提供足够的平滑度和控制曲线的自由度；但你完全可以按照同样的反复插值递推模式，继续构造更高阶的曲线。
+
+事实证明，$n$ 次贝塞尔曲线的公式可以用*伯恩斯坦基函数*（Bernstein basis function）来表示，伯恩斯坦基函数定义为：
+
+<Figure src="images/eq562-05.jpg" alt="原书此处所配的公式图片，内容为三次贝塞尔曲线插值展开式的推导" caption="原书在此处重复使用了上文三次贝塞尔插值展开式的公式图片（源文件中 eq562-05 被引用两次）；按上下文本应是 n 次伯恩斯坦基函数的一般定义。此处照原书保留原图。" />
+
+**译者注**：上句说"伯恩斯坦基函数定义为"，但原书此处所配图片与上下文不符——它重复了上文的 $\mathbf{p}(t)$ 插值展开式（`eq562-05.jpg` 在源文件中被引用了两次）。按上下文和下一小节 3 次曲线的具体展开推断，此处本应是 $B_i^n(t)=\frac{n!}{i!(n-i)!}t^i(1-t)^{n-i}$ 这样的 $n$ 次伯恩斯坦基函数一般定义；因无法从原书确证，译文保留原图并加注备查。
+
+对于 3 次曲线，伯恩斯坦基函数为：
+
+$$\begin{aligned}B_0^3(t)&=\frac{3!}{0!(3-0)!}t^0(1-t)^{3-0}=(1-t)^3\\B_1^3(t)&=\frac{3!}{1!(3-1)!}t^1(1-t)^{3-1}=3t(1-t)^2\\B_2^3(t)&=\frac{3!}{2!(3-2)!}t^2(1-t)^{3-2}=3t^2(1-t)\\B_3^3(t)&=\frac{3!}{3!(3-3)!}t^3(1-t)^{3-3}=t^3\end{aligned}$$
+
+把这些值与式 14.1 中的系数<a id="page529"/>比较。因此，我们可以把三次贝塞尔曲线写成：
+
+$$\mathbf{p}(t)=\sum_{j=0}^{3}B_j^3(t)\mathbf{p}_j=B_0^3(t)\mathbf{p}_0+B_1^3(t)\mathbf{p}_1+B_2^3(t)\mathbf{p}_2+B_3^3(t)\mathbf{p}_3$$
+
+三次伯恩斯坦基函数的导数可以通过幂法则和乘积法则求得：
+
+$$\begin{aligned}B_0^{3\prime}(t)&=-3(1-t)^2\\B_1^{3\prime}(t)&=3(1-t)^2-6t(1-t)\\B_2^{3\prime}(t)&=6t(1-t)-3t^2\\B_3^{3\prime}(t)&=3t^2\end{aligned}$$
+
+而三次贝塞尔曲线的导数为：
+
+$$\mathbf{p}'(t)=\sum_{j=0}^{3}B_j^{3\prime}(t)\mathbf{p}_j=B_0^{3\prime}(t)\mathbf{p}_0+B_1^{3\prime}(t)\mathbf{p}_1+B_2^{3\prime}(t)\mathbf{p}_2+B_3^{3\prime}(t)\mathbf{p}_3$$
+
+导数可用于计算沿曲线的切向量。
+
+**注意**：网上有一些贝塞尔曲线小程序（applet），可以设置和操纵控制点，交互式地观察曲线是如何成形的。
+
+<h3 id="s1462">14.6.2 三次贝塞尔曲面</h3>
+
+在本节中，请始终参考图 14.7。考虑一个由 4 × 4 个控制点组成的面片。于是每一行包含 4 个控制点，可以用来定义一条三次贝塞尔曲线；第 *i* 行的贝塞尔曲线由下式给出：
+
+$$\mathbf{q}_i(u)=\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}$$
+
+如果我们让每条贝塞尔曲线都在比如 $u_0$ 处求值，就会得到由 4 个点组成的一个"列"，每条曲线上各一点。我们可以用这 4 个点定义另一条贝塞尔曲线，它位于 $u_0$ 处的*贝塞尔曲面*（Bézier surface）上：
+
+$$\mathbf{p}(v)=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u_0)$$
+
+<Figure src="images/Fig14-7.jpg" alt="贝塞尔曲面的构造示意图：每行控制点定义一条贝塞尔曲线 qi(u)，在 u0 处取点后再沿 v 方向插值出 p(v)" figureNumber="图 14.7" caption="构造贝塞尔曲面。为了让图更容易理解，做了一些简化——控制点并不都位于同一平面内，各 q_i(u) 也未必如图所示彼此相同（只有每行控制点相同、从而曲线相同时才会相同），而且 p(v) 一般不是直线，而是一条三次贝塞尔曲线。" />
+
+现在，如果再让 $u$ 也变化，我们就扫掠出一个三次贝塞尔曲线族，它们构成<a id="page530"/>*三次贝塞尔曲面*（cubic Bézier surface）：
+
+$$\begin{aligned}\mathbf{p}(u,v)&=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u)\\&=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}\end{aligned}$$
+
+贝塞尔曲面的偏导数可用于计算切向量和法向量：
+
+$$\frac{\partial\mathbf{p}}{\partial u}(u,v)=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}\frac{\partial B_j^3}{\partial u}(u)\mathbf{p}_{i,j}$$
+
+$$\frac{\partial\mathbf{p}}{\partial v}(u,v)=\sum_{i=0}^{3}\frac{\partial B_i^3}{\partial v}(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}$$
+
+<h3 id="s1463">14.6.3 三次贝塞尔曲面求值代码</h3>
+
+在本节中，我们给出求值三次贝塞尔曲面的代码。为了帮助理解下面的代码，我们先把求和记号展开：
+
+$$\mathbf{q}_0(u)=B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}$$
+
+$$\mathbf{q}_1(u)=B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}$$
+
+$$\mathbf{q}_2(u)=B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}$$
+
+$$\mathbf{q}_3(u)=B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}$$
+
+$$\begin{aligned}\mathbf{p}(u,v)&=B_0^3(v)\mathbf{q}_0(u)+B_1^3(v)\mathbf{q}_1(u)+B_2^3(v)\mathbf{q}_2(u)+B_3^3(v)\mathbf{q}_3(u)\\&=B_0^3(v)\bigl[B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}\bigr]\\&\quad+B_1^3(v)\bigl[B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}\bigr]\\&\quad+B_2^3(v)\bigl[B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}\bigr]\\&\quad+B_3^3(v)\bigl[B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}\bigr]\end{aligned}$$
+
+下面的代码直接<a id="page531"/>对应于刚刚给出的公式：
+
+**译者注**：原书把下面这段代码排版为两张图片（`eq565-02.jpg`、`eq566-01.jpg`），此处按图片逐字转录为代码。其中 `CubicBezierSum` 第二次、第三次调用实参写作 `dbasisU`/`dbasisV`（小写 b），与前文定义的 `dBasisU`/`dBasisV`（大写 B）大小写不一致，属原书笔误，照录原文。
+
+```hlsl
+float4 BernsteinBasis(float t)
+{
+  float invT = 1.0f - t;
+
+  return float4( invT * invT * invT,  // B_0^3(t)=(1-t)^3
+    3.0f * t * invT * invT, // B_1^3(t)=3t(1-t)^2
+    3.0f * t * t * invT,  //  B_2^3(t)=3t^2(1-t)
+    t * t * t );    //  B_3^3(t)=t^3
+}
+
+float4 dBernsteinBasis(float t)
+{
+  float invT = 1.0f - t;
+
+  return float4(
+    -3 * invT * invT,       //  B_0^3'(t)=-3(1-t)^2
+    3 * invT * invT - 6 * t * invT, //  B_1^3'(t)=3(1-t)^2-6t(1-t)
+    6 * t * invT - 3 * t * t,   //  B_2^3'(t)=6t(1-t)-3t^2
+    3 * t * t );      //  B_3^3'(t)=3t^2
+}
+
+float3 CubicBezierSum(const OutputPatch<HullOut, 16> bezpatch,
+      float4 basisU, float4 basisV)
+{
+  float3 sum = float3(0.0f, 0.0f, 0.0f);
+  sum = basisV.x * (basisU.x*bezpatch[0].PosL +
+        basisU.y*bezpatch[1].PosL +
+        basisU.z*bezpatch[2].PosL +
+        basisU.w*bezpatch[3].PosL );
+
+  sum += basisV.y * (basisU.x*bezpatch[4].PosL +
+        basisU.y*bezpatch[5].PosL +
+        basisU.z*bezpatch[6].PosL +
+        basisU.w*bezpatch[7].PosL );
+
+  sum += basisV.z * (basisU.x*bezpatch[8].PosL +
+        basisU.y*bezpatch[9].PosL +
+        basisU.z*bezpatch[10].PosL +
+        basisU.w*bezpatch[11].PosL);
+
+  sum += basisV.w * (basisU.x*bezpatch[12].PosL +
+        basisU.y*bezpatch[13].PosL +
+        basisU.z*bezpatch[14].PosL +
+        basisU.w*bezpatch[15].PosL);
+
+   return sum;
+ }
+```
+
+上面的函数可以像下面这样使用，求值 $\mathbf{p}(u, v)$ 并计算偏导数：
+
+```hlsl
+float4 basisU = BernsteinBasis(uv.x);
+float4 basisV = BernsteinBasis(uv.y);
+
+//  p(u,v)
+float3 p = CubicBezierSum(bezPatch, basisU, basisV);
+
+float4 dBasisU = dBernsteinBasis(uv.x);
+float4 dBasisV = dBernsteinBasis(uv.y);
+
+//  ∂p/∂u (u,v)
+float3 dpdu = CubicBezierSum(bezPatch, dbasisU, basisV);
+
+//  ∂p/∂v (u,v)
+float3 dpdv = CubicBezierSum(bezPatch, basisU, dbasisV);
+```
+
+**注意**：注意，我们把求值后的基函数值传给<a id="page532"/> `CubicBezierSum`。这使我们能够用 `CubicBezierSum` 同时求值 $\mathbf{p}(u, v)$ 和偏导数，因为求和形式是相同的，唯一的区别在于基函数。
+
+<h3 id="s1464">14.6.4 定义面片几何</h3>
+
+我们存储十六个控制点的顶点缓冲按如下方式创建：<a id="page533"/>
+
+```cpp
+void BezierPatchApp::BuildQuadPatchGeometry()
+{
+  std::array<XMFLOAT3,16> vertices =
+  {
+    // Row 0
+    XMFLOAT3(-10.0f, -10.0f, +15.0f),
+    XMFLOAT3(-5.0f, 0.0f, +15.0f),
+    XMFLOAT3(+5.0f, 0.0f, +15.0f),
+    XMFLOAT3(+10.0f, 0.0f, +15.0f),
+
+    // Row 1
+    XMFLOAT3(-15.0f, 0.0f, +5.0f),
+    XMFLOAT3(-5.0f, 0.0f, +5.0f),
+    XMFLOAT3(+5.0f, 20.0f, +5.0f),
+    XMFLOAT3(+15.0f, 0.0f, +5.0f),
+
+    // Row 2
+    XMFLOAT3(-15.0f, 0.0f, -5.0f),
+    XMFLOAT3(-5.0f, 0.0f, -5.0f),
+    XMFLOAT3(+5.0f, 0.0f, -5.0f),
+    XMFLOAT3(+15.0f, 0.0f, -5.0f),
+
+    // Row 3
+    XMFLOAT3(-10.0f, 10.0f, -15.0f),
+    XMFLOAT3(-5.0f, 0.0f, -15.0f),    
+    XMFLOAT3(+5.0f, 0.0f, -15.0f),
+    XMFLOAT3(+25.0f, 10.0f, -15.0f)
+  };
+
+  std::array<std::int16_t, 16> indices = 
+  { 
+    0, 1, 2, 3,
+    4, 5, 6, 7,
+    8, 9, 10, 11, 
+    12, 13, 14, 15
+  };
+
+  const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+  const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+  auto geo = std::make_unique<MeshGeometry>();
+  geo->Name = "quadpatchGeo";
+
+  ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+  CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+  ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+  CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+  geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), vertices.data(), vbByteSize, geo->VertexBufferUploader);
+
+  geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),
+    mCommandList.Get(), indices.data(), ibByteSize, geo->IndexBufferUploader);
+
+  geo->VertexByteStride = sizeof(XMFLOAT3);
+  geo->VertexBufferByteSize = vbByteSize;
+  geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+  geo->IndexBufferByteSize = ibByteSize;
+
+  SubmeshGeometry quadSubmesh;
+  quadSubmesh.IndexCount = (UINT)indices.size();
+  quadSubmesh.StartIndexLocation = 0;
+  quadSubmesh.BaseVertexLocation = 0;
+
+  geo->DrawArgs["quadpatch"] = quadSubmesh;
+
+  mGeometries[geo->Name] = std::move(geo);
+}
+```
+
+<Figure src="images/Fig14-8.jpg" alt="贝塞尔曲面演示的运行截图，曲面由 4x4 控制点定义" figureNumber="图 14.8" caption="贝塞尔曲面演示的截图。" />
+
+**注意**：控制点并不需要等距排列才能构成均匀网格，这方面没有限制。<a id="page534"/>
+
+四边形面片的渲染项按如下方式创建：
+
+```cpp
+void BezierPatchApp::BuildRenderItems()
+{
+  auto quadPatchRitem = std::make_unique<RenderItem>();
+  quadPatchRitem->World = MathHelper::Identity4x4();
+  quadPatchRitem->TexTransform = MathHelper::Identity4x4();
+  quadPatchRitem->ObjCBIndex = 0;
+  quadPatchRitem->Mat = mMaterials["whiteMat"].get();
+  quadPatchRitem->Geo = mGeometries["quadpatchGeo"].get();
+  quadPatchRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST;
+  quadPatchRitem->IndexCount = quadPatchRitem->Geo->DrawArgs["quadpatch"].IndexCount;
+  quadPatchRitem->StartIndexLocation = 
+    quadPatchRitem->Geo->DrawArgs["quadpatch"].StartIndexLocation;
+  quadPatchRitem->BaseVertexLocation = 
+    quadPatchRitem->Geo->DrawArgs["quadpatch"].BaseVertexLocation;
+  mRitemLayer[(int)RenderLayer::Opaque].push_back(quadPatchRitem.get());
+   
+  mAllRitems.push_back(std::move(quadPatchRitem));
+}
+```
+
+**译者注**：上面代码中的枚举名 `D3D11_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST` 与 §14.5 所用的 `D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST` 前缀不一致（Direct3D 11 的图元枚举并无此名称，按前文应为 `D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST`），原书笔误，照录原文。
+</section>
+
+<section className="lesson-section" id="s147">
+<h2>14.7 本章小结</h2>
+
+1. 曲面细分阶段是渲染管线的可选阶段。它们由外壳着色器、镶嵌器和域着色器组成。外壳着色器和域着色器是可编程的，而镶嵌器完全由硬件控制。
+2. 硬件曲面细分带来内存上的好处，因为可以只存储低多边形资产，然后通过细分即时添加细节。此外，动画和物理等计算可以在细分之前、以低多边形网格的频率完成。最后，连续 LOD 算法现在可以完全在 GPU 上实现，而在硬件曲面细分可用之前，这类算法一直只能在 CPU 上实现。<a id="page535"/>
+3. 新的图元类型只在曲面细分中使用，用于向渲染管线提交控制点。Direct3D 12 支持 1 到 32 个控制点，由枚举类型 `D3D_PRIMITIVE_1_CONTROL_POINT_PATCH… D3D_PRIMITIVE_32_CONTROL_POINT_PATCH.` 表示。
+4. 使用曲面细分时，顶点着色器输入控制点，通常逐控制点执行动画或物理计算。外壳着色器由常量外壳着色器和控制点外壳着色器组成。常量外壳着色器逐面片运行，输出面片的细分因子（它指示镶嵌器对面片细分的程度）以及任何其他可选的逐面片数据。控制点外壳着色器输入若干控制点并输出若干控制点，每输出一个控制点被调用一次。通常，控制点外壳着色器会改变输入面片的曲面表示。例如，该阶段可能输入一个具有三个控制点的三角形，输出一个具有十个控制点的贝塞尔三角形面片。
+5. 域着色器为曲面细分阶段创建的每个顶点被调用。顶点着色器充当每个控制点的顶点着色器，而启用曲面细分时，外壳着色器实质上就是细分后面片顶点的顶点着色器。特别是，我们正是在这里把细分面片的顶点投影到齐次裁剪空间，并完成其他逐顶点工作。
+6. 如果你打算不细分某个物体（例如细分因子接近 1），就不要在启用曲面细分阶段的情况下渲染它，因为那有开销。避免细分到三角形小于八个像素的程度。把所有需要细分的物体放在一起绘制，以避免在一帧之内反复开关曲面细分。在外壳着色器中使用背面剔除和视锥剔除，把看不见的面片丢弃，使其不被细分。
+7. 贝塞尔曲线和曲面由参数方程描述，可用于表达光滑的曲线和曲面。它们通过控制点来"塑形"。除了让我们能直接绘制光滑曲面之外，贝塞尔曲面还被用于许多流行的硬件曲面细分算法，例如 PN Triangles 和 Catmull-Clark 近似。<a id="page536"/>
+</section>
+
+<section className="lesson-section" id="s148">
+<h2>14.8 习题</h2>
+
+1. 重做"Basic Tessellation"演示，但改为细分一个三角形面片，而不是四边形面片。
+2. 把二十面体按距离细分成一个球体。
+
+   **译者注**：原书此处 "iscoahedron" 应为 "icosahedron"（二十面体），笔误照录。
+
+3. 修改"Basic Tessellation"演示，使其对一个平坦的四边形做固定细分。尝试不同的边缘/内部细分因子，直到你完全理解细分因子是如何工作的。
+4. 探索分数细分。也就是说，用以下设置尝试"Basic Tessellation"演示：
+
+   ```cpp
+   [partitioning("fractional_even")]
+   [partitioning("fractional_odd")]
+   ```
+
+5. 计算二次贝塞尔曲线的伯恩斯坦基函数 $B_0^2(t)$、$B_1^2(t)$、$B_2^2(t)$，并计算它们的导数 $B_0^{2\prime}(t)$、$B_1^{2\prime}(t)$、$B_2^{2\prime}(t)$。推导二次贝塞尔曲面的参数方程。
+6. 通过修改控制点来改变贝塞尔曲面，以此对"Bezier Patch"演示做实验。
+7. 重做"Bezier Patch"演示，改用具有九个控制点的二次贝塞尔曲面。
+8. 修改"Bezier Patch"演示，为贝塞尔曲面添加光照和着色。你需要在域着色器中计算顶点法线。某个顶点位置处的法线，可以通过对该位置处的偏导数做叉积求得。
+9. 调研并实现贝塞尔三角形面片。
+</section>

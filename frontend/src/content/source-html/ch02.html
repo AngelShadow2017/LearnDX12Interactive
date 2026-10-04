@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page37"/><a href="toc.html#toc-02" id="chap02">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">2</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-02"><b>M</b><span class="sc">ATRIX</span><br/><br/><b>A</b><span class="sc">LGEBRA</span></a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+<p class="tx1">In 3D computer graphics, we use matrices to compactly describe geometric transformations such as scaling, rotation, and translation, and also to change the coordinates of a point or vector from one frame to another. This chapter explores the mathematics of matrices.</p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To obtain an understanding of matrices and the operations defined on them.</li>
+<li>To discover how a vector-matrix multiplication can be viewed as a linear combination.</li>
+<li>To learn what the identity matrix is, and what the transpose, determinant, and inverse of a matrix are. </li>
+<li>To become familiar with the subset of classes and functions provided by the DirectX Math library used for matrix mathematics. <a id="page38"/></li></ol>
+
+<p class="h1" id="c2.1"><a href="toc.html#toc-2.1"><b>2.1 DEFINITION </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">An <i>m </i>&times; <i>n matrix </i><b>M</b> is a rectangular array of real numbers with <i>m </i>rows and <i>n </i>columns. The product of the number of rows and columns gives the dimensions of the matrix. The numbers in a matrix are called <i>elements or entries</i>. We identify a matrix element by specifying the row and column of the element using a double subscript notation<i> M</i><sub>ij</sub>, where the first subscript identifies the row and the second subscript identifies the column. </p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.1</b></p>
+<p class="tx1">Consider the following matrices: </p>
+<p class="eq"><img src="images/eq72-01.jpg" alt="image" width="100%"/></p>
+<ol><li>The matrix <b>A </b>is a 4 &times; 4 matrix; the matrix <b>B </b>is a 3 &times; 2 matrix; the matrix <b>u </b>is a 1 &times; 3 matrix; and the matrix <b>v</b> is a 4 &times; 1 matrix.</li>
+<li>We identify the element in the fourth row and second column of the matrix <b>A </b>by <i>A</i><sub>42</sub> = &minus;5. We identify the element in the second row and first column of the matrix <b>B</b> by <i>B</i><sub>21</sub>.</li>
+<li>The matrices <b>u<sub> </sub></b>and <b>v<sub> </sub></b>are special matrices in the sense that they contain a single row or column, respectively. We sometimes call these kinds of matrices row vectors or column vectors because they are used to represent a vector in matrix form (e.g., we can freely interchange the vector notations (<i>x</i>, <i>y</i>, <i>z</i>) and [<i>x</i>, <i>y</i>, <i>z</i>]). Observe that for row and column vectors, it is unnecessary to use a double subscript to denote the elements of the matrix&mdash;we only need one subscript.</li></ol>
+<p class="tx1">Occasionally we like to think of the rows of a matrix as vectors. For example, we might write:</p>
+<p class="eq"><img src="images/eq72-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <b>A</b><sub>1</sub>,* = [<i>A</i><sub>11</sub>, <i>A</i><sub>12</sub>, <i>A</i><sub>13</sub>], <b>A</b><sub>2</sub>,* = [<i>A</i><sub>21</sub>, <i>A</i><sub>22</sub>, <i>A</i><sub>23</sub>] and <b>A</b><sub>3</sub>,* = [<i>A</i><sub>31</sub>, <i>A</i><sub>32</sub>, <i>A</i><sub>33</sub>]. In this notation, the first index specifies the row, and we put a &lsquo;*&rsquo; in the second index to indicate that we are referring<a id="page39"/> to the entire row vector. Likewise, we like to do the same thing for the columns:</p>
+<p class="eq"><img src="images/eq73-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In this notation, the second index specifies the column, and we put a &lsquo;*&rsquo; in the first index to indicate that we are referring to the entire column vector. </p>
+<p class="tx">We now define equality, addition, scalar multiplication, and subtraction on matrices. </p>
+<ol><li>Two matrices are equal if and only if their corresponding elements are equal; as such, two matrices must have the same number of rows and columns in order to be compared. </li>
+<li>We add two matrices by adding their corresponding elements; as such, it only makes sense to add matrices that the same number of rows and columns.</li>
+<li>We multiply a scalar and a matrix by multiplying the scalar with every element in the matrix. </li>
+<li>We define subtraction in terms of matrix addition and scalar multiplication. That is, <b>A </b>&minus; <b>B </b>=<b> A </b>+<b> (</b>&minus;1 <b>B) </b>=<b> A </b>+<b> (</b>&minus;<b>B)</b>.</li></ol>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.2</b></p>
+<p class="tx1">Let</p>
+<p class="eq"><img src="images/eq73-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Then,</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;&nbsp;(i) <img src="images/eq73-04.jpg" alt="image" width="80%" style="margin-bottom:-1.3em;"/></p>
+<p class="tx1"><br/><img src="images/eq74-02.jpg" alt="image" width="120%" style="margin-bottom:-1.3em;"/></p>
+<p class="tx1"><br/>Because addition and scalar multiplication<a id="page40"/> is done element-wise, matrices essentially inherit the following addition and scalar multiplication properties from real numbers:</p>
+<ol><li><b>A </b>+<b> B</b> = <b>B</b> +<b> A</b>&nbsp;&nbsp;&nbsp;Commutative law of addition</li>
+<li><b>(A</b> + <b>B) </b>+<b> C </b>=<b> A </b>+<b> (B </b>+<b> C)</b>&nbsp;&nbsp;&nbsp;Associative law of addition</li>
+<li><i>r(</i><b>A </b>+<b> B) </b>= <i>r</i><b>A </b>+ <i>r</i><b>B</b>&nbsp;&nbsp;&nbsp;Scalar distribution over matrices</li>
+<li><b>(</b><i>r </i>+<i> s)</i><b>A </b>= <i>r</i><b>A </b>+ <i>s</i><b>A</b>&nbsp;&nbsp;&nbsp;Matrix distribution over scalars</li></ol>
+<p class="h1" id="c2.2"><a href="toc.html#toc-2.2"><b>2.2 MATRIX MULTIPLICATION </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c2.2.1"><a href="toc.html#toc-2.2.1"><b>2.2.1 Definition</b></a></p>
+<p class="tx1">If A is a <i>m </i>&times; <i>n </i>matrix and <b>B</b> is a <i>n </i>&times; <i>p</i> matrix, then the product <b>AB</b> is defined and is a <i>m </i>&times; <i>p</i> matrix <b>C</b>, where the <i>ij</i>th entry of the product <b>C</b> is given by taking the dot product of the <i>i</i>th row vector in <b>A</b> with the <i>jth</i> column vector in <b>B</b>, that is,</p>
+
+<p class="eq" id="eq2.1"><img src="images/74-0a.jpg" alt="image" width="100%"/></p>
+<p class="tx1">So note that in order for the matrix product <b>AB</b> to be defined, we require that the number of columns in <b>A</b> equal the number of rows in <b>B</b>, which is to say, we require that the dimension of the row vectors in<b> A</b> equal the dimension of the column vectors in <b>B</b>. If these dimensions did not match, then the dot product in Equation <a href="ch02.html#eq2.1">2.1</a> would not make sense. </p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.3 </b></p>
+<p class="eq"><img src="images/eq74-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The product <b>AB</b> is not defined since the row<a id="page41"/> vectors in <b>A</b> have dimension 2 and the column vectors in <b>B</b> have dimension 3. In particular, we cannot take the dot product of the first row vector in <b>A </b>with the first column vector in <b>B</b> because we cannot take the dot product of a 2D vector with a 3D vector.</p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.4</b></p>
+<p class="tx1">Let</p>
+<p class="eq"><img src="images/eq75-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We first point out that the product <b>AB</b> is defined (and is a 2 &times; 3 matrix) because the number of columns of <b>A</b> equals the number of rows of <b>B</b>. Applying Equation <a href="ch02.html#eq2.1">2.1</a> yields:</p>
+<p class="eq"><img src="images/eq75-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1"><a id="page42"/>Observe that the product <b>BA</b> is not defined because the number of columns in <b>B</b> does <i>not</i> equal the number of rows in <b>A</b>. This demonstrates that, in general, matrix multiplication is not commutative; that is, <b>AB </b>&#x2260;<b> BA</b>.</p>
+<p class="h2" id="c2.2.2"><a href="toc.html#toc-2.2.2"><b>2.2.2 Vector-Matrix Multiplication</b></a></p>
+<p class="tx1">Consider the following vector-matrix multiplication:</p>
+<p class="eq"><img src="images/eq75-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Observe that <b>uA</b> evaluates to a 1 &times; 3 row vector in this case. Now, applying Equation <a href="ch02.html#eq2.1">2.1</a> gives:</p>
+<p class="eq"><img src="images/eq76-03.jpg" alt="image" width="100%"/></p>
+<p class="tx">Thus,</p>
+<p class="eq" id="eq2.2"><img src="images/eq76-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Equation <a href="ch02.html#eq2.2">2.2</a> is an example of a <i>linear combination</i>, and it says that the vector-matrix product <b>uA</b> is equivalent to a linear combination of the row vectors of the matrix <b>A</b> with scalar coefficients <i>x</i>, <i>y</i>, and <i>z</i> given by the vector <b>u</b>. Note that, although we showed this for a 1 &times; 3 row vector and a 3 &times; 3 matrix, the result is true in general. That is, for a l &times; <i>n</i> row vector <b>u</b> and a <i>n </i>&times; <i>m</i> matrix <b>A</b>, we have that <b>uA</b> is a linear combination of the row vectors in <b>A</b> with scalar coefficients given by <b>u</b>:</p>
+
+<p class="eq" id="eq2.3"><img src="images/eq76-02.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="c2.2.3"><a href="toc.html#toc-2.2.3"><b> 2.2.3 Associativity </b></a></p>
+<p class="tx1">Matrix multiplication has some nice algebraic properties. For example, matrix multiplication distributes over addition: <b>A(B </b>+<b> C) </b>=<b> AB </b>+<b> AC)</b> and <b>(A </b>+<b> B)C </b>=<b> AC </b>+<b> BC)</b>. In particular, however, we will use the associative law of matrix multiplication from time to time, which allows us to choose the order we multiply matrices:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;(AB)C </b>=<b> A(BC)</b></p>
+<p class="h1" id="c2.3"><a href="toc.html#toc-2.3"><b>2.3 THE TRANSPOSE OF A MATRIX </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The <i>transpose</i> of a matrix is found by interchanging the rows and columns of the matrix. Thus the transpose of an <i>m </i>&times; <i>n</i> matrix is an<i> n </i>&times; <i>m</i> matrix. We denote the transpose of a matrix <b>M</b> as <b>M</b><i><sup>T</sup></i>.<a id="page43"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.5</b></p>
+<p class="tx1">Find the transpose for the following three matrices:</p>
+<p class="eq"><img src="images/eq77-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">To reiterate, the transposes are found by interchanging the rows and columns, thus</p>
+<p class="eq"><img src="images/eq77-02.jpg" alt="image" width="100%"/></p>
+<p class="tx">The transpose has the following useful properties:</p>
+<ol><li>(<b>A </b>+<b> B)</b><i><sup>T</sup></i> = <b>A</b><i><sup>T</sup></i> + <b>B</b><i><sup>T</sup></i></li>
+<li>(<i>c</i><b>A</b>)<i><sup>T</sup></i> = <i>c</i><b>A</b><i><sup>T</sup></i></li>
+<li>(<b>AB</b>)<i><sup>T</sup></i> = <b>B</b><i><sup>T</sup></i><b>A</b><i><sup>T</sup></i></li>
+<li>(<b>A</b><i><sup>T</sup></i>)<i><sup>T</sup></i> = <b>A</b></li>
+<li>(<b>A</b><sup>&minus;1</sup>)<i><sup>T</sup></i> = (<b>A</b><i><sup>T</sup></i>)<sup>&minus;1</sup></li></ol>
+<p class="h1" id="c2.4"><a href="toc.html#toc-2.4"><b>2.4 THE IDENTITY MATRIX </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">There is a special matrix called the <i>identity matrix</i>. The identity matrix is a square matrix that has zeros for all elements except along the main diagonal; the elements along the main diagonal are all ones. </p>
+<p class="tx">For example, below are 2 &times; 2, 3 &times; 3 and 4 &times; 4 identity matrices.</p>
+<p class="eq"><img src="images/eq77-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The identity matrix acts as a multiplicative identity; that is, if <b>A</b> is an <i>m </i>&times; <i>n</i> matrix, <b>B</b> is an <i>n </i>&times; <i>p</i> matrix, and <b>I</b> is the <i>n </i>&times; <i>n</i> identity matrix, then</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;AI </b>=<b> A</b>&nbsp;&nbsp;&nbsp;and&nbsp;&nbsp;&nbsp;<b>IB </b>=<b> B</b></p>
+<p class="tx1"><a id="page44"/>In other words, multiplying a matrix by the identity matrix does not change the matrix. The identity matrix can be thought of as the number 1 for matrices. In particular, if <b>M</b> is a square matrix, then multiplication with the identity matrix is commutative:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;MI </b>=<b> IM </b>=<b> M</b></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.6</b></p>
+<p class="eq"><img src="images/eq78-01.jpg" alt="image" width="100%"/></p>
+<p class="tx">Thus it is true that <b>MI </b>=<b> IM </b>=<b> M</b>.</p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.7</b></p>
+<p class="eq"><img src="images/eq78-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Note that we cannot take the product <b>Iu </b>because the matrix multiplication is not defined.</p>
+<p class="h1" id="c2.5"><a href="toc.html#toc-2.5"><b>2.5 THE DETERMINANT OF A MATRIX</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The determinant is a special function which inputs a square matrix and outputs a real number. The determinant of a square matrix <b>A</b> is commonly denoted by det <b>A</b>. It can be shown that the determinant has a geometric interpretation related to volumes of boxes and that the determinant provides information on how volumes change<a id="page45"/> under linear transformations. In addition, determinants are used to solve systems of linear equations using Cramer&rsquo;s Rule. However, for our purposes, we are mainly motivated to study the determinant because it gives us an explicit formula for finding the inverse of a matrix (the topic of &#x00A7;2.7). In addition, it can be proved that: <i>A square matrix </i><b>A</b><i> is invertible if and only if </i>det <b>A</b> &#x2260; 0. This fact is useful because it gives us a computational tool for determining if a matrix is invertible. Before we can define the determinant, we first introduce the concept of matrix minors.</p>
+<p class="h2" id="c2.5.1"><a href="toc.html#toc-2.5.1"><b>2.5.1 Matrix Minors</b></a></p>
+<p class="tx1">Given an <i>n</i> &times; <i>n</i> matrix <b>A</b>, the <i>minor matrix</i> <img src="images/cabarij.jpg" alt="image" width="25" height="20" style="margin-bottom:-0.3em;"/> is the (<i>n</i> &minus; 1) &times; (<i>n</i> &minus; 1) matrix found by deleting the <i>i</i>th row and <i>j</i>th column of <b>A</b>.</p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.8</b></p>
+<p class="eq"><img src="images/eq79-01.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="c2.5.2"><a href="toc.html#toc-2.5.2"><b>2.5.2 Definition</b></a></p>
+<p class="tx1">The determinant of a matrix is defined recursively; for instance, the determinant of a 4 &times; 4 matrix is defined in terms<a id="page46"/> of the determinant of a 3 &times; 3 matrix, and the determinant of a 3 &times; 3 matrix is defined in terms of the determinant of a 2 &times; 2 matrix, and the determinant of a 2 &times; 2 matrix is defined in terms of the determinant of a 1 &times; 1 matrix (the determinant of a 1 &times; 1 matrix <b>A</b> = [<i>A</i><sub>11</sub>] is trivially defined to be  det [<i>A</i><sub>11</sub>] = <i>A</i><sub>11</sub>).</p>
+<p class="tx">Let <b>A</b> be an <i>n</i> &times; <i>n</i> matrix. Then for <i>n</i> &gt; 1 we define:</p>
+
+<p class="eq" id="eq2.4"><img src="images/eq80-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Recalling the definition of the minor matrix <img src="images/cabarij.jpg" alt="image" width="25" height="20" style="margin-bottom:-0.3em;"/>, for 2 &times; 2 matrices, this gives the formula:</p>
+<p class="eq"><img src="images/eq80-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">For 3 &times; 3 matrices, this gives the formula:</p>
+<p class="eq"><img src="images/eq80-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">And for 4 &times; 4 matrices, this gives the formula:</p>
+<p class="eq"><img src="images/eq80-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In 3D graphics, we primarily work with 4 &times; 4 matrices, and so we do not need to continue generating explicit formulas for <i>n</i> &gt; 4.</p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.9</b></p>
+<p class="tx1">Find the determinant of the matrix </p>
+<p class="eq"><img src="images/eq80-05.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We have that:<a id="page47"/></p>
+<p class="eq"><img src="images/eq81-01.jpg" alt="image" width="100%"/></p>
+<p class="h1" id="c2.6"><a href="toc.html#toc-2.6"><b>2.6 THE ADJOINT OF A MATRIX</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Let <b>A</b> be an <i>n</i> &times; <i>n</i> matrix. The product <img src="images/81-0a.jpg" alt="image" width="150" height="20" style="margin-bottom:-0.3em;"/> is called the <i>cofactor of A</i><sub>ij</sub>. If we compute <i>C</i><sub>ij</sub> and place it in the <i>ij</i>th position of a corresponding matrix <b>C<sub>A</sub></b> for every element in <b>A</b>, we obtain the <i>cofactor matrix of </i><b>A</b>:</p>
+<p class="eq"><img src="images/eq81-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If we take the transpose of <b>C<sub>A</sub></b> we get a matrix that is called<i> adjoint of </i><b>A</b>, which we denote by </p>
+
+<p class="eq" id="eq2.5"><img src="images/eq81-03.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">In the next section, we learn that the adjoint enables us to find an explicit formula for computing matrix inverses.</p>
+<p class="h1" id="c2.7"><a href="toc.html#toc-2.7"><b>2.7 THE INVERSE OF A MATRIX </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Matrix algebra does not define a division operation, but it does define a multiplicative inverse operation. The following list summarizes the important information about inverses:</p>
+<ol><li>Only square matrices have inverses; therefore, when we speak of matrix inverses, we assume we are dealing with a square matrix.<a id="page48"/></li>
+<li>The inverse of an <i>n</i> &times; <i>n</i> matrix <b>M</b> is an <i>n</i> &times; <i>n</i> matrix denoted by <b>M</b><sup>&minus;1</sup>.</li>
+<li>Not every square matrix has an inverse. A matrix that does have an inverse is said to be <i>invertible</i>, and a matrix that does not have an inverse is said to be <i>singular</i>.</li>
+<li>The inverse is unique when it exists.</li>
+<li>Multiplying a matrix with its inverse results in the identity matrix: <b>MM</b><sup>&minus;1</sup> = <b>M</b><sup>&minus;1</sup><b>M</b> = <b>I</b>. Note that multiplying a matrix with its own inverse is a case when matrix multiplication is commutative. </li></ol>
+<p class="tx1">Matrix inverses are useful when solving for other matrices in a matrix equation. For example, suppose that we are given the matrix equation <b>p</b>&prime; = <b>pM</b>. Further suppose that we are given <b>p</b>&prime; and <b>M</b>, and want to solve for <b>p</b>. Assuming that <b>M</b> is invertible (i.e., <b>M</b><sup>&minus;1</sup> exists), we can solve for <b>p</b> like so:</p>
+
+<p class="eq"><img src="images/eq82-06.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">A formula for finding inverses, which we do not prove here but should be proved in any college level linear algebra text, can be given in terms of the adjoint and determinant:</p>
+
+<p class="eq" id="eq2.6"><img src="images/eq82-01.jpg" alt="image" width="100%"/></p>
+
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 2.10</b></p>
+<p class="tx1">Find a general formula for the inverse of a 2 &times; 2 matrix <img src="images/eq82-02.jpg" alt="image" width="100" height="40" style="margin-bottom:-0.5em;"/>, and use this formula to find the inverse of the matrix <img src="images/eq82-03.jpg" alt="image" width="100" height="40" style="margin-bottom:-0.5em;"/></p>
+<p class="tx">We have that<a id="page49"/></p>
+<p class="eq"><img src="images/eq82-04.jpg" alt="image" width="100%"/></p>
+<p class="eq"><img src="images/eq83-01.jpg" alt="image" width="100%"/></p>
+<table>
+<tbody>
+<tr>
+<td><img src="images/note.jpg" alt="image" width="60" height="25"/></td>
+<td>&nbsp;</td>
+<td><p class="note"><i>For small matrices (sizes 4 &times; 4 and smaller), the adjoint method is computationally efficient. For larger matrices, other methods are used like Gaussian elimination. However, the matrices we are concerned about in 3D computer graphics have special forms, which enable us to determine the inverse formulas ahead of time, so that we do not need to waste CPU cycles finding the inverse of a general matrix. Consequently, we rarely need to apply Equation <a href="ch02.html#eq2.6">2.6</a> in code.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">To conclude this section on inverses, we present the following useful algebraic property for the inverse of a product:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;(AB)</b><sup>&minus;<b>1</b></sup><b> = B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup></p>
+<p class="tx1">This property assumes both <b>A</b> and <b>B</b> are invertible and that they are both square matrices of the same dimension. To prove that <b>B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup> is the inverse of <b>AB</b>, we must show (<b>AB</b>)(<b>B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup>) = <b>I</b>  and (<b>B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup>)(<b>AB</b>) = <b>I</b>. This is done as follows:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;(AB)(B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup><b>) </b>=<b> A(BB</b><sup>&minus;<b>1</b></sup><b>)A</b><sup>&minus;<b>1</b></sup> =<b> AIA</b><sup>&minus;<b>1</b></sup> =<b> AA</b><sup>&minus;<b>1</b></sup> =<b> I</b></p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;(B</b><sup>&minus;<b>1</b></sup><b>A</b><sup>&minus;<b>1</b></sup><b>)(AB) </b>=<b> B</b><sup>&minus;<b>1</b></sup><b>(A</b><sup>&minus;<b>1</b></sup><b>A)B </b>=<b><sup> </sup>B</b><sup>&minus;<b>1</b></sup><b>IB </b>=<b> B</b><sup>&minus;<b>1</b></sup><b>B = I</b></p>
+<p class="h1" id="c2.8"><a href="toc.html#toc-2.8"><b>2.8 DIRECTX MATH MATRICES </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">For transforming points and vectors, we use 1 &times; 4 row vectors and 4 &times; 4 matrices. The reason for this will be explained in the next chapter. For now, we just concentrate on the DirectX Math types used to represent 4 &times; 4 matrices.<a id="page50"/></p>
+<p class="h2" id="c2.8.1"><a href="toc.html#toc-2.8.1"><b>2.8.1 Matrix Types</b></a></p>
+<p class="tx1">To represent 4 &times; 4 matrices in DirectX math, we use the <span class="code">XMMATRIX</span> class, which is defined as follows in the <i>DirectXMath.h</i> header file (with some minor adjustments we have made for clarity):</p>
+<p class="code"><span class="code">#if (defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM)) &amp;&amp; defined(_XM_NO_INTRINSICS_)</span></p>
+<p class="code"><span class="code">struct XMMATRIX</span></p>
+<p class="code"><span class="code">#else</span></p>
+<p class="code"><span class="code">__declspec(align(16)) struct XMMATRIX</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Use 4 XMVECTORs to represent the matrix for SIMD.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR r[4];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX() {}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Initialize matrix by specifying 4 row vectors.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX(FXMVECTOR R0, FXMVECTOR R1, FXMVECTOR R2, CXMVECTOR R3)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ r[0]&nbsp;</span>=<span class="code">&nbsp;R0; r[1]&nbsp;</span>=<span class="code">&nbsp;R1; r[2]&nbsp;</span>=<span class="code">&nbsp;R2; r[3]&nbsp;</span>=<span class="code">&nbsp;R3; }</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Initialize matrix by specifying 4 row vectors.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX(float m00, float m01, float m02, float m03,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; float m10, float m11, float m12, float m13,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; float m20, float m21, float m22, float m23,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; float m30, float m31, float m32, float m33);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Pass array of sixteen floats to construct matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMMATRIX(_In_reads_(16) const float *pArray);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;operator</span>=<span class="code">&nbsp;(const XMMATRIX&amp; M)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ r[0]&nbsp;</span>=<span class="code">&nbsp;M.r[0]; r[1]&nbsp;</span>=<span class="code">&nbsp;M.r[1]; r[2]&nbsp;</span>=<span class="code">&nbsp;M.r[2]; r[3]&nbsp;</span>=<span class="code">&nbsp;M.r[3]; return *this; }</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;operator</span>+<span class="code">&nbsp;() const { return *this; }</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;operator- () const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator</span>+=<span class="code">&nbsp;(FXMMATRIX M);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator-</span>=<span class="code">&nbsp;(FXMMATRIX M);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator*</span>=<span class="code">&nbsp;(FXMMATRIX M);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;operator*</span>=<span class="code">&nbsp;(float S);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&amp;&nbsp;&nbsp;operator/</span>=<span class="code">&nbsp;(float S);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator</span>+<span class="code">&nbsp;(FXMMATRIX M) const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator- (FXMMATRIX M) const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;XM_CALLCONV&nbsp;&nbsp; operator* (FXMMATRIX M) const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;operator* (float S) const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX&nbsp;&nbsp;operator/ (float S) const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;friend XMMATRIX&nbsp;&nbsp; XM_CALLCONV&nbsp;&nbsp; operator* (float S, FXMMATRIX M);</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1"><a id="page51"/>As you can see, <span class="code">XMMATRIX</span> uses four <span class="code">XMVECTOR</span> instances to use SIMD. Moreover, <span class="code">XMMATRIX</span> provides overloaded operators for matrix arithmetic.</p>
+<p class="tx">In addition to using the various constructors, an <span class="code">XMMATRIX</span> instance can be created using the <span class="code">XMMatrixSet</span> function:</p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixSet(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float m00, float m01, float m02, float m03,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float m10, float m11, float m12, float m13,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float m20, float m21, float m22, float m23,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float m30, float m31, float m32, float m33);</span></p>
+<p class="tx1">Just as we use <span class="code">XMFLOAT2</span> (2D), <span class="code">XMFLOAT3</span> (3D), and <span class="code">XMFLOAT4</span> (4D) when storing vectors in a class, it is recommended, by the DirectXMath documentation to use the <span class="code">XMFLOAT4X4</span> type to store matrices as class data members.</p>
+<p class="code"><span class="code">struct XMFLOAT4X4</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;union</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;struct</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float _11, _12, _13, _14;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float _21, _22, _23, _24;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float _31, _32, _33, _34;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float _41, _42, _43, _44;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float m[4][4];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4X4() {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4X4(float m00, float m01, float m02, float m03,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float m10, float m11, float m12, float m13,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float m20, float m21, float m22, float m23,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float m30, float m31, float m32, float m33);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMFLOAT4X4(_In_reads_(16) const float *pArray);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;&nbsp;&nbsp;operator() (size_t Row, size_t Column) const { return m[Row][Column]; }</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&amp;&nbsp;&nbsp; operator() (size_t Row, size_t Column) { return m[Row][Column]; }</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4X4&amp; operator</span>=<span class="code">&nbsp;(const XMFLOAT4X4&amp; Float4x4);</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">We use the following method to load data from <span class="code">XMFLOAT4X4</span> into <span class="code">XMMATRIX</span>:</p>
+<p class="code"><span class="code">inline XMMATRIX XM_CALLCONV&nbsp;</span></p>
+<p class="code"><span class="code">XMLoadFloat4x4(const XMFLOAT4X4* pSource);</span></p>
+<p class="tx1">We use the following method to store data from <span class="code">XMMATRIX</span> into <span class="code">XMFLOAT4X4</span>:</p>
+<p class="code"><span class="code">inline void XM_CALLCONV&nbsp;</span></p>
+<p class="code"><span class="code">XMStoreFloat4x4(XMFLOAT4X4* pDestination, FXMMATRIX M);</span></p>
+<p class="h2" id="c2.8.2"><a href="toc.html#toc-2.8.2"><b>2.8.2 Matrix Functions</b></a><a id="page52"/></p>
+<p class="tx1">The DirectX Math library includes the following useful matrix related functions:</p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixIdentity();&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns the identity matrix <b>I </b></p>
+
+<p class="code"><span class="code">bool XM_CALLCONV XMMatrixIsIdentity(&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns true if <b>M</b> is the identity matrix</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;FXMMATRIX M); &nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>M</b></p>
+
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixMultiply(&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns the matrix product <b>AB</b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;FXMMATRIX A, &nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>A</b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CXMMATRIX B);&nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>B</b></p>
+
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixTranspose(&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns <b>M</b><sup>T</sup></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FXMMATRIX M);&nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>M</b></p>
+
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMMatrixDeterminant(&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns (det <b>M</b>, det <b>M</b>, det <b>M</b>, det <b>M</b>)</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FXMMATRIX M);&nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>M</b></p>
+
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixInverse(&nbsp;&nbsp;&nbsp;//&nbsp;</span>Returns <b>M</b><sup>&minus;1</sup></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR* pDeterminant, &nbsp;&nbsp;&nbsp;//&nbsp;</span>Input (det <b>M</b>, det <b>M</b>, det <b>M</b>, det <b>M</b>)</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;FXMMATRIX M);&nbsp;&nbsp;&nbsp;//&nbsp;</span>Input <b>M</b></p>
+<p class="tx1">When we declare a <span class="code">XMMATRIX</span> parameter to a function, we use the same rules we used when passing <span class="code">XMVECTOR</span> parameters (see &#x00A7;1.6.3), except that an <span class="code">XMMATRIX</span> counts as four <span class="code">XMVECTOR</span> parameters. Assuming there are no more than two additional <span class="code">FXMVECTOR</span> parameters in total to the function, the first <span class="code">XMMATRIX</span> should be of type <span class="code">FXMMATRIX</span>, and any other <span class="code">XMMATRIX</span> should be of type <span class="code">CXMMATRIX</span>. We illustrate how these types are defined on 32-bit Windows with a compiler that supports the __fastcall calling convention and a compiler that supports the newer __vectorcall calling convention:</p>
+<p class="code"><span class="code">// 32-bit Windows __fastcall passes first 3 XMVECTOR arguments</span></p>
+<p class="code"><span class="code">// via registers, the remaining on the stack.&nbsp;</span></p>
+<p class="code"><span class="code">typedef const XMMATRIX&amp; FXMMATRIX;</span></p>
+<p class="code"><span class="code">typedef const XMMATRIX&amp; CXMMATRIX;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// 32-bit Windows __vectorcall passes first 6 XMVECTOR arguments</span></p>
+<p class="code"><span class="code">// via registers, the remaining on the stack.</span></p>
+<p class="code"><span class="code">typedef const XMMATRIX FXMMATRIX;</span></p>
+<p class="code"><span class="code">typedef const XMMATRIX&amp; CXMMATRIX;</span></p>
+<p class="tx1">Observe that on 32-bit Windows with <span class="code">__fastcall</span>, a <span class="code">XMMATRIX</span> cannot be passed through SSE/SSE2 registers because only three <span class="code">XMVECTOR</span> arguments via registers are supported, and a <span class="code">XMMATRIX</span> requires four; thus the matrix is just passed on the stack by reference. For the details on how these types are defined for the other platforms, see &ldquo;Calling Conventions&rdquo; under &ldquo;Library Internals&rdquo; in the DirectXMath documentation [DirectXMath]. The exception to these rules is with constructor methods. [DirectXMath] recommends always using <span class="code">CXMMATRIX</span> for constructors that takes <span class="code">XMMATRIX</span> parameters. Furthermore, do not use the annotation <span class="code">XM_CALLCONV</span> for constructors. <a id="page53"/></p>
+<p class="h2" id="c2.8.3"><a href="toc.html#toc-2.8.3"><b>2.8.3 DirectX Math Matrix Sample Program</b></a></p>
+<p class="tx1">The following code provides some examples on how to use the <span class="code">XMMATRIX</span> class and most of the functions listed in the previous section.</p>
+<p class="code"><span class="code">#include &lt;windows.h&gt; // for XMVerifyCPUSupport</span></p>
+<p class="code"><span class="code">#include &lt;DirectXMath.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;DirectXPackedVector.h&gt;</span></p>
+<p class="code"><span class="code">#include &lt;iostream&gt;</span></p>
+<p class="code"><span class="code">using namespace std;</span></p>
+<p class="code"><span class="code">using namespace DirectX;</span></p>
+<p class="code"><span class="code">using namespace DirectX::PackedVector;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Overload the "&lt;&lt;" operators so that we can use cout to&nbsp;</span></p>
+<p class="code"><span class="code">// output XMVECTOR and XMMATRIX objects.</span></p>
+<p class="code"><span class="code">ostream&amp; XM_CALLCONV operator &lt;&lt; (ostream&amp; os, FXMVECTOR v)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4 dest;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4(&amp;dest, v);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;os &lt;&lt; "(" &lt;&lt; dest.x &lt;&lt; ", " &lt;&lt; dest.y &lt;&lt; ", " &lt;&lt; dest.z &lt;&lt; ", " &lt;&lt; dest.w &lt;&lt; ")";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return os;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">ostream&amp; XM_CALLCONV operator &lt;&lt; (ostream&amp; os, FXMMATRIX m)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for (int i&nbsp;</span>=<span class="code">&nbsp;0; i &lt; 4;&nbsp;</span>++<span class="code">i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;os &lt;&lt; XMVectorGetX(m.r[i]) &lt;&lt; ″\t";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;os &lt;&lt; XMVectorGetY(m.r[i]) &lt;&lt; "\t";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;os &lt;&lt; XMVectorGetZ(m.r[i]) &lt;&lt; "\t";</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;os &lt;&lt; XMVectorGetW(m.r[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;os &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return os;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">int main()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Check support for SSE2 (Pentium4, AMD K8, and above).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if (!XMVerifyCPUSupport())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cout &lt;&lt; "directx math not supported" &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX A(1.0f, 0.0f, 0.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f, 2.0f, 0.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.0f, 0.0f, 4.0f, 0.0f,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1.0f, 2.0f, 3.0f, 1.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX B&nbsp;</span>=<span class="code">&nbsp;XMMatrixIdentity();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX C&nbsp;</span>=<span class="code">&nbsp;A * B;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX D&nbsp;</span>=<span class="code">&nbsp;XMMatrixTranspose(A);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR det&nbsp;</span>=<span class="code">&nbsp;XMMatrixDeterminant(A);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX E&nbsp;</span>=<span class="code">&nbsp;XMMatrixInverse(&amp;det, A);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX F&nbsp;</span>=<span class="code">&nbsp;A * E;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "A&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; A &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "B&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; B &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "C&nbsp;</span>=<span class="code">&nbsp;A*B&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; C &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "D&nbsp;</span>=<span class="code">&nbsp;transpose(A)&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; D &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "det&nbsp;</span>=<span class="code">&nbsp;determinant(A)&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; det &lt;&lt; endl &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "E&nbsp;</span>=<span class="code">&nbsp;inverse(A)&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; E &lt;&lt; endl;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cout &lt;&lt; "F&nbsp;</span>=<span class="code">&nbsp;A*E&nbsp;</span>=<span class="code">&nbsp;" &lt;&lt; endl &lt;&lt; F &lt;&lt; endl;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">}</span><a id="page54"/></p>
+
+<p class="caption"><img src="images/Fig2-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig2.1"><b><i>Figure 2.1.</i></b>&nbsp;&nbsp;Output of the above program.<a id="page55"/></p>
+
+<p class="h1" id="c2.9"><a href="toc.html#toc-2.9"><b>2.9 SUMMARY </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>An <i>m </i>&times; <i>n </i>matrix <b>M</b> is a rectangular array of real numbers with <i>m</i> rows and <i>n</i> columns. Two matrices of the same dimensions are equal if and only if their corresponding components are equal. We add two matrices of the same dimensions by adding their corresponding elements. We multiply a scalar and a matrix by multiplying the scalar with every element in the matrix.</li>
+<li>If <b>A</b> is a <i>m </i>&times; <i>n matrix and </i><b>B</b> is a <i>n </i>&times; <i>p</i> matrix, then the product <b>AB</b> is defined and is a <i>m </i>&times; <i>p matrix </i><b>C</b>, where the <i>ijth entry of the product </i><b>C</b> is given by taking the dot product of the <i>ith row vector in </i><b>A</b> with the <i>jth column vector in </i><b>B</b>, that is, <img src="images/89-0a.jpg" alt="image" width="100" height="20" style="margin-bottom:-0.3em;"/>. </li>
+<li><a id="page56"/>Matrix multiplication is not commutative (i.e., <b>AB </b>&#x2260; <b>BA</b>, in general). Matrix multiplication is associative: <b>(AB)C </b>=<b> A(BC)</b>.</li>
+<li>The transpose of a matrix is found by interchanging the rows and columns of the matrix. Thus the transpose of an <i>m </i>&times; <i>n</i> matrix is an <i>n </i>&times; <i>m</i> matrix. We denote the transpose of a matrix <b>M</b> as <b>M</b><i><sup>T</sup></i>.</li>
+<li>The identity matrix is a square matrix that has zeros for all elements except along the main diagonal, and the elements along the main diagonal are all ones. </li>
+<li>The determinant, det <b>A</b>, is a special function which inputs a square matrix and outputs a real number. <b>A</b> square matrix <b>A</b> is invertible if and only if  det <b>A</b> &#x2260; 0. The determinant is used in the formula for computing the inverse of a matrix.</li>
+<li>Multiplying a matrix with its inverse results in the identity matrix: <b>MM</b><sup>&minus;1</sup> = <b>M</b><sup>&minus;1</sup><b>M</b> = <b>I</b>. The inverse of a matrix, if it exists, is unique. Only square matrices have inverses and even then, a square matrix may not be invertible. The inverse of a matrix can be computed with the formula: , where  is the adjoint (transpose of the cofactor matrix of <b>A</b>).</li>
+<li>We use the DirectX Math <span class="code">XMMATRIX</span> type to describe 4 &times; 4 matrices efficiently in code using SIMD operations. For class data members, we use the <span class="code">XMFLOAT4X4</span> class, and then use the loading (<span class="code">XMLoadFloat4x4</span>) and storage (<span class="code">XMStoreFloat4x4</span>) methods to convert back and forth between <span class="code">XMMATRIX</span> and <span class="code">XMFLOAT4X4</span>. The <span class="code">XMMATRIX</span> class overloads the arithmetic operators to do matrix addition, subtraction, matrix multiplication, and scalar multiplication. Moreover, the DirectX Math library provides the following useful matrix functions for computing the identity matrix, product, transpose, determinant, and inverse: </li></ol>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX XM_CALLCONV XMMatrixIdentity();&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX XM_CALLCONV XMMatrixMultiply(FXMMATRIX A, CXMMATRIX B);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX XM_CALLCONV XMMatrixTranspose(FXMMATRIX M);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR XM_CALLCONV XMMatrixDeterminant(FXMMATRIX M);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX XM_CALLCONV XMMatrixInverse(XMVECTOR* pDeterminant,&nbsp;&nbsp;FXMMATRIX M);</span></p>
+<p class="h1" id="c2.10"><a href="toc.html#toc-2.10"><b>2.10 EXERCISES </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Solve the following matrix equation for <img src="images/eq89-01.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/>.</li>
+<li><a id="page57"/>Compute the following matrix products:<br/>
+<img src="images/eq90-01.jpg" alt="image" width="100%"/>
+</li>
+<li>Compute the transpose of the following matrices:<br/>
+<img src="images/eq90-02.jpg" alt="image" width="100%"/>
+</li>
+<li>Write the following linear combinations as vector-matrix products:
+<ol class="lc-alpha">
+<li><b>v </b>= 2(1, 2, 3) &minus; 4(&minus;5, 0, &minus;1) +3(2, &minus;2, 3) </li>
+<li><b>v </b>= 3(2, &minus;4) + 2(1, 4) &minus;1(&minus;2, &minus;3) + 5(1, 1)</li></ol></li>
+<li>Show that<br/>
+<img src="images/eq90-03.jpg" alt="image" width="100%"/></li>
+<li>Show that
+<br/>
+<img src="images/eq90-04.jpg" alt="image" width="100%"/></li>
+<li>Prove that the cross product can be expressed by the matrix product:<br/>
+<img src="images/eq91-01.jpg" alt="image" width="100%"/></li>
+<li><img src="images/eq91-02.jpg" alt="image" width="60%" style="margin-bottom:-1.5em;"/> the inverse of <b>A</b>?<br/><br/></li>
+<li><img src="images/eq91-03.jpg" alt="image" width="60%" style="margin-bottom:-1.5em;"/> the inverse of <b>A</b>?<br/><br/></li>
+<li>Find the determinants of the following matrices:<br/>
+<img src="images/eq91-04.jpg" alt="image" width="100%"/></li>
+
+<li> Find the inverse of the following matrices:<br/>
+<img src="images/eq91-05.jpg" alt="image" width="100%"/></li>
+
+<li>Is the following matrix invertible?<br/>
+<img src="images/eq91-06.jpg" alt="image" width="100%"/></li>
+
+<li>Show that (<b>A</b><sup>&minus;1</sup>)<i><sup>T</sup></i> = (<b>A</b><i><sup>T</sup></i>)<sup>&minus;1</sup>, assuming <b>A</b> is invertible.</li>
+<li>Let <b>A</b> and <b>B</b> be <i>n</i> &times; <i>n</i> matrices. A fact proved in linear algebra books is that det(<b>AB</b>) = det <b>A </b><b>&#x00B7;</b> det <b>B</b>. Use this fact along with the fact that det <b>I</b> = 1 to prove det <img src="images/eq91-07.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/>, assuming <b>A</b> is invertible.</li>
+<li><a id="page58"/>Prove that the 2D determinant <img src="images/eq92-01.jpg" alt="image" width="60" height="30" style="margin-bottom:-0.5em;"/> gives the signed area of the parallelogram spanned by <b>u</b> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>) and <b>v</b> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>). The result is positive if <b>u</b> can be rotated counterclockwise to coincide with <b>v</b> by an angle &theta; &#x2208; (0, &pi;), and negative otherwise.
+<br/>
+<img src="images/Fig2-2.jpg" alt="image" width="60%"/>
+</li>
+<li>Find the area of the parallelogram spanned by:
+<ol class="lc-alpha"><li><b>u</b> = (3, 0) band <b>v</b> = (1, 1) </li>
+<li><b>u</b> = (&minus;1, &minus;1) and <b>v</b> = (0, 1)</li></ol></li>
+<li>Let <img src="images/eq92-02.jpg" alt="image" width="350" height="40" style="margin-bottom:-1.0em;"/>.<br/><br/> Show that <b>A</b>(<b>BC</b>) = (<b>AB</b>)<b>C</b>. This shows that matrix multiplication is associative for  2 &times; 2 matrices. (In fact, matrix multiplication is associative for general sized matrices, whenever the multiplication is defined.)</li>
+<li>Write a computer program that computes the transpose of an <i>m</i> &times; <i>n</i> matrix without using DirectX Math (just use an array of arrays in C++).</li>
+<li>Write a computer program that computes the determinant and inverse of  4 &times; 4 matrices without using DirectX Math (just use an array of arrays in C++).</li></ol>
+</body>
+</html>

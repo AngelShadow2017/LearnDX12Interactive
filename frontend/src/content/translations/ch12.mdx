@@ -1,0 +1,800 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：12.1–12.6 全部小节（含编写几何着色器、Tree Billboards 演示与 TreeSprite.hlsl 全文、SV_PrimitiveID、纹理数组与子资源、alpha-to-coverage、习题 1–7），依据 EPUB ch12.html 逐段录入 · 状态：录入完成并已完成独立审校（2026-10-05；记录见 REVIEW-CH10-CH13.md）</span></div>
+
+<a id="page445"/>
+
+假设我们不使用曲面细分阶段，几何着色器阶段就是位于顶点着色器阶段和像素着色器阶段之间的一个可选阶段。顶点着色器的输入是顶点，而几何着色器的输入是完整的图元。例如，如果我们要绘制三角形列表，那么从概念上讲，几何着色器程序会对列表中的每个三角形 `T` 执行：
+
+```cpp
+for(UINT i = 0; i < numTriangles; ++i)
+  OutputPrimitiveList = GeometryShader( T[i].vertexList );
+```
+
+注意，每个三角形的三个顶点都被输入几何着色器，而几何着色器输出一个图元列表。与不能销毁或创建顶点的顶点着色器不同，几何着色器的主要优点是它可以创建或销毁几何体；这使得一些有趣的效果能够在 GPU 上实现。例如，输入图元可以被扩展成一个或多个其他图元，或者几何着色器可以根据某个条件选择不输出图元。注意，输出图元的类型不必与输入图元相同；例如，几何着色器的一个常见应用是把一个点扩展成一个四边形（两个三角形）。
+
+从几何着色器输出的图元由一个顶点列表定义。离开几何着色器的顶点位置必须变换到齐次裁剪空间。经过几何着色器阶段之后，我们得到一个定义齐次裁剪空间中图元的顶点列表。这些顶点被投影（齐次除法），然后照常进行光栅化。<a id="page446"/>
+
+**本章目标：**
+
+1. 学习如何编写几何着色器。
+2. 了解如何用几何着色器高效实现公告牌（billboard）。
+3. 认识自动生成的图元 ID 及其一些应用。
+4. 弄清如何创建和使用纹理数组，并理解它们为什么有用。
+5. 理解 alpha-to-coverage 如何缓解 alpha 抠图（alpha cutouts）的锯齿问题。
+
+<section className="lesson-section lesson-section--intro" id="s121">
+<h2>12.1 编写几何着色器</h2>
+
+编写几何着色器与编写顶点着色器或像素着色器非常类似，但有一些差异。下面的代码展示了一般形式：
+
+```cpp
+[maxvertexcount(N)]
+void ShaderName ( 
+  PrimitiveType InputVertexType InputName [NumElements], 
+  inout StreamOutputObject<OutputVertexType> OutputName)
+{
+   // Geometry shader body…
+}
+```
+
+我们必须首先指定几何着色器在单次调用中最多输出多少个顶点（几何着色器按图元逐次调用）。这是通过在着色器定义之前用下面的*属性*（attribute）语法设置最大顶点数完成的：
+
+```cpp
+  [maxvertexcount(N)]
+```
+
+其中 `N` 是几何着色器在单次调用中最多输出的顶点数。几何着色器每次调用输出的顶点数是可变的，但不能超过定义的最大值。出于性能考虑，`maxvertexcount` 应当尽可能小；[NVIDIA08] 指出，当 GS 输出 1–20 个标量时达到峰值性能，而当 GS 输出 27–40 个标量时性能下降到 50%。每次调用输出的标量数是 `maxvertexcount` 与输出顶点结构中标量数的乘积。在实践中受这种限制工作很困难，所以我们要么接受低于峰值的性能并认为它足够好，要么选择一种不使用几何着色器的替代实现；然而，我们还必须考虑替代实现可能有<a id="page447"/>其他缺点，这仍可能使几何着色器实现成为更好的选择。此外，[NVIDIA08] 的建议来自 2008 年（第一代几何着色器），如今情况应当已经改善。
+
+几何着色器接受两个参数：一个输入参数和一个输出参数。（实际上它可以接受更多参数，但那是一个专门话题；见 §12.2.4。）输入参数总是一个定义图元的顶点数组——点为一个顶点，线为两个顶点，三角形为三个顶点，带邻接的线为四个顶点，带邻接的三角形为六个顶点。输入顶点的顶点类型就是顶点着色器返回的顶点类型（例如 `VertexOut`）。输入参数必须以一个图元类型为前缀，它描述输入几何着色器的图元类型。可以是下面任意一种：
+
+1. `point`：输入图元是点。
+2. `line`：输入图元是线（列表或条带）。
+3. `triangle`：输入图元是三角形（列表或条带）。
+4. `lineadj`：输入图元是带邻接的线（列表或条带）。
+5. `triangleadj`：输入图元是带邻接的三角形（列表或条带）。
+
+**注意**：输入几何着色器的图元总是完整图元（例如，线为两个顶点，三角形为三个顶点）。因此几何着色器不需要区分列表和条带。例如，如果你正在绘制三角形条带，几何着色器仍然会对条带中的每个三角形执行，每个三角形的三个顶点都作为输入传入几何着色器。这会带来额外开销，因为被多个图元共享的顶点会在几何着色器中被处理多次。
+
+输出参数总是带有 `inout` 修饰符。此外，输出参数总是一个流类型（stream type）。流类型存储一个顶点列表，它定义几何着色器正在输出的几何体。几何着色器使用内置的 `Append` 方法把一个顶点添加到输出流列表中：
+
+```cpp
+void StreamOutputObject<OutputVertexType>::Append(OutputVertexType v);
+```
+
+流类型是一个模板类型，模板实参用于指定输出顶点的顶点类型（例如 `GeoOut`）。有三种可能的流类型：
+
+1. `PointStream<OutputVertexType>`：定义一个点列表的顶点列表。
+2. `LineStream<OutputVertexType>`：定义一个线条带的顶点列表。
+3. `TriangleStream<OutputVertexType>`：定义一个三角形条带的顶点列表。
+
+由几何着色器输出的顶点<a id="page448"/>构成图元；输出图元的类型由流类型指示（`PointStream`、`LineStream`、`TriangleStream`）。对于线和三角形，输出图元总是条带。不过，线列表和三角形列表可以用内置的 `RestartStrip` 方法模拟：
+
+```cpp
+void StreamOutputObject<OutputVertexType>::RestartStrip();
+```
+
+例如，如果你想输出三角形列表，那么每当向输出流追加了三个顶点之后就调用一次 `RestartStrip`。
+
+下面是几个几何着色器签名的具体示例：
+
+```cpp
+// EXAMPLE 1: GS ouputs at most 4 vertices. The input primitive is a
+// line.
+// The output is a triangle strip.
+//
+[maxvertexcount(4)]
+void GS(line VertexOut gin[2], 
+    inout TriangleStream<GeoOut> triStream)
+{
+   // Geometry shader body…
+}
+//
+// EXAMPLE 2: GS outputs at most 32 vertices. The input primitive is
+// a triangle. The output is a triangle strip.
+//
+[maxvertexcount(32)]
+void GS(triangle VertexOut gin[3], 
+    inout TriangleStream<GeoOut> triStream)
+{>>>>>>>>>>>>>>>>>>
+   // Geometry shader body…
+}
+//
+// EXAMPLE 3: GS outputs at most 4 vertices. The input primitive
+// is a point. The output is a triangle strip. 
+//
+[maxvertexcount(4)]
+void GS(point VertexOut gin[1], 
+    inout TriangleStream<GeoOut> triStream)
+{   
+   // Geometry shader body…
+}
+```
+
+**译者注**：上面示例 2 中 `{` 之后紧跟的一串 `>>>>>>>>>>>>>>>>>>` 字符不属于代码内容，判断为 EPUB 转换产生的噪声，此处照录原文。另外示例 1 的注释中 "ouputs" 应为 "outputs"，也照录。
+
+<Figure src="images/Fig12-1.jpg" alt="把一个三角形细分为四个大小相同的三角形；三个新顶点是原三角形各边的中点" figureNumber="图 12.1" caption="把一个三角形细分为四个大小相同的三角形。注意，三个新顶点是原三角形各边上的中点。" />
+
+下面的几何着色器演示了 `Append` 和 `RestartStrip` 方法；它输入一个三角形，对它细分（图 12.1），并输出<a id="page449"/>四张细分三角形：
+
+```cpp
+struct VertexOut
+{
+   float3 PosL   : POSITION;
+   float3 NormalL : NORMAL;
+   float2 Tex    : TEXCOORD;
+};
+
+struct GeoOut
+{
+   float4 PosH   : SV_POSITION;
+     float3 PosW   : POSITION;
+     float3 NormalW : NORMAL;
+     float2 Tex    : TEXCOORD;
+   float FogLerp : FOG;
+};
+
+void Subdivide(VertexOut inVerts[3], out VertexOut outVerts[6])
+{
+    //      1
+    //      *
+    //     /  \
+    //    /    \
+    //  m0*-----*m1
+    //  /  \  / \
+    // /    \/   \
+    // *-----*-----*
+    // 0     m2    2
+
+   VertexOut m[3];
+
+   // Compute edge midpoints.
+   m[0].PosL = 0.5f*(inVerts[0].PosL+inVerts[1].PosL);
+   m[1].PosL = 0.5f*(inVerts[1].PosL+inVerts[2].PosL);
+   m[2].PosL = 0.5f*(inVerts[2].PosL+inVerts[0].PosL);
+
+   // Project onto unit sphere
+   m[0].PosL = normalize(m[0].PosL);
+   m[1].PosL = normalize(m[1].PosL);
+   m[2].PosL = normalize(m[2].PosL);
+
+   // Derive normals.
+   m[0].NormalL = m[0].PosL;
+   m[1].NormalL = m[1].PosL;
+   m[2].NormalL = m[2].PosL;
+
+   // Interpolate texture coordinates.
+   m[0].Tex = 0.5f*(inVerts[0].Tex+inVerts[1].Tex);
+   m[1].Tex = 0.5f*(inVerts[1].Tex+inVerts[2].Tex);
+   m[2].Tex = 0.5f*(inVerts[2].Tex+inVerts[0].Tex);
+
+   outVerts[0] = inVerts[0];
+   outVerts[1] = m[0];
+   outVerts[2] = m[2];
+   outVerts[3] = m[1];
+   outVerts[4] = inVerts[2];
+   outVerts[5] = inVerts[1];
+};
+
+void OutputSubdivision(VertexOut v[6], 
+    inout TriangleStream<GeoOut> triStream)
+{
+   GeoOut gout[6];
+
+   [unroll]
+   for(int i = 0; i < 6; ++i)
+   {
+      // Transform to world space space. 
+      gout[i].PosW   = mul(float4(v[i].PosL, 1.0f), gWorld).xyz;
+      gout[i].NormalW = mul(v[i].NormalL,
+(float3x3)gWorldInvTranspose);
+```
+
+<a id="page450"/>
+
+```cpp
+      // Transform to homogeneous clip space.
+      gout[i].PosH = mul(float4(v[i].PosL, 1.0f), gWorldViewProj);
+
+      gout[i].Tex    = v[i].Tex;
+   }
+      
+    //      1
+    //      *
+    //     /  \
+    //    /    \
+    //  m0*-----*m1
+    //  /  \  / \
+    // /    \/   \
+    // *-----*-----*
+    // 0     m2    2
+
+   // We can draw the subdivision in two strips:
+   //   Strip 1: bottom three triangles
+   //   Strip 2: top triangle
+   
+   [unroll]
+   for(int j = 0; j < 5; ++j)
+   {
+      triStream.Append(gout[j]);
+   }
+   triStream.RestartStrip();
+   
+   triStream.Append(gout[1]);
+   triStream.Append(gout[5]);
+   triStream.Append(gout[3]);   
+}
+```
+
+**译者注**：上面 `OutputSubdivision` 函数的第一条注释在原书中写作 "Transform to world space space."，重复了 "space"，照录原文。
+
+```cpp
+[maxvertexcount(8)]
+void GS(triangle VertexOut gin[3], inout TriangleStream<GeoOut>)
+{
+   VertexOut v[6];
+   Subdivide(gin, v);
+   OutputSubdivision(v, triStream);
+}
+```
+
+几何着色器的编译方式与顶点着色器和像素着色器<a id="page451"/>非常类似。假设我们在 *TreeSprite.hlsl* 中有一个名为 GS 的几何着色器，那么我们用如下方式把它编译成字节码：
+
+```cpp
+mShaders["treeSpriteGS"] = d3dUtil::CompileShader(
+  L"Shaders\\TreeSprite.hlsl", nullptr, "GS", "gs_5_0");
+```
+
+与顶点着色器和像素着色器一样，给定的几何着色器作为管线状态对象（PSO）的一部分绑定到渲染管线：
+
+```cpp
+D3D12_GRAPHICS_PIPELINE_STATE_DESC treeSpritePsoDesc = opaquePsoDesc;
+…
+treeSpritePsoDesc.GS =
+{
+   reinterpret_cast<BYTE*>(mShaders["treeSpriteGS"]->GetBufferPointer()),
+   mShaders["treeSpriteGS"]->GetBufferSize()
+};
+```
+
+**注意**：给定一个输入图元，几何着色器可以根据某个条件选择不输出它。这样，几何体就被几何着色器"销毁"了，这对某些算法很有用。
+
+**注意**：如果在几何着色器中没有输出足够的顶点来完成一个图元，那么这个不完整的图元会被丢弃。
+</section>
+
+<section className="lesson-section" id="s122">
+<h2>12.2 树公告牌演示</h2>
+
+<h3 id="s1221">12.2.1 概述</h3>
+
+当树在远处时，为了效率会使用*公告牌*（billboarding）技术。也就是说，不再渲染完整三维树的几何体，而是在一个四边形上贴一张三维树的图片（见图 12.2）。从远处看，你看不出使用了公告牌。然而，诀窍在于必须确保公告牌始终面向摄像机（否则错觉就会被打破）。
+
+<Figure src="images/Fig12-2.jpg" alt="一张带 alpha 通道的树公告牌纹理" figureNumber="图 12.2" caption="一张带 alpha 通道的树公告牌纹理。" />
+
+假设 *y* 轴向上、*xz* 平面是地面平面，那么树公告牌一般会与 *y* 轴对齐，只在 *xz* 平面内面向摄像机。图 12.3 以俯视角度显示了几个公告牌的局部坐标系——注意公告牌正在"看着"摄像机。
+
+<Figure src="images/Fig12-3.jpg" alt="若干公告牌面向摄像机的俯视图" figureNumber="图 12.3" caption="面向摄像机的公告牌。" />
+
+于是，给定公告牌在世界空间中的中心位置<a id="page452"/> $\mathbf{C}=(C_x,\ C_y,\ C_z)$ 和摄像机在世界空间中的位置 $\mathbf{E}=(E_x,\ E_y,\ E_z)$，我们就有足够的信息来描述公告牌相对于世界空间的局部坐标系：
+
+<MathBlock tex="\begin{aligned} \mathbf{w} &= \frac{(E_x-C_x,\ 0,\ E_z-C_z)}{\lVert(E_x-C_x,\ 0,\ E_z-C_z)\rVert}\\ \mathbf{v} &= (0,1,0)\\ \mathbf{u} &= \mathbf{v}\times\mathbf{w} \end{aligned}" />
+
+给定公告牌相对于世界空间的局部坐标系以及公告牌的世界尺寸，公告牌四边形的顶点可以按如下方式求得（见图 12.4）：
+
+```cpp
+v[0] = float4(gin[0].CenterW + halfWidth*right - halfHeight*up, 1.0f);
+v[1] = float4(gin[0].CenterW + halfWidth*right + halfHeight*up, 1.0f);
+v[2] = float4(gin[0].CenterW - halfWidth*right - halfHeight*up, 1.0f);
+v[3] = float4(gin[0].CenterW - halfWidth*right + halfHeight*up, 1.0f);
+```
+
+<Figure src="images/Fig12-4.jpg" alt="由公告牌的局部坐标系和世界尺寸计算公告牌四边形的顶点" figureNumber="图 12.4" caption="由公告牌的局部坐标系和世界尺寸计算公告牌四边形的顶点。" />
+
+<Figure src="images/Fig12-5.jpg" alt="树公告牌演示的截图" figureNumber="图 12.5" caption="树公告牌演示的截图。" />
+
+注意，每个公告牌的局部坐标<a id="page453"/>系都不相同，所以必须为每个公告牌单独计算。
+
+在本演示中，我们将构造一个点图元列表（PSO 的 `PrimitiveTopologyType` 用 `D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT`，`ID3D12GraphicsCommandList::IASetPrimitiveTopology` 的实参用 `D3D_PRIMITIVE_TOPOLOGY_POINTLIST`），这些点位于一块地形上方一点点。这些点表示我们要绘制的公告牌的中心。在几何着色器中，我们将把这些点扩展成公告牌四边形。此外，我们还将在几何着色器中计算公告牌的世界矩阵。图 12.5 显示了演示的截图。
+
+如图 12.5 所示，本示例在第 10 章"Blend"演示的基础上构建。
+
+**注意**：公告牌的一种常见 CPU 实现是在动态顶点缓冲（即上传堆）中为每个公告牌使用四个顶点。然后每当摄像机移动时，就在 CPU 上更新这些顶点，并把它们 `memcpy` 到 GPU 缓冲，使公告牌面向摄像机。这种方式必须为每个公告牌向 IA 阶段提交四个顶点，而且需要更新动态顶点缓冲，这有开销。用几何着色器的方式，我们可以使用静态顶点缓冲，因为几何着色器完成公告牌扩展并让公告牌面向摄像机。此外，公告牌的内存占用非常小，因为我们只需为每个公告牌向 IA 阶段提交一个顶点。
+
+<h3 id="s1222">12.2.2 顶点结构</h3>
+
+我们的公告牌点使用如下顶点结构：
+
+```cpp
+struct TreeSpriteVertex
+{
+  XMFLOAT3 Pos;
+  XMFLOAT2 Size;
+};
+
+mTreeSpriteInputLayout =
+{
+  { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+  { "SIZE", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, 
+    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+};
+```
+
+顶点存储一个点，它表示<a id="page454"/>公告牌在世界空间中的中心位置。它还包含一个 size 成员，存储公告牌的宽/高（缩放到世界空间单位）；这样几何着色器就知道扩展之后公告牌应当有多大（图 12.6）。由于每个顶点的尺寸可以不同，我们可以轻松支持不同大小的公告牌。
+
+<Figure src="images/Fig12-6.jpg" alt="把一个点扩展成一个四边形" figureNumber="图 12.6" caption="把一个点扩展成一个四边形。" />
+
+除纹理数组（§12.2.4）之外，"Tree Billboard"演示中的其他 C++ 代码到现在应当都是例行的 Direct3D 代码了（创建顶点缓冲、效果、调用绘制方法等）。因此，我们现在把注意力转向 *TreeSprite.hlsl* 文件。
+
+<h3 id="s1223">12.2.3 HLSL 文件</h3>
+
+由于这是我们第一个使用几何着色器的演示，我们将在这里展示整个 HLSL 文件，让你看到它如何与顶点着色器和像素着色器配合。这个效果还引入了一些我们尚未讨论的新对象（`SV_PrimitiveID` 和 `Texture2DArray`）；这些内容将在接下来讨论。目前主要关注几何着色器程序 `GS`；这个着色器把一个点扩展成一个与世界 *y* 轴对齐并面向摄像机的四边形，如 §12.2.1 所述。<a id="page455"/>
+
+```cpp
+//****************************************************************************
+// TreeSprite.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+//****************************************************************************
+
+// Defaults for number of lights.
+#ifndef NUM_DIR_LIGHTS
+  #define NUM_DIR_LIGHTS 3
+#endif
+
+#ifndef NUM_POINT_LIGHTS
+  #define NUM_POINT_LIGHTS 0
+#endif
+
+#ifndef NUM_SPOT_LIGHTS
+  #define NUM_SPOT_LIGHTS 0
+#endif
+
+// Include structures and functions for lighting.
+#include "LightingUtil.hlsl"
+
+Texture2DArray gTreeMapArray : register(t0);
+
+
+SamplerState gsamPointWrap    : register(s0);
+SamplerState gsamPointClamp    : register(s1);
+SamplerState gsamLinearWrap    : register(s2);
+SamplerState gsamLinearClamp   : register(s3);
+SamplerState gsamAnisotropicWrap : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+
+// Constant data that varies per frame.
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+  float4x4 gTexTransform;
+};
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerPassPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+  float4 gAmbientLight;
+```
+
+<a id="page456"/>
+
+```cpp
+  float4 gFogColor;
+  float gFogStart;
+  float gFogRange;
+  float2 cbPerPassPad2;
+
+  // Indices [0, NUM_DIR_LIGHTS) are directional lights;
+  // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point 
+  // lights;
+  // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,
+  // NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
+  // are spot lights for a maximum of MaxLights per object.
+  Light gLights[MaxLights];
+};
+
+cbuffer cbMaterial : register(b2)
+{
+  float4  gDiffuseAlbedo;
+  float3  gFresnelR0;
+  float  gRoughness;
+  float4x4 gMatTransform;
+};
+
+struct VertexIn
+{
+  float3 PosW : POSITION;
+  float2 SizeW : SIZE;
+};
+
+struct VertexOut
+{
+  float3 CenterW : POSITION;
+  float2 SizeW   : SIZE;
+};
+
+struct GeoOut
+{
+  float4 PosH   : SV_POSITION;
+  float3 PosW   : POSITION;
+  float3 NormalW : NORMAL;
+  float2 TexC   : TEXCOORD;
+  uint   PrimID : SV_PrimitiveID;
+};
+
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout;
+
+  // Just pass data over to geometry shader.
+  vout.CenterW = vin.PosW;
+  vout.SizeW   = vin.SizeW;
+
+  return vout;
+}
+```
+
+**译者注**：上面 `cbuffer cbPass` 中的注释在原书中写作 `NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS`，与同一代码块中定义的 `NUM_POINT_LIGHTS` 不一致；此处照录原文。
+
+<a id="page457"/>
+
+```cpp
+ // We expand each point into a quad (4 vertices), so the maximum number of vertices
+ // we output per geometry shader invocation is 4.
+[maxvertexcount(4)]
+void GS(point VertexOut gin[1], 
+    uint primID : SV_PrimitiveID, 
+    inout TriangleStream<GeoOut> triStream)
+{   
+  //
+  // Compute the local coordinate system of the sprite relative to the world
+  // space such that the billboard is aligned with the y-axis and faces the eye.
+  //
+
+  float3 up = float3(0.0f, 1.0f, 0.0f);
+  float3 look = gEyePosW - gin[0].CenterW;
+  look.y = 0.0f; // y-axis aligned, so project to xz-plane
+  look = normalize(look);
+  float3 right = cross(up, look);
+
+  //
+  // Compute triangle strip vertices (quad) in world space.
+  //
+  float halfWidth = 0.5f*gin[0].SizeW.x;
+  float halfHeight = 0.5f*gin[0].SizeW.y;
+  
+  float4 v[4];
+  v[0] = float4(gin[0].CenterW + halfWidth*right - halfHeight*up, 1.0f);
+  v[1] = float4(gin[0].CenterW + halfWidth*right + halfHeight*up, 1.0f);
+  v[2] = float4(gin[0].CenterW - halfWidth*right - halfHeight*up, 1.0f);
+  v[3] = float4(gin[0].CenterW - halfWidth*right + halfHeight*up, 1.0f);
+
+  //
+  // Transform quad vertices to world space and output 
+  // them as a triangle strip.
+  //
+    
+  float2 texC[4] = 
+  {
+    float2(0.0f, 1.0f),
+    float2(0.0f, 0.0f),
+    float2(1.0f, 1.0f),
+    float2(1.0f, 0.0f)
+  };
+  
+  GeoOut gout;
+  [unroll]
+  for(int i = 0; i < 4; ++i)
+  {
+    gout.PosH    = mul(v[i], gViewProj);
+    gout.PosW    = v[i].xyz;
+    gout.NormalW = look;
+    gout.TexC    = texC[i];
+    gout.PrimID   = primID;
+      
+    triStream.Append(gout);
+  }
+}
+```
+
+<a id="page458"/>
+
+```cpp
+float4 PS(GeoOut pin) : SV_Target
+{
+  float3 uvw = float3(pin.TexC, pin.PrimID%3);
+  float4 diffuseAlbedo = gTreeMapArray.Sample(
+    gsamAnisotropicWrap, uvw) * gDiffuseAlbedo;
+   
+#ifdef ALPHA_TEST
+  // Discard pixel if texture alpha < 0.1. We do this test as soon 
+  // as possible in the shader so that we can potentially exit the
+  // shader early, thereby skipping the rest of the shader code.
+  clip(diffuseAlbedo.a - 0.1f);
+#endif
+
+  // Interpolating normal can unnormalize it, so renormalize it.
+  pin.NormalW = normalize(pin.NormalW);
+
+  // Vector from point being lit to eye. 
+  float3 toEyeW = gEyePosW - pin.PosW;
+  float distToEye = length(toEyeW);
+  toEyeW /= distToEye; // normalize
+
+  // Light terms.
+  float4 ambient = gAmbientLight*diffuseAlbedo;
+
+  const float shininess = 1.0f - gRoughness;
+  Material mat = { diffuseAlbedo, gFresnelR0, shininess };
+  float3 shadowFactor = 1.0f;
+  float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
+    pin.NormalW, toEyeW, shadowFactor);
+
+  float4 litColor = ambient + directLight;
+
+#ifdef FOG
+  float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+  litColor = lerp(litColor, gFogColor, fogAmount);
+#endif
+
+  // Common convention to take alpha from diffuse albedo.
+  litColor.a = diffuseAlbedo.a;
+
+  return litColor;
+}
+```
+
+**译者注**：上面 `cbuffer cbPass` 前的注释在原书中写作 "// Constant data that varies per material."，按其语境应为 per frame，与第 8、10 章 Default.hlsl 中的同一处笔误相同，此处照录原文。另外，本文件 `PS` 中数组索引取模使用 `pin.PrimID%3`，而 §12.3.2 的文字与代码按 4 张纹理写为 `pin.PrimID%4`，两处不一致，均照录原文。
+<h3 id="s1224">12.2.4 SV_PrimitiveID</h3>
+
+本例中的几何着色器接受一个带 `SV_PrimitiveID` 语义的特殊无符号整数参数。
+
+```cpp
+[maxvertexcount(4)]
+void GS(point VertexOut gin[1], 
+    uint primID : SV_PrimitiveID, 
+    inout TriangleStream<GeoOut> triStream)
+```
+
+指定该语义后<a id="page459"/>，它告诉输入装配阶段为每个图元自动生成一个图元 ID。当执行一次绘制 *n* 个图元的绘制调用时，第一个图元被标为 0；第二个图元被标为 1；依此类推，直到绘制调用中的最后一个图元被标为 *n*−1。图元 ID 只在单次绘制调用内唯一。在我们的公告牌示例中，几何着色器并不使用这个 ID（尽管几何着色器可以使用它）；相反，几何着色器把图元 ID 写入输出顶点，从而把它传递给像素着色器阶段。像素着色器用图元 ID 在纹理数组中索引，这就引出了下一节。
+
+**注意**：如果没有几何着色器，可以把图元 ID 参数添加到像素着色器的参数列表中：
+
+```cpp
+float4 PS(VertexOut pin, uint primID : SV_PrimitiveID) : SV_Target
+{
+  // Pixel shader body…
+}
+```
+
+然而，如果有几何着色器，那么图元 ID 参数必须出现在几何着色器签名中。然后几何着色器可以使用该图元 ID，或者把它传递给像素着色器阶段（或两者都做）。
+
+**注意**：也可以让输入装配阶段生成顶点 ID。为此，向顶点着色器签名添加一个类型为 `uint`、语义为 `SV_VertexID` 的额外参数：
+
+下面的顶点着色器签名展示了具体做法：
+
+```cpp
+VertexOut VS(VertexIn vin, uint vertID : SV_VertexID)
+{
+  // vertex shader body…
+}
+```
+
+对 `Draw` 调用，绘制调用中的顶点将以 0, 1, …, n−1 标记 ID，其中 n 是绘制调用中的顶点数。对 `DrawIndexed` 调用，顶点 ID 对应顶点索引值。
+</section>
+
+<section className="lesson-section" id="s123">
+<h2>12.3 纹理数组</h2>
+
+<h3 id="s1231">12.3.1 概述</h3>
+
+纹理数组存储一个纹理数组。在 C++ 代码中，纹理数组与所有资源一样由 `ID3D12Resource` 接口表示（纹理和缓冲）。创建 `ID3D12Resource` 对象时，实际上有一个名为 `DepthOrArraySize` 的属性，可以设置它来指定纹理存储的纹理元素数量<a id="page460"/>（对 3D 纹理则是深度）。在 *d3dApp.cpp* 中创建深度/模板纹理时，我们总是把它设为 1。如果你查看 Common/DDSTextureLoader.cpp 中的 `CreateD3DResources12` 函数，你会看到代码如何支持创建纹理数组和体积纹理。在 HLSL 文件中，纹理数组由 `Texture2DArray` 类型表示：
+
+```cpp
+Texture2DArray gTreeMapArray;
+```
+
+现在，你可能想知道为什么我们需要纹理数组。为什么不直接这样做：
+
+```cpp
+Texture2D TexArray[4];
+
+…
+
+float4 PS(GeoOut pin) : SV_Target
+{
+float4 c = TexArray[pin.PrimID%4].Sample(samLinear, pin.Tex);
+```
+
+在着色器模型 5.1（Direct3D 12 新增）中，我们确实可以这样做。然而，在之前的 Direct3D 版本中这是不允许的。此外，像这样索引纹理在特定硬件上可能有一点开销，所以本章我们坚持使用纹理数组。
+
+<h3 id="s1232">12.3.2 采样纹理数组</h3>
+
+在 Billboards 演示中，我们用下面的代码采样纹理数组：
+
+```cpp
+float3 uvw = float3(pin.Tex, pin.PrimID%4);
+float4 diffuseAlbedo = gTreeMapArray.Sample(
+  gsamAnisotropicWrap, uvw) * gDiffuseAlbedo;
+```
+
+使用纹理数组时，需要三个纹理坐标。前两个纹理坐标是通常的 2D 纹理坐标；第三个纹理坐标是纹理数组的索引。例如，0 是数组中第一个纹理的索引，1 是第二个纹理的索引，2 是第三个纹理的索引，依此类推。
+
+在 Billboards 演示中，我们使用的纹理数组有四个纹理元素，每个元素是一张不同的树纹理（图 12.7）。然而，因为我们每次绘制调用要绘制多于四棵树，图元 ID 会大于 3。于是，我们对图元 ID 取模 4（`pin.PrimID % 4`），把图元 ID 映射到 0、1、2 或 3，它们是四元素数组的有效数组索引。
+
+<Figure src="images/Fig12-7.jpg" alt="四张树公告牌图像" figureNumber="图 12.7" caption="树公告牌图像。" />
+
+纹理数组的一个优点是，我们能够用一次绘制调用绘制一组带不同纹理的图元。通常情况下，我们必须为每个使用不同纹理的网格准备一个单独的渲染项：
+
+```cpp
+SetTextureA();
+DrawPrimitivesWithTextureA();
+
+SetTextureB();
+DrawPrimitivesWithTextureB();
+
+…
+
+SetTextureZ();
+DrawPrimitivesWithTextureZ();
+```
+
+每次 set 和 draw 调用都有一些<a id="page461"/>与之关联的开销。有了纹理数组，我们可以把它减少为一次 set 和一次 draw 调用：
+
+```cpp
+SetTextureArray();
+DrawPrimitivesWithTextureArray();
+```
+
+<h3 id="s1233">12.3.3 加载纹理数组</h3>
+
+我们在 *Common/DDSTextureLoader.h/.cpp* 中的 DDS 加载代码支持加载存储纹理数组的 DDS 文件。所以关键在于创建一个包含纹理数组的 DDS 文件。为此，我们使用 Microsoft 在 <a href="https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Texconv">https://directxtex.codeplex.com/wikipage?title=Texassemble&amp;referringTitle=Texconv</a> 提供的 *texassemble* 工具。下面的语法展示如何从 4 张图像 *t0.dds*、*t1.dds*、*t2.dds* 和 *t3.dds* 创建一个名为 *treeArray.dds* 的纹理数组：
+
+```text
+texassemble -array -o treeArray.dds t0.dds t1.dds t2.dds t2.dds
+```
+
+**译者注**：上面命令在原书中最后一个输入图像写作 `t2.dds`（重复了 t2），与正文所说的 4 张图像 t0.dds、t1.dds、t2.dds、t3.dds 不一致，按上下文应为 t3.dds，此处照录原文。
+
+注意，用 *texassemble* 构建纹理数组时，输入图像应当只有一个 mipmap 层级。调用 *texassemble* 构建纹理数组之后，你可以用 *texconv*（<a href="https://directxtex.codeplex.com/wikipage?title=Texconv">https://directxtex.codeplex.com/wikipage?title=Texconv</a>）生成 mipmap，并在需要时更改像素格式：
+
+```text
+texconv -m 10 -f BC3_UNORM treeArray.dds
+```
+
+<a id="page462"/>
+
+<h3 id="s1234">12.3.4 纹理子资源</h3>
+
+讨论完纹理数组，我们就可以谈子资源（subresource）了。图 12.8 显示了一个包含若干纹理的纹理数组示例。而每个纹理都有自己的 mipmap 链。Direct3D API 用术语*数组切片*（array slice）指代纹理数组中的一个元素及其完整的 mipmap 链。Direct3D API 用术语*mip 切片*（mip slice）指代纹理数组中某一特定层级的所有 mipmap。子资源指纹理数组元素中的一个单独的 mipmap 层级。
+
+<Figure src="images/Fig12-8.jpg" alt="一个包含四个纹理的纹理数组，每个纹理有三个 mipmap 层级" figureNumber="图 12.8" caption="一个包含四个纹理的纹理数组。每个纹理有三个 mipmap 层级。" />
+
+给定纹理数组索引和 mipmap 层级，我们就可以访问纹理数组中的一个子资源。不过，子资源也可以用线性索引标记；Direct3D 使用的线性索引顺序如图 12.9 所示。
+
+<Figure src="images/Fig12-9.jpg" alt="纹理数组中的子资源按线性索引标记" figureNumber="图 12.9" caption="纹理数组中用线性索引标记的子资源。" />
+
+下面的工具函数用于在给定 mip 层级、数组索引和 mipmap 层级数的情况下计算线性子资源索引：
+
+```cpp
+inline UINT D3D12CalcSubresource( UINT MipSlice, UINT ArraySlice, 
+  UINT PlaneSlice, UINT MipLevels, UINT ArraySize )
+{ 
+  return MipSlice + ArraySlice * MipLevels + PlaneSlice * MipLevels * ArraySize; 
+}
+```
+
+<a id="page463"/>
+</section>
+
+<section className="lesson-section" id="s124">
+<h2>12.4 alpha-to-coverage</h2>
+
+运行"Tree Billboard"演示时，注意在某些距离上树公告牌抠图的边缘会出现块状。这是由 `clip` 函数造成的，我们用它把纹理中不属于树的部分的像素遮掉；clip 函数要么保留像素、要么拒绝它——没有平滑过渡。眼睛到公告牌的距离之所以起作用，是因为近距离导致放大，使块状伪影更大，而近距离也会导致使用分辨率更低的 mipmap 层级。
+
+**译者注**：上面一句在原书中两处都写作 "short distances"（"short distances result in magnification…and short distances result in a lower resolution mipmap level being used"），按其语义第二处应为"距离远"（长距离才会选用更低分辨率的 mipmap 层级），此处照录原文。
+
+解决这个问题的一种方法是用透明混合代替 alpha 测试。由于线性纹理过滤，边缘像素会被轻微模糊，形成从白色（不透明像素）到黑色（被遮掉的像素）的平滑过渡。透明混合因此会使边缘从不透明像素到被遮像素平滑淡出。遗憾的是，透明混合需要按从后往前的顺序排序和渲染。对少量树公告牌排序的开销不高，但如果我们渲染森林或草原，排序可能很昂贵，因为它必须每帧都做；更糟的是，按从后往前顺序渲染会导致大量过度绘制（见第 11 章的习题 8），这会严重损害性能。
+
+有人可能会建议 MSAA（多重采样抗锯齿——见 §4.1.7）能帮上忙，因为 MSAA 用于平滑多边形的块状边缘。的确它应当能帮忙，但有一个问题。MSAA 对每个像素在像素中心执行一次像素着色器，然后根据可见性（深度/模板测试按子像素求值）和覆盖（coverage，子像素中心位于多边形内部还是外部？）与它的子像素共享该颜色信息。关键在于*覆盖是在多边形级别确定的*。因此，MSAA 不会检测由 alpha 通道定义的树公告牌抠图边缘——它只会看到纹理映射其上的四边形的边缘。那么，有没有办法告诉 Direct3D 在计算覆盖时把 alpha 通道考虑进去？答案是肯定的，这就引出了称为 *alpha-to-coverage* 的技术。
+
+当启用 MSAA 并启用 alpha-to-coverage（`D3D12_BLEND_DESC::AlphaToCoverageEnable = true` 成员）时，硬件会查看像素着色器返回的 alpha 值，并用它来确定覆盖 [NVIDIA05]。例如，在 4X MSAA 下，如果像素着色器 alpha 为 0.5，那么我们可以假定四个子像素中有两个被覆盖，这会形成平滑的边缘。
+
+一般建议是：对树叶、栅栏这类 alpha 掩膜抠图纹理，总是使用 alpha-to-coverage。不过，它要求启用 MSAA。注意，在我们演示应用程序的构造函数中，我们设置：
+
+```cpp
+mEnable4xMsaa = true;
+```
+
+这使我们的示例<a id="page464"/>框架以 4X MSAA 支持创建后台缓冲和深度缓冲。
+</section>
+
+<section className="lesson-section" id="s125">
+<h2>12.5 本章小结</h2>
+
+1. 假设我们不使用曲面细分阶段，几何着色器阶段是位于顶点着色器阶段和像素着色器阶段之间的一个可选阶段。几何着色器对通过输入装配发送的每个图元调用一次。几何着色器可以输出零个、一个或多个图元。输出图元的类型可以与输入图元的类型不同。输出图元的顶点应当在离开几何着色器之前变换到齐次裁剪空间。几何着色器输出的图元接着进入渲染管线光栅化阶段。几何着色器在效果文件中编写，与顶点着色器和像素着色器并列。
+2. 公告牌技术是用一个贴有物体图像的四边形代替物体的真实三维模型。对远处的物体，观察者看不出使用了公告牌。公告牌的优点是 GPU 不必把处理时间浪费在渲染完整的三维物体上，一张带纹理的四边形就足够了。这项技术适合渲染树林：靠近摄像机的树用真实三维几何体，远处的树用公告牌。为了让公告牌把戏生效，公告牌必须始终面向摄像机。公告牌技术可以在几何着色器中高效实现。
+3. 可以向几何着色器的参数列表添加一个类型为 `uint`、语义为 `SV_PrimitiveID` 的特殊参数，如下例所示：
+
+   ```cpp
+   [maxvertexcount(4)]
+   void GS(point VertexOut gin[1], 
+       uint primID : SV_PrimitiveID, 
+       inout TriangleStream<GeoOut> triStream);
+   ```
+
+   指定该语义后，它告诉输入装配阶段为每个图元自动生成一个图元 ID。当执行一次绘制 *n* 个图元的绘制调用时，第一个图元被标为 0；第二个图元被标为 1；依此类推，直到绘制调用中的最后一个图元被标为 *n*−1。如果没有几何着色器，可以把图元 ID 参数添加到像素着色器的参数列表中。然而，如果有几何着色器，那么图元 ID 参数必须出现在几何着色器签名中。然后几何着色器可以使用该图元 ID，或者把它传递给像素着色器阶段（或两者都做）。
+4. 输入装配阶段可以<a id="page465"/>生成顶点 ID。为此，向顶点着色器签名添加一个类型为 `uint`、语义为 `SV_VertexID` 的额外参数。对 `Draw` 调用，绘制调用中的顶点将以 0, 1, …, *n*−1 标记 ID，其中 *n* 是绘制调用中的顶点数。对 `DrawIndexed` 调用，顶点 ID 对应顶点索引值。
+5. 纹理数组存储一个纹理数组。在 C++ 代码中，纹理数组与所有资源一样由 `ID3D12Resource` 接口表示（纹理和缓冲）。创建 `ID3D12Resource` 对象时，有一个名为 `DepthOrArraySize` 的属性，可以设置它来指定纹理存储的纹理元素数量（对 3D 纹理则是深度）。在 HLSL 中，纹理数组由 `Texture2DArray` 类型表示。使用纹理数组时，需要三个纹理坐标。前两个纹理坐标是通常的 2D 纹理坐标；第三个纹理坐标是纹理数组的索引。例如，0 是数组中第一个纹理的索引，1 是第二个纹理的索引，2 是第三个纹理的索引，依此类推。纹理数组的一个优点是，我们能够用一次绘制调用绘制一组带不同纹理的图元。每个图元都有一个指向纹理数组的索引，指示对该图元应用哪个纹理。
+6. Alpha-to-coverage 指示硬件在确定子像素覆盖时查看像素着色器返回的 alpha 值。这使树叶、栅栏这类 alpha 掩膜抠图纹理的边缘更平滑。Alpha-to-coverage 由 PSO 中的 `D3D12_BLEND_DESC::AlphaToCoverageEnable` 字段控制。
+</section>
+
+<section className="lesson-section" id="s126">
+<h2>12.6 习题</h2>
+
+1. 考虑在 *xz* 平面内用线条带绘制的一个圆。用几何着色器把线条带扩展成一个无端盖的圆柱体。
+2. 二十面体是球体的粗略近似。通过细分每个三角形（图 12.10），并把新顶点投影到球面上，可以得到更好的近似。（把顶点投影到单位球面上，不过是把位置向量归一化，因为所有单位向量的端点都与单位球面重合。）本习题要求构建并渲染一个二十面体。使用几何着色器根据二十面体与摄像机的距离 *d* 来细分它。例如，若 *d* &lt; 15，则把原二十面体细分两次；若 15 ≤ *d* &lt; 30，则把原二十面体细分一次；若 *d* ≥ 30，则只渲染原二十面体。这样做的用意是只在物体靠近摄像机时使用<a id="page466"/>更多多边形；如果物体离得很远，较粗的网格就足够了，我们不必浪费 GPU 算力处理超出所需的多边形。图 12.10 并排显示了三个 LOD 层级的线框和实体（受光）模式。关于细分二十面体的讨论请回顾 §7.4.3。
+
+   <Figure src="images/Fig12-10.jpg" alt="二十面体的细分，顶点投影到单位球面上" figureNumber="图 12.10" caption="把二十面体细分并把顶点投影到单位球面上。" />
+
+3. 一种简单的爆炸效果可以这样模拟：让三角形沿其面法线方向随时间平移。这个模拟可以在几何着色器中实现。对输入几何着色器的每个三角形，几何着色器计算面法线 **n**，然后根据爆炸开始后经过的时间 *t*，把三角形的三个顶点 $\mathbf{p}_0$、$\mathbf{p}_1$、$\mathbf{p}_2$ 沿方向 **n** 平移：
+
+   <MathBlock tex="\mathbf{p}'_i=\mathbf{p}_i+t\mathbf{n}\quad\text{for}\quad i=0,1,2" />
+
+   面法线 **n** 不必是单位长度，可以相应缩放以控制爆炸速度。甚至可以让缩放因子依赖于图元 ID，使每个图元以不同速度运动。用一个二十面体（不细分）作为实现此效果的示例网格。
+4. 把网格的顶点法线可视化对调试很有用。编写一个效果，把网格的顶点法线渲染成短线段。为此，实现一个输入网格点图元的几何着色器（即拓扑为 `D3D_PRIMITIVE_TOPOLOGY_POINTLIST` 的顶点），让每个顶点都经过几何着色器。现在几何着色器可以把每个点扩展成某个长度 *L* 的线段。如果顶点位置为 **p**、法线为 **n**，那么表示顶点法线的线段的两个端点就是 **p** 和 **p** + *L***n**。实现之后，照常绘制网格，然后再用法线向量可视化技术再次绘制场景，使法线叠加渲染在场景之上。用"Blend"演示作为测试场景。
+5. 与上一习题类似，<a id="page467"/>编写一个效果，把网格的面法线渲染成短线段。对这个效果，几何着色器将输入一个三角形，计算其法线，并输出一条线段。
+6. 本习题验证：对 `Draw` 调用，绘制调用中的顶点将以 0, 1, …, *n*−1 标记 ID，其中 n 是绘制调用中的顶点数；而对 `DrawIndexed` 调用，顶点 ID 对应顶点索引值。
+
+   按下面的方式修改"Tree Billboards"演示。首先，把顶点着色器改成如下：
+
+   ```cpp
+   VertexOut VS(VertexIn vin, uint vertID : SV_VertexID)
+   {
+     VertexOut vout;
+
+     // Just pass data over to geometry shader.
+     vout.CenterW = vin.PosW;
+     vout.SizeW   = float2(2+vertID, 2+vertID);
+
+     return vout;
+   }
+   ```
+
+   也就是说，我们根据树公告牌中心的顶点 ID 来确定它的大小。现在运行程序；绘制 16 个公告牌时，尺寸应当从 2 到 17。现在像这样修改绘制方式：不用一次绘制调用绘制全部 16 个点，而是用四次：
+
+   ```cpp
+   cmdList->Draw(4, 0, 0, 0);
+   cmdList->Draw(4, 0, 4, 0);
+   cmdList->Draw(4, 0, 8, 0);
+   cmdList->Draw(4, 0, 12, 0);
+   ```
+
+   再次运行程序。这一次，尺寸应当在 2 到 5 之间。因为每次绘制调用绘制 4 个顶点，所以每次绘制调用的顶点 ID 范围是 0–3。现在改用索引缓冲和四次 DrawIndexed 调用。运行程序后，尺寸应当回到 2 到 17 的范围。这是因为使用 DrawIndexed 时，顶点 ID 对应顶点索引值。
+7. 按下面的方式修改"Tree Billboards"演示。首先，从像素着色器中移除"对 4 取模"：
+
+   ```cpp
+   float3 uvw = float3(pin.Tex, pin.PrimID);
+   ```
+
+   现在运行程序。由于我们绘制 16 个图元，图元 ID 范围是 0–15，这些 ID 超出了数组边界。然而，这不会导致错误，因为越界索引会被限制到最高有效索引（这里是 3）。现在不用一次绘制调用绘制全部 16 个点，而是用四次：
+
+   ```cpp
+   cmdList->Draw(4, 0, 0, 0);
+   cmdList->Draw(4, 0, 4, 0);
+   cmdList->Draw(4, 0, 8, 0);
+   cmdList->Draw(4, 0, 12, 0);
+   ```
+
+   再次运行程序<a id="page468"/>。这一次没有钳制。因为每次绘制调用绘制 4 个图元，所以每次绘制调用的图元 ID 范围是 0–3。因此图元 ID 可以用作索引而不会越界。这表明图元 ID 的"计数"会随每次绘制调用重置为零。
+</section>

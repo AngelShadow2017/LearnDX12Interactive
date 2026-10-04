@@ -1,0 +1,644 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：10.1–10.10 全部小节（含混合方程、混合运算、混合因子、混合状态、5 个混合示例、alpha 通道、clip 裁剪与雾效及 Default.hlsl 全文、习题 1–5），依据 EPUB ch10.html 逐段录入 · 状态：录入完成并已完成独立审校（2026-10-05；记录见 REVIEW-CH10-CH13.md）</span></div>
+
+<a id="page397"/>
+
+请看图 10.1。我们开始渲染一帧时，先绘制地形，再绘制木箱，这样地形和木箱的像素就位于后台缓冲上。然后我们用混合把水面绘制到后台缓冲上，使水面像素与后台缓冲上已有的地形和木箱像素混合，让地形和木箱透过水面显现出来。本章我们研究*混合*（blending）技术，它让我们能够把当前正在光栅化的像素（所谓*源*（source）像素）与之前光栅化到后台缓冲上的像素（所谓*目标*（destination）像素）混合（组合）在一起。这项技术除了其他用途之外，还让我们能够渲染半透明物体，例如水和玻璃。
+
+<Figure src="images/Fig10-1.jpg" alt="半透明的水面，地形和木箱透过水面显现出来" figureNumber="图 10.1" caption="半透明的水面。" />
+
+**注意**：为便于讨论，<a id="page398"/>我们特别以后台缓冲作为渲染目标来讲解。不过稍后会看到，我们同样可以渲染到"离屏"（off screen）渲染目标。混合对这类渲染目标同样适用，此时目标像素就是之前光栅化到这些离屏渲染目标上的像素值。
+
+**本章目标：**
+
+1. 理解混合的工作原理以及如何在 Direct3D 中使用它。
+2. 了解 Direct3D 支持的各种混合模式。
+3. 弄清如何用 alpha 分量控制图元的透明度。
+4. 学习如何用 HLSL 的 clip 函数彻底阻止某个像素被绘制到后台缓冲。
+
+<section className="lesson-section lesson-section--intro" id="s101">
+<h2>10.1 混合方程</h2>
+
+设 $\mathbf{C}_{src}$ 是我们当前正在光栅化的第 *ij* 个像素（源像素）的像素着色器颜色输出，$\mathbf{C}_{dst}$ 是后台缓冲上当前第 *ij* 个像素的颜色（目标像素）。如果不使用混合，$\mathbf{C}_{src}$ 会覆盖 $\mathbf{C}_{dst}$（假设它通过了深度/模板测试）并成为后台缓冲第 *ij* 个像素的新颜色。而使用混合时，$\mathbf{C}_{src}$ 与 $\mathbf{C}_{dst}$ 混合在一起得到新颜色 $\mathbf{C}$，由它覆盖 $\mathbf{C}_{dst}$（即混合后的颜色 $\mathbf{C}$ 会写入后台缓冲的第 *ij* 个像素）。Direct3D 使用下面的混合方程来混合源像素颜色和目标像素颜色：
+
+<MathBlock tex="\mathbf{C}=\mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}" />
+
+颜色 $\mathbf{F}_{src}$（源混合因子）和 $\mathbf{F}_{dst}$（目标混合因子）可以取 §10.3 中描述的任意值，它们让我们能以多种方式修改原始的源像素和目标像素，从而实现不同的效果。⊗ 运算符表示按 §5.3.1 的定义对颜色向量做按分量相乘；⊞ 运算符可以是 §10.2 中定义的任意一种二元运算符。
+
+上面的混合方程只对颜色的 RGB 分量成立。alpha 分量实际上由一个类似的独立方程处理：
+
+<MathBlock tex="A=A_{src}F_{src}\ \boxplus\ A_{dst}F_{dst}" />
+
+这个方程本质上相同，但混合因子和二元运算可能不同。把 RGB 与 alpha 分开处理的动机很简单：这样我们就可以独立地、因而不相同地处理<a id="page399"/>它们，从而带来更多的可能性。
+
+**注意**：对 alpha 分量做混合的需求远少于对 RGB 分量做混合。这主要是因为我们并不关心后台缓冲的 alpha 值。只有当你的某种算法需要目标 alpha 值时，后台缓冲的 alpha 值才重要。
+</section>
+
+<section className="lesson-section" id="s102">
+<h2>10.2 混合运算</h2>
+
+混合方程中使用的二元 ⊞ 运算符可以是下面之一：
+
+**译者注**：原图（eq433-01.jpg）把下面的枚举代码与各混合运算对应的公式并排排版，此处将代码与公式分开转录。
+
+```cpp
+typedef enum D3D12_BLEND_OP
+{
+  D3D12_BLEND_OP_ADD = 1,
+  D3D12_BLEND_OP_SUBTRACT = 2,
+  D3D12_BLEND_OP_REV_SUBTRACT = 3,
+  D3D12_BLEND_OP_MIN = 4,
+  D3D12_BLEND_OP_MAX = 5,
+} D3D12_BLEND_OP;
+```
+
+各混合运算对应的公式为：
+
+- `D3D12_BLEND_OP_ADD`：$\mathbf{C}=\mathbf{C}_{src}\otimes\mathbf{F}_{src}+\mathbf{C}_{dst}\otimes\mathbf{F}_{dst}$
+- `D3D12_BLEND_OP_SUBTRACT`：$\mathbf{C}=\mathbf{C}_{dst}\otimes\mathbf{F}_{dst}-\mathbf{C}_{src}\otimes\mathbf{F}_{src}$
+- `D3D12_BLEND_OP_REV_SUBTRACT`：$\mathbf{C}=\mathbf{C}_{src}\otimes\mathbf{F}_{src}-\mathbf{C}_{dst}\otimes\mathbf{F}_{dst}$
+- `D3D12_BLEND_OP_MIN`：$\mathbf{C}=\min(\mathbf{C}_{src},\mathbf{C}_{dst})$
+- `D3D12_BLEND_OP_MAX`：$\mathbf{C}=\max(\mathbf{C}_{src},\mathbf{C}_{dst})$
+
+**注意**：在 min/max 运算中，混合因子会被忽略。
+
+这些运算符同样适用于 alpha 混合方程。此外，你可以为 RGB 和 alpha 指定不同的运算符。例如，可以让两个 RGB 项相加，而让两个 alpha 项相减：
+
+<MathBlock tex="\mathbf{C}=\mathbf{C}_{src}\otimes\mathbf{F}_{src}+\mathbf{C}_{dst}\otimes\mathbf{F}_{dst}" />
+
+<MathBlock tex="A=A_{dst}F_{dst}-A_{src}F_{src}" />
+
+Direct3D 最近新增了一项功能：可以用逻辑运算符代替上面传统的混合方程来混合源颜色和目标颜色。可用的逻辑运算符如下：
+
+```cpp
+typedef 
+enum D3D12_LOGIC_OP
+{
+  D3D12_LOGIC_OP_CLEAR  = 0,
+  D3D12_LOGIC_OP_SET  = ( D3D12_LOGIC_OP_CLEAR + 1 ) ,
+  D3D12_LOGIC_OP_COPY  = ( D3D12_LOGIC_OP_SET + 1 ) ,
+  D3D12_LOGIC_OP_COPY_INVERTED  = ( D3D12_LOGIC_OP_COPY + 1 ) ,
+  D3D12_LOGIC_OP_NOOP  = ( D3D12_LOGIC_OP_COPY_INVERTED + 1 ) ,
+  D3D12_LOGIC_OP_INVERT  = ( D3D12_LOGIC_OP_NOOP + 1 ) ,
+  D3D12_LOGIC_OP_AND  = ( D3D12_LOGIC_OP_INVERT + 1 ) ,
+  D3D12_LOGIC_OP_NAND  = ( D3D12_LOGIC_OP_AND + 1 ) ,
+  D3D12_LOGIC_OP_OR  = ( D3D12_LOGIC_OP_NAND + 1 ) ,
+  D3D12_LOGIC_OP_NOR  = ( D3D12_LOGIC_OP_OR + 1 ) ,
+  D3D12_LOGIC_OP_XOR  = ( D3D12_LOGIC_OP_NOR + 1 ) ,
+  D3D12_LOGIC_OP_EQUIV  = ( D3D12_LOGIC_OP_XOR + 1 ) ,
+  D3D12_LOGIC_OP_AND_REVERSE  = ( D3D12_LOGIC_OP_EQUIV + 1 ) ,
+  D3D12_LOGIC_OP_AND_INVERTED  = ( D3D12_LOGIC_OP_AND_REVERSE + 1 ) ,
+  D3D12_LOGIC_OP_OR_REVERSE  = ( D3D12_LOGIC_OP_AND_INVERTED + 1 ) ,
+  D3D12_LOGIC_OP_OR_INVERTED  = ( D3D12_LOGIC_OP_OR_REVERSE + 1 ) 
+} D3D12_LOGIC_OP;
+```
+
+注意，你不能<a id="page400"/>同时使用传统混合和逻辑运算符混合；只能二选一。还要注意，要使用逻辑运算符混合，渲染目标格式必须支持——它应当是 UINT 类的格式，否则你会得到类似下面的错误：
+
+```text
+D3D12 ERROR: ID3D12Device::CreateGraphicsPipelineState: The render target format at slot 0 is format (R8G8B8A8_UNORM). This format does not support logic ops. The Pixel Shader output signature indicates this output could be written, and the Blend State indicates logic op is enabled for this slot. [ STATE_CREATION ERROR #678: CREATEGRAPHICSPIPELINESTATE_OM_RENDER_TARGET_DOES_NOT_SUPPORT_LOGIC_OPS]
+
+D3D12 WARNING: ID3D12Device::CreateGraphicsPipelineState: Pixel Shader output 'SV_Target0' has type that is NOT unsigned int, while the corresponding Output Merger RenderTarget slot [0] has logic op enabled. This happens to be well defined: the raw bits output from the shader will simply be interpreted as UINT bits in the blender without any data conversion. This warning is to check that the application developer really intended to rely on this behavior. [ STATE_CREATION WARNING #677: CREATEGRAPHICSPIPELINESTATE_PS_OUTPUT_TYPE_MISMATCH]
+```
+</section>
+
+<section className="lesson-section" id="s103">
+<h2>10.3 混合因子</h2>
+
+通过为源混合因子和目标混合因子设置不同的组合，并配合不同的混合运算符，可以实现几十种不同的混合效果。我们将在 §10.5 中演示其中一些组合，但你需要亲自实验其他组合，才能体会它们的作用。下面的列表描述了基本混合因子，它们对 $\mathbf{F}_{src}$ 和 $\mathbf{F}_{dst}$ 都适用。其他一些高级混合因子请参阅 SDK 文档中的 `D3D12_BLEND` 枚举类型。设 $\mathbf{C}_{src}=(r_s, g_s, b_s)$、$A_{src}=a_s$（像素着色器输出的 RGBA 值），$\mathbf{C}_{dst}=(r_d, g_d, b_d)$、$A_{dst}=a_d$（渲染目标中已存储的 RGBA 值），$\mathbf{F}$ 为 $\mathbf{F}_{src}$ 或 $\mathbf{F}_{dst}$，$F$ 为 $F_{src}$ 或 $F_{dst}$，我们有：
+
+- `D3D12_BLEND_ZERO`：$\mathbf{F}=(0, 0, 0)$，$F=0$
+- `D3D12_BLEND_ONE`：$\mathbf{F}=(1, 1, 1)$，$F=1$
+- `D3D12_BLEND_SRC_COLOR`：$\mathbf{F}=(r_s, g_s, b_s)$
+- `D3D12_BLEND_INV_SRC_COLOR`：$\mathbf{F}_{src}=(1-r_s,\ 1-g_s,\ 1-b_s)$
+- `D3D12_BLEND_SRC_ALPHA`：$\mathbf{F}=(a_s, a_s, a_s)$，$F=a_s$
+- `D3D12_BLEND_INV_SRC_ALPHA`：$\mathbf{F}=(1-a_s,\ 1-a_s,\ 1-a_s)$，$F=(1-a_s)$
+- `D3D12_BLEND_DEST_ALPHA`：$\mathbf{F}=(a_d, a_d, a_d)$，$F=a_d$
+- `D3D12_BLEND_INV_DEST_ALPHA`：$\mathbf{F}=(1-a_d,\ 1-a_d,\ 1-a_d)$，$F=(1-a_d)$
+- `D3D12_BLEND_DEST_COLOR`：$\mathbf{F}=(r_d, g_d, b_d)$
+- `D3D12_BLEND_INV_DEST_COLOR`：$\mathbf{F}=(1-r_d,\ 1-g_d,\ 1-b_d)$
+- `D3D12_BLEND_SRC_ALPHA_SAT`：$\mathbf{F}=(a'_s, a'_s, a'_s)$，$F=a'_s$
+
+  其中 $a'_s=\mathrm{clamp}(a_s, 0, 1)$
+- `D3D12_BLEND_BLEND_FACTOR`：$\mathbf{F}=(r, g, b)$，$F=a$，其中颜色 $(r, g, b, a)$ 提供给<a id="page401"/> `ID3D12GraphicsCommandList::OMSetBlendFactor` 方法的第二个参数。这让你可以直接指定要使用的混合因子颜色；但在你更改混合状态之前它保持不变。
+- `D3D12_BLEND_INV_BLEND_FACTOR`：$\mathbf{F}=(1-r,\ 1-g,\ 1-b)$，$F=1-a$，其中颜色 $(r, g, b, a)$ 由 `ID3D12GraphicsCommandList::OMSetBlendFactor` 方法的第二个参数提供。这让你可以直接指定要使用的混合因子颜色；但在你更改混合状态之前它保持不变。
+
+**译者注**：源文 `D3D12_BLEND_INV_SRC_COLOR` 一条把混合因子写作 $\mathbf{F}_{src}$，而其他条目一律写作 $\mathbf{F}$，疑为原书排版不一致，此处照录。
+
+上面所有混合因子都适用于 RGB 混合方程。对 alpha 混合方程，以 `_COLOR` 结尾的混合因子是*不允许*的。
+
+**注意**：`clamp` 函数定义为：
+
+<MathBlock tex="\mathrm{clamp}(x,a,b)=\begin{cases}x, & a\le x\le b\\ a, & x<a\\ b, & x>b\end{cases}" />
+
+**注意**：我们可以用下面的函数设置混合因子颜色：
+
+```cpp
+void ID3D12GraphicsCommandList::OMSetBlendFactor(
+  const FLOAT BlendFactor[ 4 ]);
+```
+
+传入 `nullptr` 会恢复默认混合因子 (1, 1, 1, 1)。
+</section>
+
+<section className="lesson-section" id="s104">
+<h2>10.4 混合状态</h2>
+
+前面讨论了混合运算符和混合因子，但在 Direct3D 中我们在哪里设置这些值？与其他 Direct3D 状态一样，混合状态是 PSO 的一部分。到目前为止我们一直使用禁用混合的默认混合状态：
+
+```cpp
+D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePsoDesc;
+ZeroMemory(&opaquePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+…
+opaquePsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+```
+
+要配置一个非默认的<a id="page402"/>混合状态，我们必须填写 `D3D12_BLEND_DESC` 结构。`D3D12_BLEND_DESC` 结构定义如下：
+
+```cpp
+typedef struct D3D12_BLEND_DESC {
+  BOOL AlphaToCoverageEnable;  // Default: False
+  BOOL IndependentBlendEnable;  // Default: False
+  D3D11_RENDER_TARGET_BLEND_DESC RenderTarget[8];
+} D3D11_BLEND_DESC;
+```
+
+**译者注**：上面结构定义的结束行在原书中写作 `} D3D11_BLEND_DESC;`，数组元素类型也写作 `D3D11_RENDER_TARGET_BLEND_DESC`，均应为 `D3D12_` 前缀，此处照录原文。
+
+1. `AlphaToCoverageEnable`：设为 true 以启用 alpha-to-coverage，这是一种多重采样技术，在渲染树叶或栅栏纹理时很有用。设为 false 以禁用 alpha-to-coverage。Alpha-to-coverage 要求启用多重采样（即后台缓冲和深度缓冲以多重采样方式创建）。
+2. `IndependentBlendEnable`：Direct3D 支持同时渲染到最多八个渲染目标。该标志设为 true 时，表示可以对每个渲染目标执行不同的混合（不同的混合因子、不同的混合运算、启用/禁用混合等）。该标志设为 false 时，表示所有渲染目标都按 `D3D12_BLEND_DESC::RenderTarget` 数组第一个元素所描述的方式混合。多渲染目标用于高级算法；目前假设我们一次只渲染到一个渲染目标。
+3. `RenderTarget`：由 8 个 `D3D12_RENDER_TARGET_BLEND_DESC` 元素组成的数组，其中第 *i* 个元素描述对第 *i* 个同时渲染目标如何混合。若 `IndependentBlendEnable` 设为 false，则所有渲染目标都使用 `RenderTarget[0]` 做混合。
+
+`D3D12_RENDER_TARGET_BLEND_DESC` 结构定义如下：
+
+```cpp
+typedef struct D3D12_RENDER_TARGET_BLEND_DESC
+{
+  BOOL BlendEnable; // Default: False
+  BOOL LogicOpEnable; // Default: False
+  D3D12_BLEND SrcBlend; // Default: D3D12_BLEND_ONE
+  D3D12_BLEND DestBlend; // Default: D3D12_BLEND_ZERO
+  D3D12_BLEND_OP BlendOp; // Default: D3D12_BLEND_OP_ADD
+  D3D12_BLEND SrcBlendAlpha; // Default: D3D12_BLEND_ONE
+  D3D12_BLEND DestBlendAlpha; // Default: D3D12_BLEND_ZERO
+  D3D12_BLEND_OP BlendOpAlpha; // Default: D3D12_BLEND_OP_ADD
+  D3D12_LOGIC_OP LogicOp;  // Default: D3D12_LOGIC_OP_NOOP
+  UINT8 RenderTargetWriteMask; // Default: D3D12_COLOR_WRITE_ENABLE_ALL
+} D3D12_RENDER_TARGET_BLEND_DESC;
+```
+
+1. `BlendEnable`：设为 true 启用混合，设为 false 禁用混合。注意 `BlendEnable` 与 `LogicOpEnable` 不能同时为 true；你要么使用常规混合，要么使用逻辑运算符混合。
+2. `LogicOpEnable`：设为 true 以启用逻辑混合运算。<a id="page403"/>注意 `BlendEnable` 与 `LogicOpEnable` 不能同时为 true；你要么使用常规混合，要么使用逻辑运算符混合。
+3. `SrcBlend`：`D3D12_BLEND` 枚举类型的成员，指定 RGB 混合的源混合因子 $\mathbf{F}_{src}$。
+4. `DestBlend`：`D3D12_BLEND` 枚举类型的成员，指定 RGB 混合的目标混合因子 $\mathbf{F}_{dst}$。
+5. `BlendOp`：`D3D12_BLEND_OP` 枚举类型的成员，指定 RGB 混合运算符。
+6. `SrcBlendAlpha`：`D3D12_BLEND` 枚举类型的成员，指定 alpha 混合的目标混合因子 $\mathbf{F}_{src}$。
+7. `DestBlendAlpha`：`D3D12_BLEND` 枚举类型的成员，指定 alpha 混合的目标混合因子 $\mathbf{F}_{dst}$。
+8. `BlendOpAlpha`：`D3D12_BLEND_OP` 枚举类型的成员，指定 alpha 混合运算符。
+9. `LogicOp`：`D3D12_LOGIC_OP` 枚举类型的成员，指定用于混合源颜色和目标颜色的逻辑运算符。
+10. `RenderTargetWriteMask`：下列一个或多个标志的组合：
+
+```cpp
+typedef enum D3D12_COLOR_WRITE_ENABLE {
+  D3D12_COLOR_WRITE_ENABLE_RED   = 1,
+  D3D12_COLOR_WRITE_ENABLE_GREEN  = 2,
+  D3D12_COLOR_WRITE_ENABLE_BLUE  = 4,
+  D3D12_COLOR_WRITE_ENABLE_ALPHA  = 8,
+  D3D12_COLOR_WRITE_ENABLE_ALL   = 
+    ( D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN | 
+      D3D12_COLOR_WRITE_ENABLE_BLUE | D3D12_COLOR_WRITE_ENABLE_ALPHA ) 
+} D3D12_COLOR_WRITE_ENABLE;
+```
+
+**译者注**：上面第 6 项 `SrcBlendAlpha` 的原文写作 "specifies the destination blend factor F_src"（指定目标混合因子），按其语义应为*源*混合因子，疑为原书笔误，此处照录。
+
+这些标志控制混合之后写入后台缓冲的是哪些颜色通道。例如，你可以指定 `D3D12_COLOR_WRITE_ENABLE_ALPHA`，禁用对 RGB 通道的写入，只写 alpha 通道。这种灵活性对高级技术很有用。当混合被禁用时，像素着色器返回的颜色不经任何写掩码直接使用。
+
+**注意**：混合不是免费的，它需要额外的逐像素工作，所以只在需要时启用它，用完就关闭。
+
+下面的代码展示了创建并设置混合状态的示例代码：
+
+```cpp
+// Start from non-blended PSO 
+D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPsoDesc = opaquePsoDesc;
+
+D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
+transparencyBlendDesc.BlendEnable = true;
+transparencyBlendDesc.LogicOpEnable = false;
+transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+transparencyBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+transparencyBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+transparentPsoDesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+  &transparentPsoDesc, IID_PPV_ARGS(&mPSOs["transparent"])));
+```
+
+与其他 PSO 一样，你<a id="page404"/>应当在应用程序初始化时把它们全部创建好，然后只在需要时用 `ID3D12GraphicsCommandList::SetPipelineState` 方法在它们之间切换。
+</section>
+
+<section className="lesson-section" id="s105">
+<h2>10.5 示例</h2>
+
+在下面的小节中，我们来看一些用于获得特定效果的混合因子组合。在这些示例中，我们只看 RGB 混合。alpha 混合的处理方式类似。
+
+<h3 id="s1051">10.5.1 不写入颜色</h3>
+
+假设我们希望完全保留原始的目标像素，不用当前正在光栅化的源像素覆盖它或与它混合。例如，当你只想写入深度/模板缓冲而不写后台缓冲时，这就很有用。为此，把源像素混合因子设为 `D3D12_BLEND_ZERO`，目标混合因子设为 `D3D12_BLEND_ONE`，混合运算符设为 `D3D12_BLEND_OP_ADD`。在此设置下，混合方程化简为：
+
+<MathBlock tex="\begin{aligned} \mathbf{C} &= \mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}\\ \mathbf{C} &= \mathbf{C}_{src}\otimes(0,0,0)+\mathbf{C}_{dst}\otimes(1,1,1)\\ \mathbf{C} &= \mathbf{C}_{dst} \end{aligned}" />
+
+这是一个刻意构造的例子；实现同样效果的另一种方法是把 `D3D12_RENDER_TARGET_BLEND_DESC::RenderTargetWriteMask` 成员设为 0，这样任何颜色通道都不会被写入。<a id="page405"/>
+
+<Figure src="images/Fig10-2.jpg" alt="源颜色与目标颜色相加；由于颜色在相加，图像变得更亮" figureNumber="图 10.2" caption="源颜色与目标颜色相加。由于颜色在相加，图像变得更亮。" />
+
+<h3 id="s1052">10.5.2 相加/相减</h3>
+
+假设我们想把源像素与目标像素相加（见图 10.2）。为此，把源混合因子设为 `D3D12_BLEND_ONE`，目标混合因子设为 `D3D12_BLEND_ONE`，混合运算符设为 `D3D12_BLEND_OP_ADD`。在此设置下，混合方程化简为：
+
+<MathBlock tex="\begin{aligned} \mathbf{C} &= \mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}\\ \mathbf{C} &= \mathbf{C}_{src}\otimes(1,1,1)+\mathbf{C}_{dst}\otimes(1,1,1)\\ \mathbf{C} &= \mathbf{C}_{src}+\mathbf{C}_{dst} \end{aligned}" />
+
+我们可以使用上面的混合因子并把混合运算替换为 `D3D12_BLEND_OP_SUBTRACT`，从目标像素中减去源像素（图 10.3）。
+
+<Figure src="images/Fig10-3.jpg" alt="从目标颜色中减去源颜色；由于颜色被去除，图像变得更暗" figureNumber="图 10.3" caption="从目标颜色中减去源颜色。由于颜色被去除，图像变得更暗。" />
+
+<h3 id="s1053">10.5.3 相乘</h3>
+
+假设我们想把源像素与对应的目标像素相乘（见图 10.4）。为此，我们把源混合因子设为 `D3D12_BLEND_ZERO`，目标混合因子设为 `D3D12_BLEND_SRC_COLOR`，混合运算符设为 `D3D12_BLEND_OP_ADD`。在此设置下，混合方程化简为：
+
+<MathBlock tex="\begin{aligned} \mathbf{C} &= \mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}\\ \mathbf{C} &= \mathbf{C}_{src}\otimes(0,0,0)+\mathbf{C}_{dst}\otimes\mathbf{C}_{src}\\ \mathbf{C} &= \mathbf{C}_{dst}\otimes\mathbf{C}_{src} \end{aligned}" />
+
+<Figure src="images/Fig10-4.jpg" alt="源颜色与目标颜色相乘" figureNumber="图 10.4" caption="源颜色与目标颜色相乘。" />
+
+<a id="page406"/>
+
+<h3 id="s1054">10.5.4 透明</h3>
+
+把源 alpha 分量 $a_s$ 看作控制源像素不透明度的百分比（例如，alpha 为 0 表示 0% 不透明，0.4 表示 40% 不透明，1.0 表示 100% 不透明）。不透明度与透明度之间的关系就是 $T=1-A$，其中 $A$ 是不透明度，$T$ 是透明度。例如，某物的不透明度为 0.4，则它的透明度为 $1-0.4=0.6$。现在假设我们想基于源像素的不透明度来混合源像素与目标像素。为此，把源混合因子设为 `D3D12_BLEND_SRC_ALPHA`，目标混合因子设为 `D3D12_BLEND_INV_SRC_ALPHA`，混合运算符设为 `D3D12_BLEND_OP_ADD`。在此设置下，混合方程化简为：
+
+<MathBlock tex="\begin{aligned} \mathbf{C} &= \mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}\\ \mathbf{C} &= \mathbf{C}_{src}\otimes(a_s,a_s,a_s)+\mathbf{C}_{dst}\otimes(1-a_s,1-a_s,1-a_s)\\ \mathbf{C} &= a_s\mathbf{C}_{src}+(1-a_s)\mathbf{C}_{dst} \end{aligned}" />
+
+例如，假设 $a_s=0.25$，即源像素只有 25% 不透明。那么当源像素与目标像素混合时，我们预期最终颜色将是 25% 的源像素与 75% 的目标像素（"位于源像素后面"的像素）的组合，因为源像素有 75% 透明。上式给出的正是这个结果：
+
+<MathBlock tex="\begin{aligned} \mathbf{C} &= a_s\mathbf{C}_{src}+(1-a_s)\mathbf{C}_{dst}\\ \mathbf{C} &= 0.25\mathbf{C}_{src}+0.75\mathbf{C}_{dst} \end{aligned}" />
+
+用这种混合方法，我们可以绘制如图 10.1 那样的透明物体。需要注意，使用这种混合方法时，绘制对象的顺序很重要。我们采用如下规则：
+
+先绘制不使用混合的物体。接着，按与摄像机的距离对使用混合的物体排序。最后，以从后往前的顺序绘制使用混合的物体。
+
+采用从后往前绘制顺序的原因，是让物体与它空间上位于后面的物体混合。因为如果一个物体是透明的，我们能透过它看到它背后的场景。所以透明物体后面的所有像素必须已经<a id="page407"/>写入后台缓冲，这样我们才能把透明源像素与其背后场景的目标像素混合。
+
+对 §10.5.1 的混合方法，绘制顺序无关紧要，因为它只是阻止源像素写入后台缓冲。对 §10.5.2 和 §10.5.3 讨论的混合方法，我们仍然先绘制非混合物体、最后绘制混合物体；因为我们想在开始混合之前先把所有非混合几何放到后台缓冲上。但是我们不需要对使用混合的物体排序。这是因为这些运算是可交换的。也就是说，如果从某个后台缓冲像素颜色 $\mathbf{B}$ 出发，对该像素做 *n* 次相加/相减/相乘混合，顺序无关紧要：
+
+<MathBlock tex="\begin{aligned} \mathbf{B}' &= \mathbf{B}+\mathbf{C}_0+\mathbf{C}_1+\ldots+\mathbf{C}_{n-1}\\ \mathbf{B}' &= \mathbf{B}-\mathbf{C}_0-\mathbf{C}_1-\ldots-\mathbf{C}_{n-1}\\ \mathbf{B}' &= \mathbf{B}\otimes\mathbf{C}_0\otimes\mathbf{C}_1\otimes\ldots\otimes\mathbf{C}_{n-1} \end{aligned}" />
+
+<h3 id="s1055">10.5.5 混合与深度缓冲</h3>
+
+用相加/相减/相乘混合时，深度测试会带来一个问题。为了说明，我们只用相加混合来解释，但同样的想法适用于相减/相乘混合。如果我们正在用相加混合渲染一组对象 *S*，其用意是 *S* 中的对象互不遮挡；相反，它们的颜色只是简单地累加（见图 10.5）。因此，我们不想在 *S* 中的对象之间执行深度测试；因为如果执行了，在没有从后往前绘制顺序的情况下，*S* 中的某个对象会遮挡 *S* 中的另一个对象，导致其像素片段因深度测试被拒绝，这意味着该对象的像素颜色不会<a id="page408"/>被累加进混合和中。我们可以通过在渲染 *S* 中的对象时禁用对深度缓冲的写入，来禁用 *S* 中对象之间的深度测试。由于深度写入被禁用，用相加混合绘制的 *S* 中对象的深度不会写入深度缓冲；因此该对象不会因深度测试遮挡 *S* 中位于其后的、稍后绘制的对象。注意，我们只在绘制 *S* 中的对象（用相加混合绘制的对象集合）时禁用深度写入。深度读取和深度测试仍然启用。这样，非混合几何（在混合几何之前绘制）仍然能遮挡它后面的混合几何。例如，如果一堵实心墙后面有一组用相加混合的对象，你不会看到那些混合对象，因为实心墙遮挡了它们。如何禁用深度写入，以及更一般地如何配置深度测试设置，将在下一章介绍。
+
+<Figure src="images/Fig10-5.jpg" alt="用相加混合时，粒子重叠越多、相加越多的地方强度越大；粒子散开之后强度变弱" figureNumber="图 10.5" caption="使用相加混合时，靠近源点的地方粒子重叠更多、相加更多，强度更大。随着粒子散开，重叠并相加的粒子变少，强度变弱。" />
+</section>
+
+<section className="lesson-section" id="s106">
+<h2>10.6 alpha 通道</h2>
+
+§10.5.4 的例子表明，源 alpha 分量可以用于 RGB 混合以控制透明度。混合方程中使用的源颜色来自像素着色器。正如上一章所见，我们把漫反射材质的 alpha 值作为像素着色器的 alpha 输出返回。因此漫反射贴图的 alpha 通道被用来控制透明度。
+
+```cpp
+float4 PS(VertexOut pin) : SV_Target
+{
+  float4 diffuseAlbedo = gDiffuseMap.Sample(
+    gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+
+  …
+  
+  // Common convention to take alpha from diffuse albedo.
+  litColor.a = diffuseAlbedo.a;
+  return litColor;
+}
+```
+
+通常你可以在任何流行的图像编辑软件（如 Adobe Photoshop）中添加 alpha 通道，然后把图像保存为支持 alpha 通道的图像格式，如 DDS。
+</section>
+
+<section className="lesson-section" id="s107">
+<h2>10.7 裁剪像素</h2>
+
+有时我们希望彻底拒绝某个源像素，不让它继续参与后续处理。这可以用 HLSL 内置函数 `clip(x)` 完成。这个函数只能在像素着色器中调用，当 `x < 0` 时它丢弃当前像素，使其不再参与<a id="page409"/>后续处理。这个函数适合渲染铁丝网纹理之类的图像，如图 10.6 所示。也就是说，它适合渲染"每个像素要么完全不透明、要么完全透明"的图像。
+
+<Figure src="images/Fig10-6.jpg" alt="一张铁丝网纹理及其 alpha 通道；alpha 值为黑色的像素将被拒绝绘制，只留下铁丝网" figureNumber="图 10.6" caption="一张带 alpha 通道的铁丝网纹理。alpha 值为黑色的像素会被 clip 函数拒绝而不绘制；因此只剩下铁丝网。本质上，alpha 通道被用来从纹理中遮掉非铁丝网的像素。" />
+
+在像素着色器中，我们取纹理的 alpha 分量。如果它是接近 0 的小值（表示该像素完全透明），我们就丢弃该像素，使其不再参与后续处理。
+
+```cpp
+float4 PS(VertexOut pin) : SV_Target
+{
+  float4 diffuseAlbedo = gDiffuseMap.Sample(
+    gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+   
+#ifdef ALPHA_TEST
+  // Discard pixel if texture alpha < 0.1. We do this test as soon 
+  // as possible in the shader so that we can potentially exit the
+  // shader early, thereby skipping the rest of the shader code.
+  clip(diffuseAlbedo.a - 0.1f);
+#endif
+
+  …
+
+  // Common convention to take alpha from diffuse albedo.
+  litColor.a = diffuseAlbedo.a;
+
+  return litColor;
+}
+```
+
+注意，只有定义了 `ALPHA_TEST` 时才执行 clip；这是因为对某些渲染项我们可能不想调用 `clip`，所以需要能通过专用着色器来开关它。此外，使用 alpha 测试有开销，所以只在需要时使用。
+
+注意，用混合也能得到同样的结果，但这里的方式更高效。其一，不需要做任何混合计算（可以禁用混合）。其二，绘制顺序无关紧要。此外，提前从像素着色器中丢弃像素，就可以跳过其余的像素着色器指令（对被丢弃的像素再做计算毫无意义）。<a id="page410"/>
+
+**注意**：由于过滤的原因，alpha 通道可能会有些模糊，所以在裁剪像素时应留出一些余量。例如，裁剪 alpha 值接近 0 的像素，而不一定要求恰好为零。
+
+图 10.7 是"Blend"演示的截图。它用透明混合渲染半透明的水，并用 `clip` 测试渲染带铁丝网的箱子。另一个值得一提的改动是，因为现在我们能透过带铁丝网纹理的箱子看到里面，我们要为 alpha 测试对象禁用背面剔除：
+
+<Figure src="images/Fig10-7.jpg" alt="Blend 演示的截图，包含半透明水面和铁丝网箱子" figureNumber="图 10.7" caption="Blend 演示的截图。" />
+
+```cpp
+// PSO for alpha tested objects
+D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestedPsoDesc = opaquePsoDesc;
+alphaTestedPsoDesc.PS = 
+{ 
+  reinterpret_cast<BYTE*>(mShaders["alphaTestedPS"]->GetBufferPointer()),
+    mShaders["alphaTestedPS"]->GetBufferSize()
+};
+alphaTestedPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+  &alphaTestedPsoDesc, IID_PPV_ARGS(&mPSOs["alphaTested"])));
+```
+</section>
+
+<section className="lesson-section" id="s108">
+<h2>10.8 雾</h2>
+
+要在游戏中模拟某些类型的天气状况，我们需要能够实现雾效；见图 10.8。除了雾显而易见的用途之外，雾还带来一些额外的好处。例如，它可以遮掩远处的<a id="page411"/>渲染瑕疵，并防止*突然出现*（popping）。Popping 指原本位于远裁剪平面之后的物体由于摄像机移动突然进入视锥体前部而变得可见；于是它看起来是"突然蹦进"场景的。远处有一层雾，popping 就被遮住了。注意，如果你的场景发生在晴朗的天气，你可能仍希望在远距离包含一点淡淡的雾，因为即使在晴天，远处的物体（如山脉）也会随深度增加而显得更朦胧、对比度降低，我们可以用雾来模拟这种大气透视（atmospheric perspective）现象。
+
+<Figure src="images/Fig10-8.jpg" alt="开启雾效后的 Blend 演示截图" figureNumber="图 10.8" caption="开启雾效后的 Blend 演示截图。" />
+
+<Figure src="images/Fig10-9.jpg" alt="点到眼睛的距离，以及雾起始距离和雾范围参数" figureNumber="图 10.9" caption="点到眼睛的距离，以及 fogStart 和 fogRange 参数。" />
+
+我们实现雾的策略如下：指定一个雾颜色、一个距摄像机的雾起始距离和一个雾范围（即从雾起始距离到雾完全遮住所有物体之间的范围）。于是，三角形上某点的颜色是它通常的颜色与雾颜色的加权平均：
+
+<MathBlock tex="\begin{aligned} foggedColor &= litColor+s\,(fogColor-litColor)\\ &=(1-s)\cdot litColor+s\cdot fogColor \end{aligned}" />
+
+参数 *s* 取值 0 到 1，是摄像机位置与表面点之间距离的函数。随着表面点与眼睛之间的距离增大，该点被雾遮蔽得越来越多。参数 s 定义如下：
+
+<MathBlock tex="s=\mathrm{saturate}\left(\frac{\mathrm{dist}(\mathbf{p},\mathbf{E})-fogStart}{fogRange}\right)" />
+
+其中 dist(**p**, **E**) 是表面点 p 与摄像机位置 **E** 之间的距离。`saturate` 函数把参数限制<a id="page412"/>到 [0, 1] 范围：
+
+<MathBlock tex="saturate(x)=\begin{cases}x, & 0\le x\le 1\\ 0, & x<0\\ 1, & x>1\end{cases}" />
+
+图 10.10 给出了 *s* 关于距离的图像。可以看到，当 dist(**p**, **E**) ≤ *fogStart* 时，*s* = 0，此时带雾颜色为：
+
+<MathBlock tex="foggedColor=litColor" />
+
+<Figure src="images/Fig10-10.jpg" alt="左图是雾颜色权重 s 随距离变化的曲线，右图是光照颜色权重 1−s 随距离变化的曲线，二者此消彼长" figureNumber="图 10.10" caption="（左）：s（雾颜色权重）随距离变化的曲线。（右）：1 − s（光照颜色权重）随距离变化的曲线。s 增大多少，(1 − s) 就减小多少。" />
+
+换言之，雾不会修改距摄像机距离小于 *fogStart* 的顶点颜色。从"fogStart"这个名字来看这也是合理的；雾要等到距摄像机<a id="page413"/>的距离至少达到 *fogStart* 之后才开始影响颜色。
+
+设 *fogEnd* = *fogStart* + *fogRange*。当 dist(**p**, **E**) ≥ *fogEnd* 时，*s* = 1，此时带雾颜色为：
+
+<MathBlock tex="foggedColor=fogColor" />
+
+换言之，在距离大于等于 *fogEnd* 处，雾完全遮住了表面点——所以你只能看到雾的颜色。
+
+当 *fogStart* &lt; dist(**p**, **E**) &lt; *fogEnd* 时，可以看到随着 dist(**p**, **E**) 从 *fogStart* 增大到 *fogEnd*，*s* 从 0 线性增大到 1。这意味着随着距离增大，雾颜色占的权重越来越大，而原始颜色占的权重越来越小。这当然是合理的，因为距离越远，雾对表面点的遮蔽越严重。
+
+下面的着色器代码展示了雾是如何实现的。我们在计算出光照颜色之后，在像素级别计算距离和插值。
+
+```cpp
+// Defaults for number of lights.
+#ifndef NUM_DIR_LIGHTS
+  #define NUM_DIR_LIGHTS 3
+#endif
+
+#ifndef NUM_POINT_LIGHTS
+  #define NUM_POINT_LIGHTS 0
+#endif
+
+#ifndef NUM_SPOT_LIGHTS
+  #define NUM_SPOT_LIGHTS 0
+#endif
+
+// Include structures and functions for lighting.
+#include "LightingUtil.hlsl"
+
+Texture2D  gDiffuseMap : register(t0);
+
+
+SamplerState gsamPointWrap    : register(s0);
+SamplerState gsamPointClamp    : register(s1);
+SamplerState gsamLinearWrap    : register(s2);
+SamplerState gsamLinearClamp   : register(s3);
+SamplerState gsamAnisotropicWrap : register(s4);
+SamplerState gsamAnisotropicClamp : register(s5);
+
+// Constant data that varies per frame.
+cbuffer cbPerObject : register(b0)
+{
+  float4x4 gWorld;
+  float4x4 gTexTransform;
+};
+
+// Constant data that varies per material.
+cbuffer cbPass : register(b1)
+{
+  float4x4 gView;
+  float4x4 gInvView;
+  float4x4 gProj;
+  float4x4 gInvProj;
+  float4x4 gViewProj;
+  float4x4 gInvViewProj;
+  float3 gEyePosW;
+  float cbPerPassPad1;
+  float2 gRenderTargetSize;
+  float2 gInvRenderTargetSize;
+  float gNearZ;
+  float gFarZ;
+  float gTotalTime;
+  float gDeltaTime;
+  float4 gAmbientLight;
+
+  // Allow application to change fog parameters once per frame.
+  // For example, we may only use fog for certain times of day.
+  float4 gFogColor;
+  float gFogStart;
+  float gFogRange;
+  float2 cbPerPassPad2;
+
+  // Indices [0, NUM_DIR_LIGHTS) are directional lights;
+  // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
+  // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,
+  // NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
+  // are spot lights for a maximum of MaxLights per object.
+  Light gLights[MaxLights];
+};
+
+cbuffer cbMaterial : register(b2)
+{
+  float4  gDiffuseAlbedo;
+  float3  gFresnelR0;
+  float  gRoughness;
+  float4x4 gMatTransform;
+};
+
+struct VertexIn
+{
+  float3 PosL   : POSITION;
+  float3 NormalL : NORMAL;
+  float2 TexC   : TEXCOORD;
+};
+
+struct VertexOut
+{
+  float4 PosH   : SV_POSITION;
+  float3 PosW   : POSITION;
+  float3 NormalW : NORMAL;
+  float2 TexC   : TEXCOORD;
+};
+```
+
+<a id="page415"/>
+
+```cpp
+VertexOut VS(VertexIn vin)
+{
+  VertexOut vout = (VertexOut)0.0f;
+   
+  // Transform to world space.
+  float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+  vout.PosW = posW.xyz;
+
+  // Assumes nonuniform scaling; otherwise, need to use inverse-transpose
+  // of world matrix.
+  vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);
+
+  // Transform to homogeneous clip space.
+  vout.PosH = mul(posW, gViewProj);
+  
+  // Output vertex attributes for interpolation across triangle.
+  float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);
+  vout.TexC = mul(texC, gMatTransform).xy;
+
+  return vout;
+}
+
+float4 PS(VertexOut pin) : SV_Target
+{
+  float4 diffuseAlbedo = gDiffuseMap.Sample(
+    gsamAnisotropicWrap, pin.TexC) * gDiffuseAlbedo;
+    
+#ifdef ALPHA_TEST
+  // Discard pixel if texture alpha < 0.1. We do this test as soon 
+  // as possible in the shader so that we can potentially exit the
+  // shader early, thereby skipping the rest of the shader code.
+  clip(diffuseAlbedo.a - 0.1f);
+#endif
+
+  // Interpolating normal can unnormalize it, so renormalize it.
+  pin.NormalW = normalize(pin.NormalW);
+
+  // Vector from point being lit to eye. 
+  float3 toEyeW = gEyePosW - pin.PosW;
+  float distToEye = length(toEyeW);
+  toEyeW /= distToEye; // normalize
+
+  // Light terms.
+  float4 ambient = gAmbientLight*diffuseAlbedo;
+
+  const float shininess = 1.0f - gRoughness;
+  Material mat = { diffuseAlbedo, gFresnelR0, shininess };
+  float3 shadowFactor = 1.0f;
+  float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
+    pin.NormalW, toEyeW, shadowFactor);
+
+  float4 litColor = ambient + directLight;
+
+#ifdef FOG
+  float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+  litColor = lerp(litColor, gFogColor, fogAmount);
+#endif
+
+  // Common convention to take alpha from diffuse albedo.
+  litColor.a = diffuseAlbedo.a;
+
+  return litColor;
+}
+```
+
+**译者注**：上面 `cbuffer cbPass` 前的注释在原书中写作 "// Constant data that varies per material."（随材质变化的常量数据），按其语境应为 per frame（随帧变化），与第 8 章 Default.hlsl 中的同一处笔误相同，此处照录原文。
+
+有些场景可能不希望<a id="page416"/>使用雾；因此，我们通过要求在编译着色器时定义 `FOG` 来把雾做成可选的。这样，如果不需要雾，我们就不用支付雾计算的开销。在我们的演示中，我们通过向 `CompileShader` 函数提供下面的 `D3D_SHADER_MACRO` 来启用雾：
+
+```cpp
+const D3D_SHADER_MACRO defines[] =
+{
+  "FOG", "1",
+  NULL, NULL
+};
+
+mShaders["opaquePS"] = d3dUtil::CompileShader(
+  L"Shaders\\Default.hlsl", defines, "PS", "ps_5_0");
+```
+
+**注意**：注意在雾计算中，我们使用了 `distToEye` 值，而这个值我们也用来归一化 `toEye` 向量。一个不太优化的实现会写成：
+
+```cpp
+float3 toEye = normalize(gEyePosW - pin.PosW);
+float distToEye = distance(gEyePosW, pin.PosW);
+```
+
+这实际上把 `toEye` 向量的长度计算了两次，一次在 `normalize` 函数中，一次在 `distance` 函数中。
+</section>
+
+<section className="lesson-section" id="s109">
+<h2>10.9 本章小结</h2>
+
+1. 混合是一种技术，它让我们能够把当前正在光栅化的像素（所谓*源*像素）与之前光栅化到后台缓冲上的像素（所谓*目标*像素）混合（组合）在一起。这项技术让我们能够渲染半透明物体，例如水和玻璃。
+2. 混合方程是：
+
+   <MathBlock tex="\mathbf{C}=\mathbf{C}_{src}\otimes\mathbf{F}_{src}\ \boxplus\ \mathbf{C}_{dst}\otimes\mathbf{F}_{dst}" />
+
+   <MathBlock tex="A=A_{src}F_{src}\ \boxplus\ A_{dst}F_{dst}" />
+
+   注意 RGB 分量的混合独立于 alpha 分量。<a id="page417"/>⊞ 二元运算符可以是 `D3D12_BLEND_OP` 枚举类型定义的运算符之一。
+3. $\mathbf{F}_{src}$、$\mathbf{F}_{dst}$、$F_{src}$ 和 $F_{dst}$ 称为混合因子，它们提供了定制混合方程的手段。它们可以是 `D3D12_BLEND` 枚举类型的成员。对 alpha 混合方程，以 `_COLOR` 结尾的混合因子是*不允许*的。
+4. 源 alpha 信息来自漫反射材质。在我们的框架中，漫反射材质由一张纹理贴图定义，纹理的 alpha 通道存储 alpha 信息。
+5. 可以用 HLSL 内置函数 `clip(x)` 把源像素彻底从后续处理中拒绝。这个函数只能在像素着色器中调用，当 `x < 0` 时它丢弃当前像素，使其不再参与后续处理。除其他用途外，这个函数适合高效渲染"每个像素要么完全不透明、要么完全透明"的图像（它用来拒绝完全透明的像素——alpha 值接近零的像素）。
+6. 用雾来模拟各种天气效果和大气透视，遮掩远处的渲染瑕疵，并隐藏 popping。在我们的线性雾模型中，我们指定一个雾颜色、一个距摄像机的雾起始距离和一个雾范围。三角形上某点的颜色是它通常的颜色与雾颜色的加权平均：
+
+   <MathBlock tex="\begin{aligned} foggedColor &= litColor+s\,(fogColor-litColor)\\ &=(1-s)\cdot litColor+s\cdot fogColor \end{aligned}" />
+
+   参数 *s* 取值 0 到 1，是摄像机位置与表面点之间距离的函数。随着表面点与眼睛之间的距离增大，该点被雾遮蔽得越来越多。
+</section>
+
+<section className="lesson-section" id="s1010">
+<h2>10.10 习题</h2>
+
+1. 试用不同的混合运算与混合因子组合。
+2. 修改"Blend"演示，改为先绘制水面。解释结果。
+3. 设 *fogStart* = 10，*fogRange* = 200。计算下列情况下的 *foggedColor*：
+
+   1. dist(**p**, **E**) = 160
+   2. dist(**p**, **E**) = 110
+   3. dist(**p**, **E**) = 60
+   4. dist(**p**, **E**) = 30
+
+4. 通过查看生成的着色器汇编，验证未定义 `ALPHA_TEST` 编译出的像素着色器<a id="page418"/>没有 `discard` 指令，而定义了 `ALPHA_TEST` 编译出的像素着色器有。`discard` 指令对应 HLSL 的 `clip` 指令。
+5. 修改"Blend"演示，创建并应用一个禁用对红色和绿色颜色通道写入的混合渲染状态。
+</section>
+
+

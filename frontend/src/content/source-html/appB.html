@@ -1,0 +1,478 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<p class="bkcn"><a id="page773"/><a href="toc.html#toc-appB" id="appB">Appendix B</a></p>
+<p class="bkct"><a href="toc.html#toc-appB"><i><b>H</b><span class="sc">IGH</span> <b>L</b><span class="sc">EVEL</span> <b>S</b><span class="sc">HADER</span></i><br/><i><b>L</b><span class="sc">ANGUAGE</span> <b>R</b><span class="sc">EFERENCE</span></i></a></p>
+
+<p class="tx1">&nbsp;<br/><br/></p>
+
+<p class="h1" id="B.1"><a href="toc.html#toc-B.1"><b>VARIABLE TYPES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="B2.1"><a href="toc.html#toc-B2.1"><b>Scalar Types</b></a></p>
+<ol><li><span class="code">bool</span>: True or false value. Note that the HLSL provides the <span class="code">true</span> and <span class="code">false</span> keywords like in C++.</li>
+<li><span class="code">int</span>: 32-bit signed integer.</li>
+<li><span class="code">half</span>: 16-bit floating point number.</li>
+<li><span class="code">float</span>: 32-bit floating point number.</li>
+<li><span class="code">double</span>: 64-bit floating point number.</li></ol>
+<p class="tx1">Some platforms might not support <span class="code">int</span>, <span class="code">half</span>, and <span class="code">double</span>. If this is the case these types will be emulated using <span class="code">float</span>.</p>
+<p class="h2" id="B2.2"><a href="toc.html#toc-B2.2"><b>Vector Types</b></a></p>
+<ol><li><span class="code">float2</span>: 2D vector, where the components are of type <span class="code">float</span>.</li>
+<li><span class="code">float3</span>: 3D vector, where the components are of type <span class="code">float</span>.</li>
+<li><span class="code">float4</span>: 4D vector, where the components are of type <span class="code">float</span>.<a id="page774"/></li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>You can create vectors where the components are of a type other than </i><span class="code">float</span><i>. For example: </i><span class="code">int2</span><i>, </i><span class="code">half3</span><i>, </i><span class="code">bool4</span><i>.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">We can initialize a vector using an array like syntax or constructor like syntax:</p>
+<p class="code"><span class="code">float3 v = {1.0f, 2.0f, 3.0f};</span></p>
+<p class="code"><span class="code">float2 w = float2(x, y);</span></p>
+<p class="code"><span class="code">float4 u = float4(w, 3.0f, 4.0f); // u = (w.x, w.y, 3.0f, 4.0f)</span></p>
+<p class="tx1">We can access a component of a vector using an array subscript syntax. For example, to set the <i>i</i>th component of a vector <span class="code">vec</span> we would write:</p>
+<p class="code"><span class="code">vec[i] = 2.0f;</span></p>
+<p class="tx1">In addition, we can access the components of a vector <span class="code">vec,</span> as we would access the members of a structure, using the defined component names <span class="code">x</span>, <span class="code">y</span>, <span class="code">z</span>, <span class="code">w</span>, <span class="code">r</span>, <span class="code">g</span>, <span class="code">b</span>, and <span class="code">a</span>. </p>
+<p class="code"><span class="code">vec.x = vec.r = 1.0f;</span></p>
+<p class="code"><span class="code">vec.y = vec.g = 2.0f;</span></p>
+<p class="code"><span class="code">vec.z = vec.b = 3.0f;</span></p>
+<p class="code"><span class="code">vec.w = vec.a = 4.0f;</span></p>
+<p class="tx1">The names <span class="code">r</span>, <span class="code">g</span>, <span class="code">b</span>, and <span class="code">a</span> refer to the exact same component as the names <span class="code">x</span>, <span class="code">y</span>, <span class="code">z</span>, and <span class="code">w</span>, respectively. When using vectors to represent colors, the RGBA notation is more desirable since it reinforces the fact that the vector is representing a color.</p>
+<p class="h3" id="B2.2.1"><a href="toc.html#toc-B2.2.1"><b>Swizzles</b></a></p>
+<p class="tx1">Consider the vector <b>u</b> = (<i>u</i><i><sub>x</sub></i>, <i>u</i><i><sub>y</sub></i>, <i>u</i><i><sub>z</sub></i>, <i>u</i><i><sub>w</sub></i>) and suppose we want to copy the components of <b>u</b> to a vector <b>v</b> such that <b>v</b> = (<i>u</i><i><sub>w</sub></i>, <i>u</i><i><sub>y</sub></i>, <i>u</i><i><sub>y</sub></i>, <i>u</i><i><sub>x</sub></i>). The most immediate solution would be to individually copy each component of <b>u</b> over to <b>v</b> as necessary. However, the HLSL provides a special syntax for doing these kinds of out of order copies called <i>swizzles</i>:</p>
+<p class="code"><span class="code">float4 u = {1.0f, 2.0f, 3.0f, 4.0f};</span></p>
+<p class="code"><span class="code">float4 v = {0.0f, 0.0f, 5.0f, 6.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">v = u.wyyx; // v = {4.0f, 2.0f, 2.0f, 1.0f}</span></p>
+<p class="tx">Another example:</p>
+<p class="code"><span class="code">float4 u = {1.0f, 2.0f, 3.0f, 4.0f};</span></p>
+<p class="code"><span class="code">float4 v = {0.0f, 0.0f, 5.0f, 6.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">v = u.wzyx; // v = {4.0f, 3.0f, 2.0f, 1.0f}</span></p>
+<p class="tx1">When copying vectors, we do not have to copy every component over. For example, we can only copy the <i>x</i>- and <i>y</i>-components over as this code snippet illustrates:<a id="page775"/></p>
+<p class="code"><span class="code">float4 u = {1.0f, 2.0f, 3.0f, 4.0f};</span></p>
+<p class="code"><span class="code">float4 v = {0.0f, 0.0f, 5.0f, 6.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">v.xy = u; // v = {1.0f, 2.0f, 5.0f, 6.0f}</span></p>
+<p class="h2" id="B2.3"><a href="toc.html#toc-B2.3"><b>Matrix Types</b></a></p>
+<p class="tx1">We can define an <i>m</i> &times; <i>n</i> matrix, where <i>m</i> and <i>n</i> are between 1 and 4, using the following syntax:</p>
+     <p class="tx"><span class="code">float<i>m</i>x<i>n</i> matmxn;</span></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Examples:</b></p>
+<ol><li><span class="code">float2x2</span>: 2 &times; 2 matrix, where the entries are of type <span class="code">float</span>.</li>
+<li><span class="code">float3x3</span>: 3 &times; 3  matrix, where the entries are of type <span class="code">float</span>.</li>
+<li><span class="code">float4x4</span>: 4 &times; 4  matrix, where the entries are of type <span class="code">float</span>.</li>
+<li><span class="code">float3x4</span>: 3 &times; 4  matrix, where the entries are of type <span class="code">float</span>.</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>You can create matrices where the components are of a type other than float. For example: </i><span class="code">int2x2</span><i>, </i><span class="code">half3x3</span><i>, </i><span class="code">bool4x4</span><i>.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">We can access an entry in a matrix using a double array subscript syntax. For example, to set the <i>ij</i>th entry of a matrix <span class="code">M</span> we would write:</p>
+<p class="code"><span class="code">M[i][j] = value;</span></p>
+<p class="tx1">In addition, we can refer to the entries of a matrix <span class="code">M</span> as we would access the members of a structure. The following entry names are defined:</p>
+<p class="tx"><i>One-Based Indexing:</i></p>
+<p class="code"><span class="code">M._11 = M._12 = M._13 = M._14 = 0.0f;</span></p>
+<p class="code"><span class="code">M._21 = M._22 = M._23 = M._24 = 0.0f;</span></p>
+<p class="code"><span class="code">M._31 = M._32 = M._33 = M._34 = 0.0f;</span></p>
+<p class="code"><span class="code">M._41 = M._42 = M._43 = M._44 = 0.0f;</span></p>
+<p class="tx"><i>Zero-Based Indexing:</i></p>
+<p class="code"><span class="code">M._m00 = M._m01 = M._m02 = M._m03 = 0.0f;</span></p>
+<p class="code"><span class="code">M._m10 = M._m11 = M._m12 = M._m13 = 0.0f;</span></p>
+<p class="code"><span class="code">M._m20 = M._m21 = M._m22 = M._m23 = 0.0f;</span></p>
+<p class="code"><span class="code">M._m30 = M._m31 = M._m32 = M._m33 = 0.0f;</span></p>
+<p class="tx1">Sometimes we want to refer to a particular row vector in a matrix. We can do so using a single array subscript syntax. For example, to extract the <i>i</i>th row vector in a 3 &times; 3 matrix <span class="code">M</span>, we would write:</p>
+<p class="code"><span class="code">float3 ithRow = M[i]; // get the ith row vector in M</span></p>
+<p class="tx1">In this next example,<a id="page776"/> we insert three vectors into the first, second and third row of a matrix: </p>
+<p class="code"><span class="code">float3 N = normalize(pIn.normalW);</span></p>
+<p class="code"><span class="code">float3 T = normalize(pIn.tangentW - dot(pIn.tangentW, N)*N);</span></p>
+<p class="code"><span class="code">float3 B = cross(N,T);</span></p>
+<p class="code"><span class="code">float3x3 TBN;</span></p>
+<p class="code"><span class="code">TBN[0] = T; // sets row 1&nbsp;</span></p>
+<p class="code"><span class="code">TBN[1] = B; // sets row 2</span></p>
+<p class="code"><span class="code">TBN[2] = N; // sets row 3</span></p>
+<p class="tx1">We can also construct a matrix from vectors:</p>
+<p class="code"><span class="code">float3 N = normalize(pIn.normalW);</span></p>
+<p class="code"><span class="code">float3 T = normalize(pIn.tangentW - dot(pIn.tangentW, N)*N);</span></p>
+<p class="code"><span class="code">float3 B = cross(N,T);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">float3x3 TBN = float3x3(T, B, N);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Instead of using </i><span class="code">float4</span><i> and </i><span class="code">float4x4</span><i> to represent 4D vectors and 4 </i>&times;<i> 4 matrices, you can equivalently use the </i><span class="code">vector</span><i> and </i><span class="code">matrix</span><i> type:</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">vector u = {1.0f, 2.0f, 3.0f, 4.0f};</span></p>
+<p class="code"><span class="code">matrix M; // 4x4 matrix</span></p>
+<p class="h2" id="B2.4"><a href="toc.html#toc-B2.4"><b>Arrays</b></a></p>
+<p class="tx1">We can declare an array of a particular type using familiar C++ syntax, for example:</p>
+<p class="code"><span class="code">float M[4][4];</span></p>
+<p class="code"><span class="code">half&nbsp;&nbsp;p[4];</span></p>
+<p class="code"><span class="code">float3 v[12]; // 12 3D vectors</span></p>
+<p class="h2" id="B2.5"><a href="toc.html#toc-B2.5"><b>Structures </b></a></p>
+<p class="tx1">Structures are defined exactly as they are in C++. However, structures in the HLSL cannot have member functions. Here is an example of a structure in the HLSL:</p>
+<p class="code"><span class="code">struct SurfaceInfo</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 normal;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 diffuse;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 spec;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">SurfaceInfo v;&nbsp;</span></b></p>
+<p class="code"><span class="code">litColor += <b>v.diffuse</b>;</span></p>
+<p class="code"><span class="code">dot(lightVec, <b>v.normal</b>);</span></p>
+<p class="code"><span class="code">float specPower&nbsp;&nbsp;= max(<b>v.spec.a</b>, 1.0f);</span><a id="page777"/></p>
+<p class="h2" id="B2.6"><a href="toc.html#toc-B2.6"><b>The </b><b><span class="code">typedef</span></b><b> Keyword</b></a></p>
+<p class="tx1">The HLSL <span class="code">typedef</span> keyword functions exactly the same as it does in C++. For example, we can give the name <span class="code">point</span> to the type <span class="code">vector&lt;float, 3&gt;</span> using the following syntax:</p>
+<p class="code"><span class="code">typedef float3 point;</span></p>
+<p class="tx1">Then instead of writing:</p>
+<p class="code"><span class="code">float3 myPoint;</span></p>
+<p class="tx1">We can just write:</p>
+<p class="code"><span class="code">point myPoint;</span></p>
+<p class="tx1">Here is another example showing how to use the <span class="code">typedef</span> keyword with the HLSL <span class="code">const&nbsp;</span>keyword (which works as in C++):</p>
+<p class="code"><span class="code">typedef const float CFLOAT;</span></p>
+<p class="h2" id="B2.7"><a href="toc.html#toc-B2.7"><b>Variable Prefixes</b></a></p>
+<p class="tx1">The following keywords can prefix a variable declaration.</p>
+<ol><li><span class="code">static</span>: Essentially the opposite of <span class="code">extern</span>; this means that the shader variable will not be exposed to the C++ application.
+<p class="code"><span class="code">static float3 v = {1.0f, 2.0f, 3.0f};</span></p></li>
+<li><span class="code">uniform</span>: This means that the variable does not change per vertex/pixel&mdash;it is constant for all vertices/pixels until we change it at the C++ application level. Uniform variables are initialized from outside the shader program (e.g., by the C++ application). </li>
+<li><span class="code">extern</span>: This means that the C++ application can see the variable (i.e., the variable can be accessed outside the shader file by the C++ application code. Global variables in a shader program are, by default, uniform and extern.</li>
+<li><span class="code">const</span>: The <span class="code">const</span> keyword in the HLSL has the same meaning it has in C++. That is, if a variable is prefixed with the <span class="code">const</span> keyword then that variable is constant and cannot be changed.
+<p class="code"><span class="code">const float pi = 3.14f;</span></p></li></ol>
+<p class="h2" id="B2.8"><a href="toc.html#toc-B2.8"><b>Casting</b></a></p>
+<p class="tx1">The HLSL supports a very flexible casting scheme. The casting syntax in the HLSL is the same as in the C programming language. For example, to cast a <span class="code">float</span> to a <span class="code">matrix</span> we write:</p>
+<p class="code"><span class="code">float f = 5.0f;</span></p>
+<p class="code"><span class="code">float4x4 m = (float4x4)f; // copy f into each entry of m.</span></p>
+<p class="tx1"><a id="page778"/>What this scalar-matrix cast does is copy the scalar into each entry of the matrix. </p>
+<p class="tx">Consider the following example:</p>
+<p class="code"><span class="code">float3 n = float3(&hellip;);</span></p>
+<p class="code"><span class="code">float3 v = 2.0f*n - 1.0f;</span></p>
+<p class="tx1">The <span class="code">2.0f*n</span> is just scalar-vector multiplication, which is well defined. However, to make this a vector equation, the scalar <span class="code">1.0f</span> is augmented to the vector <span class="code">(1.0f, 1.0f, 1.0f)</span>. So the above statement is like:</p>
+<p class="code"><span class="code">float3 v = 2.0f*n &ndash; float3(1.0f, 1.0f, 1.0f);</span></p>
+<p class="tx1">For the examples in this book, you will be able to deduce the meaning of the cast from the syntax. For a complete list of casting rules, search the SDK documentation index for &ldquo;Casting and Conversion&rdquo;).</p>
+<p class="h1" id="B.2"><a href="toc.html#toc-B.2"><b>KEYWORDS AND OPERATORS</b></a></p>
+<p class="h2" id="B2.9"><a href="toc.html#toc-B2.9"><b>Keywords</b></a></p>
+<p class="tx1">For reference, here is a list of the keywords the HLSL defines:</p>
+<div class="bdr">
+<p class="code"><span class="code">asm</span>, <span class="code">bool</span>, <span class="code">compile</span>, <span class="code">const</span>, <span class="code">decl</span>, <span class="code">do</span>, </p>
+<p class="code"><span class="code">double</span>, <span class="code">else</span>, <span class="code">extern</span>, <span class="code">false</span>, <span class="code">float</span>, <span class="code">for</span>,</p>
+<p class="code"><span class="code">half</span>, <span class="code">if</span>, <span class="code">in</span>, <span class="code">inline</span>, <span class="code">inout</span>, <span class="code">int</span>,</p>
+<p class="code"><span class="code">matrix</span>, <span class="code">out</span>, <span class="code">pass</span>, <span class="code">pixelshader</span>, <span class="code">return</span>, <span class="code">sampler</span>,</p>
+<p class="code"><span class="code">shared</span>, <span class="code">static</span>, <span class="code">string</span>, <span class="code">struct</span>, <span class="code">technique</span>, <span class="code">texture</span>,</p>
+<p class="code"><span class="code">true</span>, <span class="code">typedef</span>, <span class="code">uniform</span>, <span class="code">vector</span>, <span class="code">vertexshader</span>, <span class="code">void</span>,</p>
+<p class="code"><span class="code">volatile</span>, <span class="code">while</span></p>
+</div>
+<p class="tx">This next set of keywords displays identifiers that are reserved and unused, but may become keywords in the future:</p>
+<div class="bdr">
+<p class="code"><span class="code">auto, break, case, catch, char, class,</span></p>
+<p class="code"><span class="code">const_cast, continue, default, delete, dynamic_cast, enum,</span></p>
+<p class="code"><span class="code">explicit, friend, goto, long, mutable, namespace,</span></p>
+<p class="code"><span class="code">new, operator, private, protected, public, register,</span></p>
+<p class="code"><span class="code">reinterpret_cast, short, signed, sizeof, static_cast, switch,</span></p>
+<p class="code"><span class="code">template, this, throw, try, typename, union,&nbsp;</span></p>
+<p class="code"><span class="code">unsigned, using, virtual</span></p>
+</div>
+<p class="h2" id="B2.10"><a href="toc.html#toc-B2.10"><b>Operators</b></a></p>
+<p class="tx1">HLSL supports many familiar C++ operators. With a few exceptions noted below, they are used exactly the same way as they are in C++. The following table, lists the HLSL operators:</p>
+
+<p class="caption"><img src="images/tbl812-01.jpg" alt="image" width="95%"/></p>
+
+<p class="tx"><a id="page779"/>Although the operators&rsquo; behavior is very similar to C++, there are some differences. First of all, the modulus % operator works on both integer and floating-point types. And in order to use the modulus operator, both the left hand side value and right hand side value must have the same sign (e.g., both sides must be positive or both sides must be negative).</p>
+<p class="tx">Secondly, observe that many of the HLSL operations work on a per component basis. This is due to the fact that vectors and matrices are built into the language and these types consist of several components. By having the operations work on a component level, operations such as vector/matrix addition, vector/matrix subtraction, and vector/matrix equality tests can be done using the same operators we use for scalar types. See the following examples.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The operators behave as expected for scalars, that is, in the usual C++ way.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">float4 u = {1.0f, 0.0f, -3.0f, 1.0f};</span></p>
+<p class="code"><span class="code">float4 v = {-4.0f, 2.0f, 1.0f, 0.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// adds corresponding components</span></p>
+<p class="code"><span class="code">float4 sum = u + v; // sum = (-3.0f, 2.0f, -2.0f, 1.0f)</span></p>
+<p class="tx">Incrementing a vector increments each component:</p>
+<p class="code"><span class="code">// before increment: sum = (-3.0f, 2.0f, -2.0f, 1.0f)</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">sum++; // after increment: sum = (-2.0f, 3.0f, -1.0f, 2.0f)</span></p>
+<p class="tx1">Multiplying vectors component wise:</p>
+<p class="code"><span class="code">float4 u = {1.0f, 0.0f, -3.0f, 1.0f};</span></p>
+<p class="code"><span class="code">float4 v = {-4.0f, 2.0f, 1.0f, 0.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// multiply corresponding components</span></p>
+<p class="code"><span class="code">float4 product = u * v; // product = (-4.0f, 0.0f, -3.0f, 0.0f)</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>If you have two matrices:</i><br/><br/>
+<span class="code">float4x4 A;</span><br/>
+<span class="code">float4x4 B;</span><br/><br/>
+<i>The syntax </i><span class="code">A*B</span><i> does componentwise multiplication, not matrix multiplication. You need to use the </i><span class="code">mul</span><i> function for matrix multiplication.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1"><i>Comparison operators are also done per component and return a vector or matrix where each component is of type </i><span class="code">bool</span>. The resulting &ldquo;<span class="code">bool</span>&rdquo; vector contains the results of each compared component. For example:<a id="page780"/></p>
+<p class="code"><span class="code">float4 u = { 1.0f, 0.0f, -3.0f, 1.0f};</span></p>
+<p class="code"><span class="code">float4 v = {-4.0f, 0.0f, 1.0f, 1.0f};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 b = (u == v); // b = (false, true, false, true)</span></p>
+<p class="tx1">Finally, we conclude by discussing variable promotions with binary operations:</p>
+<ol><li>For binary operations, if the left hand side and right hand side differ in dimension, then the side with the smaller dimension is promoted (cast) to have the same dimension as the side with the larger dimension. For example, if <span class="code">x</span> is of type <span class="code">float</span> and <span class="code">y</span> is of type <span class="code">float3</span>, in the expression <span class="code">(x + y)</span>, the variable <span class="code">x</span> is promoted to <span class="code">float3</span> and the expression evaluates to a value of type <span class="code">float3</span>. The promotion is done using the defined cast, in this case we are casting Scalar-to-Vector, therefore, after <span class="code">x</span> is promoted to <span class="code">float3</span>, <span class="code">x = (x, x, x)</span> as the Scalar-to-Vector cast defines. Note that the promotion is not defined if the cast is not defined. For example, we can&rsquo;t promote <span class="code">float2</span> to <span class="code">float3</span> because there exists no such defined cast. </li>
+<li>For binary operations, if the left hand side and right hand side differ in type. Then the side with the lower type resolution is promoted (cast) to have the same type as the side with the higher type resolution. For example, if <span class="code">x</span> is of type <span class="code">int</span> and <span class="code">y</span> is of type <span class="code">half</span>, in the expression <span class="code">(x + y)</span>, the variable <span class="code">x</span> is promoted to a <span class="code">half</span> and the expression evaluates to a value of type <span class="code">half</span>.</li></ol>
+<p class="h1" id="B.3"><a href="toc.html#toc-B.3"><b>PROGRAM FLOW</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The HLSL supports many familiar C++ statements for selection, repetition, and general program flow. The syntax of these statements is exactly like C++.<a id="page781"/></p>
+<p class="tx">The <i>Return</i> Statement:</p>
+<p class="code"><span class="code">return (expression);</span></p>
+<p class="tx">The <i>If</i> and <i>If&hellip;Else</i> Statements:</p>
+<p class="code"><span class="code">if( condition )</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">if( condition )</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">else</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">The <i>for</i> statement:</p>
+<p class="code"><span class="code">for(initial; condition; increment)</span></p>
+     <p class="tx"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">The while statement:</p>
+<p class="code"><span class="code">while( condition )</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">The <i>do</i>&hellip;<i>while</i> statement:</p>
+<p class="code"><span class="code">do</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;statement(s);</span></p>
+<p class="code"><span class="code">}while( condition );</span></p>
+<p class="h1" id="B.4"><a href="toc.html#toc-B.4"><b>FUNCTIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="B2.11"><a href="toc.html#toc-B2.11"><b>User Defined Functions</b></a></p>
+<p class="tx1">Functions in the HLSL have the following properties:</p>
+<ol><li>Functions use a familiar C++ syntax.</li>
+<li>Parameters are always passed by value. </li>
+<li>Recursion is not supported.</li>
+<li>Functions are always inlined.</li></ol>
+<p class="tx1">Furthermore, the HLSL adds some extra keywords that can be used with functions. For example, consider the following function written in the HLSL:</p>
+<p class="code"><span class="code">bool foo(in const bool b, // input bool</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; out int r1,&nbsp;&nbsp; // output int</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; inout float r2) // input/output float</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( b ) // test input value</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;r1 = 5; // output a value through r1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;r1 = 1; // output a value through r1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// since r2 is inout we can use it as an input</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// value and also output a value through it</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;r2 = r2 * r2 * r2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return true;</span></p>
+<p class="code"><span class="code">}</span><a id="page782"/></p>
+<p class="tx1">The function is almost identical to a C++ function except for the <span class="code">in</span>, <span class="code">out</span>, and <span class="code">inout</span> keywords. </p>
+<ol><li><span class="code">in</span>: Specifies that the <i>argument</i> (particular variable we pass into a parameter) should be copied to the parameter before the function begins. It is not necessary to explicitly specify a parameter as <span class="code">in</span> because a parameter is <span class="code">in</span> by default. For example, the following are equivalent:
+<p class="code"><span class="code">float square(in float x)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return x * x;</span></p>
+<p class="code"><span class="code">}</span></p>
+And without explicitly specifying <span class="code">in</span>:
+<p class="code"><span class="code">float square(float x)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return x * x;</span></p>
+<p class="code"><span class="code">}</span></p></li>
+<li><span class="code">out</span>: Specifies that the parameter should be copied to the argument when the function returns. This is useful for returning values through parameters. The <span class="code">out</span> keyword is necessary because the HLSL doesn&rsquo;t allow us to pass by reference or to pass a pointer. We note that if a parameter is marked as <span class="code">out</span> the argument is not copied to the parameter before the function begins. In other words, an <span class="code">out</span> parameter can only be used to output data&mdash;it can&rsquo;t be used for input.
+<p class="code"><span class="code">void square(in float x, out float y)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;y = x * x;</span></p>
+<p class="code"><span class="code">}</span></p>
+Here we input the number to be squared through <span class="code">x</span> and return the square of <span class="code">x</span> through the parameter <span class="code">y</span>.</li>
+<li><span class="code">inout</span>: Shortcut that denotes a parameter as both <span class="code">in</span> and <span class="code">out</span>. Specify <span class="code">inout</span> if you wish to use a parameter for both input and output.
+<p class="code"><span class="code">void square(inout float x)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;x = x * x;</span></p>
+<p class="code"><span class="code">}</span></p>
+Here we input the number to be squared through <span class="code">x</span> and also return the square of <span class="code">x</span> through <span class="code">x</span>.</li></ol>
+<p class="h2" id="B2.12"><a href="toc.html#toc-B2.12"><b>Built-in Functions</b></a></p>
+<p class="tx1">The HLSL has a rich set of built in functions that are useful for 3D graphics. The following table describes an abridged list of them.<a id="page783"/> </p>
+
+<p class="caption"><img src="images/tbl817.jpg" alt="image" width="95%"/></p>
+
+<p class="caption"><img src="images/tbl818.jpg" alt="image" width="95%"/><a id="page784"/></p>
+
+<p class="caption"><img src="images/tbl819.jpg" alt="image" width="95%"/><a id="page785"/></p>
+
+
+
+
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Most of the functions are overloaded to work with all the built-in types that the function makes sense for. For instance, </i><span class="code">abs</span><i> makes sense for all scalar types and so is overloaded for all of them. As another example, the cross product </i><span class="code">cross</span><i> only makes sense for 3D vectors so it is only overloaded for 3D vectors of any type (e.g., 3D vectors of </i><span class="code">int</span><i>s, </i><span class="code">float</span><i>s, </i><span class="code">double</span><i>s etc.). On the other hand, linear interpolation, </i><span class="code">lerp</span><i>, makes sense for scalars, 2D, 3D, and 4D vectors and therefore is overloaded for all types.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>If you pass in a non-scalar type into a &ldquo;scalar&rdquo; function, that is a function that traditionally operates on scalars (e.g., </i><span class="code">cos(x)</span><i>), the function will act per component. For example, if you write:</i><br/>
+<span class="code">float3 v = float3(0.0f, 0.0f, 0.0f);</span><br/>
+<span class="code">v = cos(v);</span><br/>
+<i>Then the function will act per component: </i><b>v</b><i> = (cos(</i><i>x</i><i>), cos(</i><i>y</i><i>), cos(</i><i>z</i><i>)).</i></p>
+</td></tr>
+</tbody>
+</table>
+<p class="tx1">For further reference, the complete list of the built in HLSL functions can be found in the DirectX documentation. Search the index for &ldquo;HLSL Intrinsic Functions&rdquo;).</p>
+<p class="h2" id="B2.13"><a href="toc.html#toc-B2.13"><b>Constant Buffer Packing</b></a></p>
+<p class="tx1">In the HLSL, constant buffer padding occurs so that elements are packed into 4D vectors, with the restriction that a single element cannot be split across two 4D vectors. Consider the following example:</p>
+<p class="code"><span class="code">// HLSL</span></p>
+<p class="code"><span class="code">cbuffer cb : register(b0)</span></p>
+<p class="code"><span class="code">{&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 Dir;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">If we have to pack the data into 4D vectors, you might think it is done like this:</p>
+<p class="code"><span class="code">vector 1: (Pos.x, Pos.y, Pos.z, Dir.x)</span></p>
+<p class="code"><span class="code">vector 2: (Dir.y, Dir.z, empty, empty)</span></p>
+<p class="tx1">However, this splits<a id="page786"/> the element <span class="code">dir</span> across two 4D vectors, which is not allowed by the HLSL rules&mdash;an element is not allowed to straddle a 4D vector boundary. Therefore, it has to be packed like this in shader memory:</p>
+         <p class="tx"><span class="code">vector 1: (Pos.x, Pos.y, Pos.z, empty)</span></p>
+         <p class="tx"><span class="code">vector 2: (Dir.x, Dir.y, Dir.z, empty)</span></p>
+<p class="tx1">Now suppose our C++ structure that mirrors the constant buffer was defined like so:</p>
+<p class="code"><span class="code">// C++</span></p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Dir;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">If we did not pay attention to these packing rules, and just blindly called copied the bytes over when writing to the constant buffer with a <span class="code">memcpy</span>, then we would end up with the incorrect first situation and the constant values would be wrong:</p>
+<p class="code"><span class="code">vector 1: (Pos.x, Pos.y, Pos.z, Dir.x)</span></p>
+<p class="code"><span class="code">vector 2: (Dir.y, Dir.z, empty, empty)</span></p>
+<p class="tx1">Thus we must define our C++ structures so that the elements copy over correctly into the HLSL constants based on the HLSL packing rules; we use &ldquo;pad&rdquo; variables for this. We redefine the constant buffer to make the padding explicit:</p>
+<p class="code"><span class="code">cbuffer cb : register(b0)</span></p>
+<p class="code"><span class="code">{&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float __pad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 Dir;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float __pad1;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Now we can define a C++ structure that matches the constant buffer exactly:</p>
+<p class="code"><span class="code">// C++</span></p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float __pad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Dir;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float __pad1;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">If we do a <span class="code">memcpy</span> now, the data gets copied over correctly to the constant buffer:</p>
+<p class="code"><span class="code">vector 1: (Pos.x, Pos.y, Pos.z, __pad0)</span></p>
+<p class="code"><span class="code">vector 2: (Dir.x, Dir.y, Dir.z, __pad1)</span></p>
+<p class="tx1">We use padding variables in our constant buffers when needed in this book. In addition, when possible we order our constant buffer elements to reduce empty<a id="page787"/> space to avoid padding. For example, we define our <span class="code">Light</span> structure as follows so that we do not need to pad the <i>w</i>-coordinates&mdash;the structure elements are ordered so that the scalar data naturally occupies the <i>w-</i>coordinates:</p>
+<p class="code"><span class="code">struct Light</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 Strength;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float FalloffStart = 1.0f;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 Direction;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float FalloffEnd = 10.0f;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float SpotPower = 64.0f;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">When written to a constant buffer, these data elements will tightly pack three 3D vectors:</p>
+<p class="code"><span class="code">vector 1: (Strength.x, Strength.y, Strength.z, FalloffStart)</span></p>
+<p class="code"><span class="code">vector 2: (Direction.x, Direction.y, Direction.z, FalloffEnd)</span></p>
+<p class="code"><span class="code">vector 3: (Position.x, Position.y, Position.z, SpotPower).</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>You should define your C++ constant buffer data structures to match the memory layout of the constant buffer in shader memory so that you can do a simple memory copy. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Just to make the HLSL packing/padding clearer, let us look at a few more examples of how HLSL constants are packed. If we have a constant buffer like this:</p>
+<p class="code"><span class="code">cbuffer cb : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float s;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 p;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 q;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The structure would be padded and the data will be packed into three 4D vectors like so:</p>
+<p class="code"><span class="code">vector 1: (v.x, v.y, v.z, s)</span></p>
+<p class="code"><span class="code">vector 2: (p.x, p.y, empty, empty)</span></p>
+<p class="code"><span class="code">vector 3: (q.x, q.y, q.z, empty)</span></p>
+<p class="tx1">Here we can put the scalar <span class="code">s</span> in the fourth component of the first vector. However, are are not able to fit all of <span class="code">q</span> in the remaining slots of vector 2, so <span class="code">q</span> has to get its own vector.</p>
+<p class="tx">As another example, consider the constant buffer:<a id="page788"/></p>
+<p class="code"><span class="code">cbuffer cb : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float2 u;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float2 v;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float a0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float a1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float a2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">This would be padded and packed like so:</p>
+<p class="code"><span class="code">vector 1: (u.x, u.y, v.x, v.y)</span></p>
+<p class="code"><span class="code">vector 2: (a0, a1, a2, empty)</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Arrays are handled differently. From the SDK documentation, &ldquo;every element in an array is stored in a four-component vector.&rdquo; So for example, if you have an array of </i><span class="code">float2</span><i>:</i><br/><br/>
+<span class="code">float2 TexOffsets[8];</span><br/>
+<br/><i>you might assume that two </i><span class="code">float2</span><i> elements will be packed into one </i><span class="code">float4</span><i> slot, as the examples above suggest. However, arrays are the exception, and the above is equivalent to:</i><br/><br/>
+<span class="code">float4 TexOffsets[8];</span><br/>
+<br/><i>Therefore, from the C++ code you would need to set an array of 8 </i><span class="code">XMFLOAT4</span><i>s, not an array of 8 </i><span class="code">XMFLOAT2</span><i>s for things to work properly. Each element wastes two floats of storage since we really just wanted a </i><span class="code">float2</span><i> array. The SDK documentation points out that you can use casting and additional address computation instructions to make it more memory efficient:</i><br/><br/>
+<span class="code">float4 array[4];</span><br/>
+<span class="code">static float2 aggressivePackArray[8] = (float2[8])array;</span></p>
+</td></tr>
+</tbody>
+</table>
+</body>
+</html>

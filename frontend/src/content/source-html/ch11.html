@@ -1,0 +1,603 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page419"/><a href="toc.html#toc-11" id="chap11">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">11</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-11"><b>S</b><span class="sc">TENCILING</span><br/><br/></a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+
+
+<p class="tx1">The stencil buffer is an off-screen buffer we can use to achieve some special effects. The stencil buffer has the same resolution as the back buffer and depth buffer, such that the <i>ij</i>th pixel in the stencil buffer corresponds with the <i>ij</i>th pixel in the back buffer and depth buffer. Recall from &#x00A7;4.1.5 that when a stencil buffer is specified, it comes attached to the depth buffer. As the name suggests, the stencil buffer works as a stencil and allows us to block the rendering of certain pixel fragments to the back buffer.</p>
+<p class="tx">For instance, when implementing a mirror, we need to reflect an object across the plane of the mirror; however, we only want to draw the reflection into the mirror. We can use the stencil buffer to block the rendering of the reflection unless it is being drawn into the mirror (see Figure <a href="ch11.html#fig11.1">11.1</a>). </p>
+
+<p class="caption"><img src="images/Fig11-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.1"><b><i>Figure 11.1.</i></b>&nbsp;&nbsp;(Left) The reflected skull shows properly in the mirror. The reflection does not show through the wall bricks because it fails the depth test in this area. However, looking behind the wall we are able to see the reflection, thus breaking the illusion (the reflection should only show up through the mirror). (Right) By using the stencil buffer, we can block the reflected skull from being rendered unless it is being drawn in the mirror.</p>
+
+<p class="tx">The stencil buffer (and also the depth buffer) state is configured by filling out a <span class="code">D3D12_DEPTH_STENCIL_DESC</span> instance and assigning it to the <span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState</span> field of a pipeline state object (PSO). Learning to use the stencil buffer effectively comes best by studying existing example application. Once you understand a few applications of the stencil buffer, you will have a better idea of how it can be used for your own specific needs. </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To find out how to control the depth and stencil buffer state by filling out the <span class="code">D3D12_DEPTH_STENCIL_DESC</span> field in a pipeline state object.</li>
+<li><a id="page420"/>To learn how to implement mirrors by using the stencil buffer to prevent reflections from being drawn to non-mirror surfaces.</li>
+<li>To be able to identify double blending and understand how the stencil buffer can prevent it.</li>
+<li>To explain depth complexity and describe two ways the depth complexity of a scene can to measured.</li></ol>
+<p class="h1" id="c11.1"><a href="toc.html#toc-11.1"><b>11.1 DEPTH/STENCIL FORMATS AND CLEARING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Recalling that the depth/stencil buffer is a texture, it must be created with certain data formats. The formats used for depth/stencil buffering are as follows:</p>
+<ol><li><span class="code">DXGI_FORMAT_D32_FLOAT_S8X24_UINT:</span> Specifies a 32-bit floating-point depth buffer, with 8-bits (unsigned integer) reserved for the stencil buffer mapped to the [0, 255] range and 24-bits not used for padding.</li>
+<li><span class="code">DXGI_FORMAT_D24_UNORM_S8_UINT:</span> Specifies an unsigned 24-bit depth buffer mapped to the [0, 1] range with 8-bits (unsigned integer) reserved for the stencil buffer mapped to the [0, 255] range. </li></ol>
+<p class="tx1">In our <span class="code">D3DApp</span> framework, when we create the depth buffer, we specify:</p>
+<p class="code"><span class="code">DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;</span></p>
+<p class="code"><span class="code">depthStencilDesc.Format = mDepthStencilFormat;</span></p>
+<p class="tx1">Also, the stencil buffer should be reset to some value at the beginning of each frame. This is done with the following method (which also clears the depth buffer):</p>
+<p class="code"><span class="code">void ID3D12GraphicsCommandList::ClearDepthStencilView(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CLEAR_FLAGS ClearFlags,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT Depth,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT8 Stencil,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT NumRects,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const D3D12_RECT *pRects);</span></p>
+<ol><li><a id="page421"/><span class="code">DepthStencilView</span>: Descriptor to the view of the depth/stencil buffer we want to clear.</li>
+<li><span class="code">ClearFlags</span>: Specify <span class="code">D3D12_CLEAR_FLAG_DEPTH</span> to clear the depth buffer only; specify <span class="code">D3D12_CLEAR_FLAG_STENCIL</span> to clear the stencil buffer only; specify <span class="code">D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL</span> to clear both.</li>
+<li><span class="code">Depth</span>: The float-value to set each pixel in the depth buffer to; it must be a floating point number <i>x</i> such that 0 &#x2264; <i>x</i> &#x2264; 1.</li>
+<li><span class="code">Stencil</span>: The integer-value to set each pixel of the stencil buffer to; it must be an integer <i>n</i> such that 0 &#x2264; <i>n</i> &#x2264; 255.</li>
+<li><span class="code">NumRects</span>: The number of rectangles in the array <span class="code">pRects</span> points to.</li>
+<li><span class="code">pRects</span>: An array of <span class="code">D3D12_RECT</span>s marking rectangular regions on the depth/stencil buffer to clear; specify <span class="code">nullptr</span> to clear the entire depth/stencil buffer.</li></ol>
+<p class="tx1">We have already been calling this method every frame in our demos. For example:</p>
+<p class="code"><span class="code">mCommandList-&gt;ClearDepthStencilView(DepthStencilView(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;1.0f, 0, 0, nullptr);</span></p>
+<p class="h1" id="c11.2"><a href="toc.html#toc-11.2"><b>11.2 THE STENCIL TEST</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">As previously stated, we can use the stencil buffer to block rendering to certain areas of the back buffer. The decision to block a particular pixel from being written is decided by the <i>stencil test</i>, which is given by the following:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( StencilRef &amp; StencilReadMask&nbsp;&nbsp;Value &amp; StencilReadMask )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;accept pixel</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;reject pixel</span></p>
+<p class="tx1">The stencil test is performed as pixels get rasterized (i.e., during the output-merger stage), assuming stenciling is enabled, and takes two operands:</p>
+<ol><li>A left-hand-side (LHS) operand that is determined by <span class="code">AND</span>ing an application-defined <i>stencil reference value</i> (<span class="code">StencilRef</span>) with an application-defined <i>masking value</i> (<span class="code">StencilReadMask</span>).</li>
+<li>A right-hand-side (RHS) operand that is determined by <span class="code">AND</span>ing the entry already in the stencil buffer of the particular pixel we are testing (<span class="code">Value</span>) with an application-defined masking value (<span class="code">StencilReadMask</span>).</li></ol>
+<p class="tx"><a id="page422"/>Note that the <span class="code">StencilReadMask</span> is the same for the LHS and the RHS. The stencil test then compares the LHS with the RHS as specified an application-chosen <i>comparison function</i> , which returns a true or false value. We write the pixel to the back buffer if the test evaluates to true (assuming the depth test also passes). If the test evaluates to false, then we block the pixel from being written to the back buffer. And of course, if a pixel is rejected due to failing the stencil test, it is not written to the depth buffer either.</p>
+<p class="tx">The <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> operator is any one of the functions defined in the <span class="code">D3D12_COMPARISON_FUNC enumerated type:</span></p>
+<p class="code"><span class="code">typedef enum D3D12_COMPARISON_FUNC</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_NEVER = 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_LESS = 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_EQUAL = 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_LESS_EQUAL = 4,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_GREATER = 5,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_NOT_EQUAL = 6,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_GREATER_EQUAL = 7,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_ALWAYS = 8,</span></p>
+     <p class="tx"><span class="code">} D3D12_COMPARISON_FUNC;</span></p>
+<ol><li><span class="code">D3D12_COMPARISON_NEVER:</span> The function always returns false.</li>
+<li><span class="code">D3D12_COMPARISON_LESS:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the &lt; operator.</li>
+<li><span class="code">D3D12_COMPARISON_EQUAL:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the == operator.</li>
+<li><span class="code">D3D12_COMPARISON_LESS_EQUAL:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the &#x2264; operator.</li>
+<li><span class="code">D3D12_COMPARISON_GREATER:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the &gt; operator.</li>
+<li><span class="code">D3D12_COMPARISON_NOT_EQUAL:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the ! = operator.</li>
+<li><span class="code">D3D12_COMPARISON_GREATER_EQUAL:</span> Replace <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> with the &#x2265; operator.</li>
+<li><span class="code">D3D12_COMPARISON_ALWAYS:</span> The function always returns true.</li></ol>
+<p class="h1" id="c11.3"><a href="toc.html#toc-11.3"><b>11.3 DESCRIBING THE DEPTH/STENCIL STATE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The depth/stencil state is described by filling out a <span class="code">D3D12_DEPTH_STENCIL_DESC instance:</span></p>
+<p class="code"><span class="code">typedef struct D3D12_DEPTH_STENCIL_DESC {</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;BOOL DepthEnable; // Default True</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Default: D3D11_DEPTH_WRITE_MASK_ALL</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DEPTH_WRITE_MASK DepthWriteMask;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Default: D3D11_COMPARISON_LESS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_COMPARISON_FUNC DepthFunc;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;BOOL StencilEnable;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Default: False</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT8 StencilReadMask;&nbsp;&nbsp;&nbsp;&nbsp; // Default: 0xff</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT8 StencilWriteMask;&nbsp;&nbsp;&nbsp;&nbsp;// Default: 0xff</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DEPTH_STENCILOP_DESC FrontFace;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DEPTH_STENCILOP_DESC BackFace;&nbsp;</span></p>
+     <p class="tx"><span class="code">} D3D12_DEPTH_STENCIL_DESC;</span></p>
+<p class="h2" id="c11.3.1"><a href="toc.html#toc-11.3.1"><b>11.3.1 Depth Settings</b></a></p>
+<ol><li><a id="page423"/><span class="code">DepthEnable</span>: Specify true to enable the depth buffering; specify false to disable it. When depth testing is disabled, the draw order matters, and a pixel fragment will be drawn even if it is behind an occluding object (review &#x00A7;4.1.5). If depth buffering is disabled, elements in the depth buffer are <i>not</i> updated either, regardless of the <span class="code">DepthWriteMask</span> setting.</li>
+<li><span class="code">DepthWriteMask</span>: This can be either <span class="code">D3D12_DEPTH_WRITE_MASK_ZERO or D3D12_DEPTH_WRITE_MASK_ALL</span>, but not both. Assuming DepthEnable is set to true, <span class="code">D3D12_DEPTH_WRITE_MASK_ZERO</span> disables writes to the depth buffer, but depth testing will still occur. <span class="code">D3D12_DEPTH_WRITE_MASK_ALL</span> enables writes to the depth buffer; new depths will be written provided the depth and stencil test both pass. The ability to control depth reads and writes becomes necessary for implementing certain special effects.</li>
+<li><span class="code">DepthFunc</span>: Specify one of the members of the <span class="code">D3D12_COMPARISON_FUNC</span> enumerated type to define the depth test comparison function. Usually this is always <span class="code">D3D12_COMPARISON_LESS</span> so that the usual depth test is performed, as described in &#x00A7;4.1.5. That is, a pixel fragment is accepted provided its depth value is less than the depth of the previous pixel written to the back buffer. But as you can see, Direct3D allows you to customize the depth test if necessary. </li></ol>
+<p class="h2" id="c11.3.2"><a href="toc.html#toc-11.3.2"><b>11.3.2 Stencil Settings</b></a></p>
+<ol><li><span class="code">StencilEnable</span>: Specify true to enable the stencil test; specify false to disable it. </li>
+<li><span class="code">StencilReadMask</span>: The <span class="code">StencilReadMask</span> used in the stencil test:
+<p class="code"><span class="code">&nbsp;&nbsp;if( StencilRef &amp; StencilReadMask&nbsp;<img src="images/uleftarw.jpg" alt="image" width="12" height="12"/>&nbsp;Value &amp; StencilReadMask )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;accept pixel</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;reject pixel</span></p>
+<p class="tx1">The default does not mask any bits:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define&nbsp;&nbsp;&nbsp;D3D12_DEFAULT_STENCIL_READ_MASK&nbsp;&nbsp;&nbsp;( 0xff )</span></p></li>
+<li><span class="code"><a id="page424"/>StencilWriteMask</span>: When the stencil buffer is being updated, we can mask off certain bits from being written to with the write mask. For example, if you wanted to prevent the top 4 bits from being written to, you could use the write mask of 0x0f. The default value does not mask any bits:
+<p class="code"><span class="code">&nbsp;&nbsp;#define&nbsp;&nbsp;&nbsp;D3D12_DEFAULT_STENCIL_WRITE_MASK&nbsp;&nbsp;&nbsp;( 0xff )</span></p></li>
+<li><span class="code">FrontFace</span>: A filled out <span class="code">D3D12_DEPTH_STENCILOP_DESC</span> structure indicating how the stencil buffer works for front facing triangles.</li>
+<li><span class="code">BackFace</span>: A filled out <span class="code">D3D12_DEPTH_STENCILOP_DESC</span> structure indicating how the stencil buffer works for back facing triangles.</li></ol>
+<p class="code"><span class="code">typedef struct D3D12_DEPTH_STENCILOP_DESC {</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;D3D12_STENCIL_OP StencilFailOp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Default: D3D12_STENCIL_OP_KEEP</span></p>
+<p class="code"><span class="code">&nbsp;D3D12_STENCIL_OP StencilDepthFailOp; // Default: D3D12_STENCIL_OP_KEEP</span></p>
+<p class="code"><span class="code">&nbsp;D3D12_STENCIL_OP StencilPassOp;&nbsp;&nbsp;&nbsp;&nbsp;// Default: D3D12_STENCIL_OP_KEEP</span></p>
+<p class="code"><span class="code">&nbsp;D3D12_COMPARISON_FUNC StencilFunc; // Default: D3D12_COMPARISON_ALWAYS</span></p>
+<p class="code"><span class="code">} D3D12_DEPTH_STENCILOP_DESC;</span></p>
+<ol><li><span class="code">StencilFailOp</span>: A member of the <span class="code">D3D12_STENCIL_OP</span> enumerated type describing how the stencil buffer should be updated when the stencil test fails for a pixel fragment. </li>
+<li><span class="code">StencilDepthFailOp</span>: A member of the <span class="code">D3D12_STENCIL_OP</span> enumerated type describing how the stencil buffer should be updated when the stencil test passes but the depth test fails for a pixel fragment. </li>
+<li><span class="code">StencilPassOp</span>: A member of the <span class="code">D3D12_STENCIL_OP</span> enumerated type describing how the stencil buffer should be updated when the stencil test and depth test both pass for a pixel fragment. </li>
+<li><span class="code">StencilFunc</span>: A member of the <span class="code">D3D12_COMPARISON_FUNC</span> enumerated type to define the stencil test comparison function. 
+<p class="code"><span class="code">typedef&nbsp;</span></p>
+<p class="code"><span class="code">enum D3D12_STENCIL_OP</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_KEEP&nbsp;&nbsp;&nbsp;= 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_ZERO&nbsp;&nbsp;&nbsp;= 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_REPLACE&nbsp;&nbsp;&nbsp;= 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_INCR_SAT&nbsp;&nbsp;&nbsp;= 4,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_DECR_SAT&nbsp;&nbsp;&nbsp;= 5,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_INVERT&nbsp;&nbsp;&nbsp;= 6,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_INCR&nbsp;&nbsp;&nbsp;= 7,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_STENCIL_OP_DECR&nbsp;&nbsp;&nbsp;= 8</span></p>
+<p class="code"><span class="code">} D3D12_STENCIL_OP;</span></p></li></ol>
+<ol><li><span class="code">D3D12_STENCIL_OP_KEEP</span>: Specifies to not change the stencil buffer; that is, keep the value currently there.</li>
+<li><span class="code">D3D12_STENCIL_OP_ZERO</span>: Specifies to set the stencil buffer<a id="page425"/> entry to zero.</li>
+<li><span class="code">D3D12_STENCIL_OP_REPLACE</span>: Specifies to replaces the stencil buffer entry with the stencil-reference value (<span class="code">StencilRef</span>) used in the stencil test. Note that the <span class="code">StencilRef</span> value is set when we bind the depth/stencil state block to the rendering pipeline (&#x00A7;11.3.3).</li>
+<li><span class="code">D3D12_STENCIL_OP_INCR_SAT</span>: Specifies to increment the stencil buffer entry. If the incremented value exceeds the maximum value (e.g., 255 for an 8-bit stencil buffer), then we clamp the entry to that maximum. </li>
+<li><span class="code">D3D12_STENCIL_OP_DECR_SAT</span>: Specifies to decrement the stencil buffer entry. If the decremented value is less than zero, then we clamp the entry to zero.</li>
+<li><span class="code">D3D12_STENCIL_OP_INVERT</span>: Specifies to invert the bits of the stencil buffer entry.</li>
+<li><span class="code">D3D12_STENCIL_OP_INCR</span>: Specifies to increment the stencil buffer entry. If the incremented value exceeds the maximum value (e.g., 255 for an 8-bit stencil buffer), then we wrap to 0.</li>
+<li><span class="code">D3D12_STENCIL_OP_DECR</span>: Specifies to decrement the stencil buffer entry. If the decremented values is less than zero, then we wrap to the maximum allowed value.</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Observe that the stenciling behavior for front facing and back facing triangles can be different. The </i><span class="code">BackFace</span><i> settings are irrelevant in the case that we do not render back facing polygons due to back face culling. However, sometimes we do need to render back facing polygons for certain graphics algorithms, or for transparent geometry (like the wire fence box, where we could see through the box to see the back sides). In these cases, the </i><span class="code">BackFace</span><i> settings are relevant.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c11.3.3"><a href="toc.html#toc-11.3.3"><b>11.3.3 Creating and Binding a Depth/Stencil State</b></a></p>
+<p class="tx1">Once we have fully filled out a <span class="code">D3D12_DEPTH_STENCIL_DESC</span> instance describing our depth/stencil state, we can assign it to the <span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState</span> field of a PSO. Any geometry drawn with this PSO will be rendered with the depth/stencil settings of the PSO.</p>
+<p class="tx">One detail we have not mentioned yet is how to set the stencil reference value. The stencil reference value is set with the <span class="code">ID3D12GraphicsCommandList</span>::<span class="code">OMSetStencilRef</span> method, which takes a single unsigned integer parameter; for example, the following sets the stencil reference value to 1:</p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetStencilRef(1);</span><a id="page426"/></p>
+<p class="h1" id="c11.4"><a href="toc.html#toc-11.4"><b>11.4 IMPLEMENTING PLANAR MIRRORS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Many surfaces in nature serve as mirrors and allow us to see the reflections of objects. This section describes how we can simulate mirrors for our 3D applications. Note that for simplicity, we reduce the task of implementing mirrors to planar surfaces only. For instance, a shiny car can display a reflection; however, a car&rsquo;s body is smooth, round, and not planar. Instead, we render reflections such as those that are displayed in a shiny marble floor or those that are displayed in a mirror hanging on a wall&mdash;in other words, mirrors that lie on a plane.</p>
+<p class="tx">Implementing mirrors programmatically requires us to solve two problems. First, we must learn how to reflect an object about an arbitrary plane so that we can draw the reflection correctly. Second, we must only display the reflection in a mirror, that is, we must somehow &ldquo;mark&rdquo; a surface as a mirror and then, as we are rendering, only draw the reflected object if it is in a mirror. Refer back to Figure <a href="ch11.html#fig11.1">11.1</a>,  which first introduced this concept. </p>
+  <p class="tx">The first problem is easily solved with some analytical geometry, and is discussed in Appendix C. The second problem can be solved using the stencil buffer.</p>
+<p class="h2" id="c11.4.1"><a href="toc.html#toc-11.4.1"><b>11.4.1 Mirror Overview</b></a></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>When we draw the reflection, we also need to reflect the light source across the mirror plane. Otherwise, the lighting in the reflection would not be accurate.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Figure <a href="ch11.html#fig11.2">11.2</a> shows that to draw a reflection of an object, we just need to reflect it over the mirror plane. However, this introduces the problem shown in Figure <a href="ch11.html#fig11.1">11.1</a>.  Namely, the reflection of the object (the skull in this case) is just another object in our scene, and if nothing is occluding it, then the eye will see it. However, the reflection should only be seen through the mirror. We can solve this problem using the stencil buffer because the stencil buffer allows us to<a id="page427"/> block rendering to certain areas on the back buffer. Thus we can use the stencil buffer to block the rendering of the reflected skull if it is not being rendered into the mirror. The following outlines the step of how this can be accomplished:</p>
+<p class="caption"><img src="images/Fig11-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.2"><b><i>Figure 11.2.</i></b>&nbsp;&nbsp;The eye sees the box reflection through the mirror. To simulate this, we reflect the box across the mirror plane and render the reflected box as usual.</p>
+<p class="caption"><img src="images/Fig11-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.3"><b><i>Figure 11.3.</i></b>&nbsp;&nbsp;The floor, walls, and skull to the back buffer and the stencil buffer cleared to 0 (denoted by light gray color). The black outlines drawn on the stencil buffer illustrate the relationship between the back buffer pixels and the stencil buffer pixels&mdash;they do not indicate any data drawn on the stencil buffer.</p>
+
+<ol><li>Render the floor, walls, and skull to the back buffer as normal (but not the mirror). Note that this step does not modify the stencil buffer.</li>
+<li>Clear the stencil buffer to 0. Figure <a href="ch11.html#fig11.3">11.3</a> shows the back buffer and stencil buffer at this point (where we substitute a box for the skull to make the drawing simpler).</li>
+<li>Render the mirror only to the stencil buffer. We can disable color writes to the back buffer by creating a blend state that sets 
+<p class="code"><span class="code">D3D12_RENDER_TARGET_BLEND_DESC::RenderTargetWriteMask = 0;</span></p>
+<p class="tx1">and we can disable writes to the depth buffer by setting</p>
+<p class="code"><span class="code">D3D12_DEPTH_STENCIL_DESC::DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;</span></p>
+<p class="tx">When rendering the mirror to the stencil buffer, we set the stencil test to always succeed (<span class="code">D3D12_COMPARISON_ALWAYS</span>) and specify that the stencil buffer entry should be replaced (<span class="code">D3D12_STENCIL_OP_REPLACE</span>) with 1 (<span class="code">StencilRef</span>) if the test passes. If the depth test fails, we specify <span class="code">D3D12_STENCIL_OP_KEEP</span> so that the stencil buffer is not changed if the depth test fails (this can happen, for example, if the skull obscures part of the mirror). Since we are only rendering the mirror to the stencil buffer, it follows that all the pixels in the stencil buffer will be 0 except for the pixels that correspond to the visible part of the mirror&mdash;they will have a 1. Figure <a href="ch11.html#fig11.4">11.4</a> shows the updated stencil buffer. Essentially, we are marking the visible pixels of the mirror in the stencil buffer.</p>
+
+<p class="caption"><img src="images/Fig11-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.4"><b><i>Figure 11.4.</i></b>&nbsp;&nbsp;Rendering the mirror to the stencil buffer, essentially marking the pixels in the stencil buffer that correspond to the visible parts of the mirror. The solid black area on the stencil buffer denotes stencil entries set to 1. Note that the area on the stencil buffer occluded by the box does not get set to 1 since it fails the depth test (the box is in front of that part of the mirror).</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>It is important to draw the mirror to the stencil buffer after we have drawn the skull so that pixels of the mirror occluded by the skull fail the depth test, and thus do not modify the stencil buffer. We do not want to turn on parts of the stencil buffer that are occluded; otherwise the reflection will show through the skull.</i></p>
+</td></tr>
+</tbody>
+</table>
+</li>
+<li>Now we render the reflected skull to the back<a id="page428"/> buffer and stencil buffer. But recall that we only will render to the back buffer if the stencil test passes. This time, we set the stencil test to only succeed if the value in the stencil buffer equals 1; this is done using a <span class="code">StencilRef</span> of 1, and the stencil operator <span class="code">D3D12_COMPARISON_EQUAL</span>. In this way, the reflected skull will only be rendered to areas that have a 1 in their corresponding stencil buffer entry. Since the areas in the stencil buffer that correspond to the visible parts of the mirror are the only entries that have a 1, it follows that the reflected skull will only be rendered into the visible parts of the mirror. </li>
+<li>Finally, we render the mirror to the back buffer as normal. However, in order for the skull reflection to show through (which lies behind the mirror), we need to render the mirror with transparency blending. If we did not render the mirror with transparency, the mirror would simply occlude the reflection since its depth is less than that of the reflection. To implement this, we simply need to define a new material instance for the mirror; we set the alpha channel of the diffuse component to 0.3 to make the mirror 30% opaque, and we render the mirror with the transparency blend state as described in the last chapter (&#x00A7;10.5.4).
+<p class="code"><span class="code">auto icemirror = std::make_unique&lt;Material&gt;();</span></p>
+<p class="code"><span class="code">icemirror-&gt;Name = "icemirror";</span></p>
+<p class="code"><span class="code">icemirror-&gt;MatCBIndex = 2;</span></p>
+<p class="code"><span class="code">icemirror-&gt;DiffuseSrvHeapIndex = 2;</span></p>
+<p class="code"><b>icemirror-&gt;DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);</b></p>
+<p class="code"><span class="code">icemirror-&gt;FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);</span></p>
+<p class="code"><span class="code">icemirror-&gt;Roughness = 0.5f;</span></p>
+<p class="tx">These settings give the following blending equation:</p>
+
+<p class="eq"><img src="images/eq462-01.jpg" alt="image" width="100%"/></p>
+</li></ol>
+
+<p class="tx1">Assuming we have laid down the reflected skull pixels to the back buffer, we see 30% of the color comes from the mirror (source) and 70% of the color comes from the skull (destination). </p>
+<p class="h2" id="c11.4.2"><a href="toc.html#toc-11.4.2"><b>11.4.2 Defining the Mirror Depth/Stencil States</b></a></p>
+<p class="tx1">To implement the previously described algorithm<a id="page429"/>, we need two PSOs. The first is used when drawing the mirror to mark the mirror pixels on the stencil buffer. The second is used to draw the reflected skull so that it is only drawn into the visible parts of the mirror. </p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// PSO for marking stencil mirrors.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Turn off render target writes.&nbsp;</span></p>
+<p class="code"><span class="code">CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);</span></p>
+<p class="code"><b>mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0;</b></p>
+
+<p class="code"><span class="code">D3D12_DEPTH_STENCIL_DESC mirrorDSS;</span></p>
+<p class="code"><span class="code">mirrorDSS.DepthEnable = true;</span></p>
+<p class="code"><b>mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;</b></p>
+<p class="code"><span class="code">mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;</span></p>
+<p class="code"><span class="code">mirrorDSS.StencilEnable = true;</span></p>
+<p class="code"><span class="code">mirrorDSS.StencilReadMask = 0xff;</span></p>
+<p class="code"><span class="code">mirrorDSS.StencilWriteMask = 0xff;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><b>mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</b></p>
+<p class="code"><b>mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;</b></p>
+<p class="code"><b>mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;</b></p>
+
+<p class="code"><span class="code">// We are not rendering backfacing polygons, so these settings do not</span></p>
+<p class="code"><span class="code">// matter.</span></p>
+<p class="code"><span class="code">mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;</span></p>
+<p class="code"><span class="code">mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPsoDesc = opaquePsoDesc;</span></p>
+<p class="code"><span class="code">markMirrorsPsoDesc.BlendState = mirrorBlendState;</span></p>
+<p class="code"><span class="code">markMirrorsPsoDesc.DepthStencilState = mirrorDSS;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;markMirrorsPsoDesc,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mPSOs["markStencilMirrors"])));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// PSO for stencil reflections.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_DEPTH_STENCIL_DESC reflectionsDSS;</span></p>
+<p class="code"><span class="code">reflectionsDSS.DepthEnable = true;</span></p>
+<p class="code"><span class="code">reflectionsDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;</span></p>
+<p class="code"><span class="code">reflectionsDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;</span></p>
+<p class="code"><span class="code">reflectionsDSS.StencilEnable = true;</span></p>
+<p class="code"><span class="code">reflectionsDSS.StencilReadMask = 0xff;</span></p>
+<p class="code"><span class="code">reflectionsDSS.StencilWriteMask = 0xff;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">reflectionsDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">reflectionsDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">reflectionsDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><b>reflectionsDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;</b></p>
+
+<p class="code"><span class="code">// We are not rendering backfacing polygons, so these settings do not&nbsp;</span></p>
+<p class="code"><span class="code">// matter.</span></p>
+<p class="code"><span class="code">reflectionsDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">reflectionsDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">reflectionsDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">reflectionsDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionsPsoDesc = opaquePsoDesc;</span></p>
+<p class="code"><span class="code">drawReflectionsPsoDesc.DepthStencilState = reflectionsDSS;</span></p>
+<p class="code"><span class="code">drawReflectionsPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;</span></p>
+<p class="code"><b>drawReflectionsPsoDesc.RasterizerState.FrontCounterClockwise = true;</b></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;drawReflectionsPsoDesc,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mPSOs["drawStencilReflections"])));</span></p>
+<p class="h2" id="c11.4.3"><a href="toc.html#toc-11.4.3"><b>11.4.3 Drawing the Scene</b></a></p>
+<p class="tx1">The following code outlines our draw method<a id="page430"/>. We have omitted irrelevant details, such as setting constant buffer values, for brevity and clarity (see the example code for the full details). </p>
+<p class="code"><span class="code">// Draw opaque items--floors, walls, skull.</span></p>
+<p class="code"><span class="code">auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootConstantBufferView(2,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;passCB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">// Mark the visible mirror pixels in the stencil buffer with the value 1</span></p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetStencilRef(1);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["markStencilMirrors"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Draw the reflection into the mirror only (only for pixels where the&nbsp;</span></p>
+<p class="code"><span class="code">// stencil buffer is 1).</span></p>
+<p class="code"><span class="code">// Note that we must supply a different per-pass constant buffer--one</span></p>
+<p class="code"><span class="code">// with the lights reflected.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootConstantBufferView(2,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;passCB-&gt;GetGPUVirtualAddress() + 1 * passCBByteSize);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["drawStencilReflections"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Restore main pass constants and stencil ref.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetGraphicsRootConstantBufferView(2,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;passCB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetStencilRef(0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Draw mirror with transparency so reflection blends through.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["transparent"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);</span></p>
+<p class="tx1">One point to note in the above code is how we change<a id="page431"/> the per-pass constant buffer when drawing the <span class="code">RenderLayer::Reflected</span> layer. This is because the scene lighting also needs to get reflected when drawing the reflection. The lights are stored in a per-pass constant buffer, so we create an additional per-pass constant buffer that stores the reflected scene lighting. The per-pass constant buffer used for drawing reflections is set in the following method:</p>
+<p class="code"><span class="code">PassConstants StencilApp::mMainPassCB;</span></p>
+<p class="code"><span class="code">PassConstants StencilApp::mReflectedPassCB;</span></p>
+<p class="code"><span class="code">void StencilApp::UpdateReflectedPassCB(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mReflectedPassCB = mMainPassCB;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR mirrorPlane = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f); // xy plane</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX R = XMMatrixReflect(mirrorPlane);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reflect the lighting.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 3; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR lightDir = XMLoadFloat3(&amp;mMainPassCB.Lights[i].Direction);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR reflectedLightDir = XMVector3TransformNormal(lightDir, R);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;mReflectedPassCB.Lights[i].Direction, reflectedLightDir);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reflected pass stored in index 1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto currPassCB = mCurrFrameResource-&gt;PassCB.get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;currPassCB-&gt;CopyData(1, mReflectedPassCB);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c11.4.4"><a href="toc.html#toc-11.4.4"><b>11.4.4 Winding Order and Reflections</b></a></p>
+<p class="tx1">When a triangle is reflected across a plane, its winding order does not reverse, and thus, its face normal does not reverse. Hence, outward facing normals become inward facing normals (see Figure <a href="ch11.html#fig11.5">11.5</a>), after reflection. To correct this, we tell Direct3D to interpret triangles with a counterclockwise winding order as front-facing and triangles with a clockwise winding order as back-facing (this is the opposite of our usual convention&mdash;&#x00A7;5.10.2). This effectively reflects the normal directions so that they are outward facing after reflection. We reverse the winding order convention by setting the following rasterizer properties in the PSO:</p>
+
+<p class="code"><span class="code">drawReflectionsPsoDesc.RasterizerState.FrontCounterClockwise = true;</span></p>
+
+<p class="caption"><img src="images/Fig11-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.5"><b><i>Figure 11.5.</i></b>&nbsp;&nbsp;The polygon normals do not get reversed with reflection, which makes them inward facing after reflection.</p>
+
+<p class="h1" id="c11.5"><a href="toc.html#toc-11.5"><b>11.5 IMPLEMENTING PLANAR SHADOWS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Portions of this section appeared in the book by Frank D. Luna, </i>Introduction to 3D Game Programming with DirectX 9.0c: A Shader Approach<i>,</i> 2006: <i>Jones and Bartlett Learning, Burlington, MA. <a href="http://www.jblearning.com">www.jblearning.com</a>. Reprinted with permission.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Shadows aid in our perception of where light<a id="page432"/> is being emitted in a scene and ultimately makes the scene more realistic. In this section, we will show how to implement planar shadows; that is, shadows that lie on a plane (see Figure <a href="ch11.html#fig11.6">11.6</a>). </p>
+<p class="caption"><img src="images/Fig11-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.6"><b><i>Figure 11.6.</i></b>&nbsp;&nbsp;The main light source casts a planar shadow in the &ldquo;Mirror&rdquo; demo.</p>
+
+<p class="tx">To implement planar shadows, we must first find the shadow an object casts to a plane and model it geometrically so that we can render it. This can easily be done with some 3D math. We then render the triangles that describe the shadow with a black material at 50% transparency. Rendering the shadow like this can introduce some rendering artifacts called &ldquo;double blending,&rdquo; which we explain in a few sections; we utilize the stencil buffer to prevent double blending from occurring.</p>
+<p class="caption"><img src="images/Fig11-7.jpg" alt="image" width="20%"/></p>
+<p class="caption" id="fig11.7"><b><i>Figure 11.7.</i></b>&nbsp;&nbsp;The shadow cast with respect to a parallel light source.</p>
+<p class="h2" id="c11.5.1"><a href="toc.html#toc-11.5.1"><b>11.5.1 Parallel Light Shadows</b></a></p>
+<p class="tx1">Figure <a href="ch11.html#fig11.7">11.7</a> shows the shadow an object casts with respect to a parallel light source<a id="page433"/>. Given a parallel light source with direction <b>L</b>, the light ray that passes through a vertex <b>p</b> is given by <b>r</b>(<i>t</i>) = <b>p</b> + <i>t</i><b>L</b>. The intersection of the ray <i>r</i>(<i>t</i>) with the shadow plane (<b>n</b>, <i>d</i>) gives <b>s</b>. (The reader can read more about rays and planes in Appendix C.)  The set of intersection points found by shooting a ray through each of the object&rsquo;s vertices with the plane defines the projected geometry of the shadow. For a vertex <b>p</b>, its shadow projection is given by</p>
+
+
+
+<p class="eq" id="eq11.1"><img src="images/eq467-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The details of the ray/plane intersection test are given in Appendix C.</p>
+<p class="tx">Equation <a href="ch11.html#eq11.1">11.1</a> can be written in terms of matrices. </p>
+
+<p class="eq"><img src="images/eq467-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We call the preceding 4 &times; 4 matrix the directional shadow matrix and denote it by <b>S</b><sub>dir</sub><i>. </i>To see how this matrix is equivalent to Equation <a href="ch11.html#eq11.1">11.1</a>, we just need to perform the multiplication. First, however, observe that this equation modifies the w-component so that <i>s</i><sub>w</sub><i> = </i><b>n</b>&#x00B7;<b>L</b>. Thus, when the perspective divide (&#x00A7;5.6.3.4) takes place, each coordinate of <b>s</b> will be divided by <b>n</b>&#x00B7;<b>L</b>; this is how we get the division by <b>n</b>&#x00B7;<b>L</b> in Equation <a href="ch11.html#eq11.1">11.1</a> using matrices. Now doing the matrix multiplication to obtain the <i>i</i>th coordinate <i>s&prime;<sub>i</sub></i> for <i>i </i>&#x2208; {1, 2, 3}, followed by the perspective divide we obtain:</p>
+
+<p class="eq"><img src="images/eq468-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This is exactly the <i>i</i>th coordinate of <b>s</b> in Equation <a href="ch11.html#eq11.1">11.1</a>, so <b>s</b> = <b>s</b>&prime;.</p>
+<p class="tx">To use the shadow matrix, we combine it with our world matrix<a id="page434"/>. However, after the world transform, the geometry has not really been projected on to the shadow plane yet because the perspective divide has not occurred yet. A problem arises if <i>s</i><sub>w</sub><i> = </i><b>n</b>&#x00B7;<b>L</b> &lt; 0. because this makes the <i>w</i>-coordinate negative. Usually in the perspective projection process we copy the <i>z</i>-coordinate into the <i>w</i>-coordinate, and a negative <i>w</i>-coordinate would mean the point is not in the view volume and thus is clipped away (clipping is done in homogeneous space before the divide). This is a problem for planar shadows because we are now using the w-coordinate to implement shadows, in addition to the perspective divide. Figure <a href="ch11.html#fig11.8">11.8</a> shows a valid situation where <b>n</b>&#x00B7;<b>L</b> &lt; 0, but the shadow will not show up.</p>
+<p class="caption"><img src="images/Fig11-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.8"><b><i>Figure 11.8.</i></b>&nbsp;&nbsp;A situation where <b>n</b>&#x00B7;<b>L</b> &lt; 0.</p>
+
+<p class="tx">To fix this, instead of using the light ray direction <b>L</b>, we should use the vector towards the infinitely far away light source <img src="images/eq468-02.jpg" alt="image" width="40" height="12"/>. Observe that <img src="images/eq468-03.jpg" alt="image" width="70" height="15"/> and <img src="images/eq468-04.jpg" alt="image" width="90" height="15"/> define the same 3D line, and the intersection point between the line and the plane will be the same (the intersection parameter <i>t</i><sub>s</sub> will be different to compensate for the sign difference between <img src="images/Ltilde.jpg" alt="image" width="12" height="12"/> and <b>L</b>). So using <img src="images/eq468-02.jpg" alt="image" width="40" height="12"/> gives us the same answer, but with <b>n</b>&#x00B7;<b>L</b> &gt; 0, which avoids the negative <i>w</i>-coordinate.</p>
+<p class="caption"><img src="images/Fig11-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.9"><b><i>Figure 11.9.</i></b>&nbsp;&nbsp;The shadow cast with respect to a point light source.</p>
+<p class="h2" id="c11.5.2"><a href="toc.html#toc-11.5.2"><b>11.5.2 Point Light Shadows</b></a></p>
+<p class="tx1">Figure <a href="ch11.html#fig11.9">11.9</a> shows the shadow an object casts with respect to a point light source whose position is described by the point <b>L</b>. The light ray from a point light through any vertex <b>p</b> is given by <b>r</b>(<i>t) = </i><b>p</b> + <i>t(</i><b>p</b> &minus; <b>L</b>). The intersection of the ray <b>r</b>(<i>t)</i> with the shadow plane (<b>n</b>, <i>d</i>) gives <b>s</b>. The set of intersection points found by shooting<a id="page435"/> a ray through each of the object&rsquo;s vertices with the plane defines the projected geometry of the shadow. For a vertex <b>p</b>, its shadow projection is given by</p>
+<p class="eq" id="eq11.2"><img src="images/eq469-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Equation <a href="ch11.html#eq11.2">11.2</a> can also be written by a matrix equation:</p>
+<p class="eq"><img src="images/eq469-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">To see how this matrix is equivalent to Equation <a href="ch11.html#eq11.2">11.2</a>, we just need to perform the multiplication the same way we did in the previous section. Note that the last column has no zeros and gives:</p>
+<p class="eq"><img src="images/eq469-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This is the negative of the denominator in Equation <a href="ch11.html#eq11.2">11.2</a>, but we can negate the denominator if we also negate the numerator. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Notice that </i><b>L</b><i> serves different purposes for point and parallel lights. For point lights we use </i><b>L</b><i> to define the position of the point light. For parallel lights we use </i><b>L</b><i> to define the direction towards the infinitely far away light source (i.e., the opposite direction the parallel light rays travel).</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c11.5.3"><a href="toc.html#toc-11.5.3"><b>11.5.3 General Shadow Matrix</b></a></p>
+<p class="tx1">Using homogeneous coordinates, it is possible to create a general shadow matrix that works for both point and directional lights.</p>
+<ol><li>If <i>L</i><sub>w</sub> = 0 then <b>L</b> describes the direction towards the infinitely far away light source (i.e., the opposite direction the parallel light rays travel).</li>
+<li>If <i>L</i><sub>w</sub> = 1 then <b>L</b> describes the location of the point light.</li></ol>
+<p class="tx1">Then we represent the transformation from a vertex p to its projection s with the following <i>shadow matrix:</i></p>
+
+<p class="eq"><img src="images/eq470-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">It is easy to see that <b>S</b> reduced to <b>S</b><i><sub>dir</sub></i> if<i> L</i><i><sub>w</sub></i> = 0 and <b>S</b> reduces to <b><i>S</i></b><i><sub>point</sub></i> for <i>L</i><i><sub>w</sub></i> = 0<i>.</i></p>
+<p class="tx">The DirectX math library provides the following function to build<a id="page436"/> the shadow matrix given the plane we wish to project the shadow into and a vector describing a parallel light if <i>w</i> = 0 or a point light if <i>w </i>= 1:</p>
+<p class="code"><span class="code">inline XMMATRIX XM_CALLCONV XMMatrixShadow(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR ShadowPlane,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR LightPosition);&nbsp;</span></p>
+<p class="tx">For further reading, both [Blinn96] and [M&ouml;ller02] discuss planar shadows.</p>
+<p class="h2" id="c11.5.4"><a href="toc.html#toc-11.5.4"><b>11.5.4 Using the Stencil Buffer to Prevent Double Blending</b></a></p>
+<p class="tx1">When we flatten out the geometry of an object onto the plane to describe its shadow, it is possible (and in fact likely) that two or more of the flattened triangles will overlap. When we render the shadow with transparency (using blending), these areas that have overlapping triangles will get blended multiple times and thus appear darker. Figure <a href="ch11.html#fig11.10">11.10</a> shows this.</p>
+<p class="caption"><img src="images/Fig11-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.10"><b><i>Figure 11.10.</i></b>&nbsp;&nbsp;Notice the darker &ldquo;acne&rdquo; areas of the shadow in the left image; these correspond to areas where parts of the flattened skull overlapped, thus causing a &ldquo;double blend.&rdquo; The image on the right shows the shadow rendered correctly, without double blending.</p>
+
+<p class="tx">We can solve this problem using the stencil buffer. </p>
+<ol><li>Assume the stencil buffer pixels where the shadow will be rendered have been cleared to 0. This is true in our mirror demo because we are only casting a shadow onto the ground plane, and we only modified the mirror stencil buffer pixels. </li>
+<li>Set the stencil test to only accept pixels if the stencil buffer has an entry of 0. If the stencil test passes, then we increment the stencil buffer value to 1. </li></ol>
+<p class="tx1">The first time we render a shadow pixel, the stencil test will pass because the stencil buffer entry is 0. However, when we render this pixel, we also increment the corresponding stencil buffer entry to 1. Thus, if we attempt to <i>overwrite to an area that has already been rendered to (marked in the stencil buffer with a value of 1), the stencil test will fail. This prevents drawing over the same pixel more than once, and thus prevents double blending.</i></p>
+<p class="h2" id="c11.5.5"><a href="toc.html#toc-11.5.5"><b>11.5.5 Shadow Code</b></a></p>
+<p class="tx1">We define a shadow material used to color the shadow<a id="page437"/> that is just a 50% transparent black material:</p>
+<p class="code"><span class="code">auto shadowMat = std::make_unique&lt;Material&gt;();</span></p>
+<p class="code"><span class="code">shadowMat-&gt;Name = "shadowMat";</span></p>
+<p class="code"><span class="code">shadowMat-&gt;MatCBIndex = 4;</span></p>
+<p class="code"><span class="code">shadowMat-&gt;DiffuseSrvHeapIndex = 3;</span></p>
+<p class="code"><span class="code">shadowMat-&gt;DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);</span></p>
+<p class="code"><span class="code">shadowMat-&gt;FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);</span></p>
+<p class="code"><span class="code">shadowMat-&gt;Roughness = 0.0f;</span></p>
+<p class="tx1">In order to prevent double blending we set up the following PSO with depth/stencil state:</p>
+<p class="code"><span class="code">// We are going to draw shadows with transparency, so base it off</span></p>
+<p class="code"><span class="code">// the transparency description.</span></p>
+<p class="code"><span class="code">D3D12_DEPTH_STENCIL_DESC shadowDSS;</span></p>
+<p class="code"><span class="code">shadowDSS.DepthEnable = true;</span></p>
+<p class="code"><span class="code">shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;</span></p>
+<p class="code"><span class="code">shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;</span></p>
+<p class="code"><span class="code">shadowDSS.StencilEnable = true;</span></p>
+<p class="code"><span class="code">shadowDSS.StencilReadMask = 0xff;</span></p>
+<p class="code"><span class="code">shadowDSS.StencilWriteMask = 0xff;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><b>shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;</b></p>
+<p class="code"><b>shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;</b></p>
+
+<p class="code"><span class="code">// We are not rendering backfacing polygons, so these settings do not</span></p>
+<p class="code"><span class="code">// matter.</span></p>
+<p class="code"><span class="code">shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;</span></p>
+<p class="code"><span class="code">shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;</span></p>
+<p class="code"><span class="code">shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPsoDesc = transparentPsoDesc;</span></p>
+<p class="code"><span class="code">shadowPsoDesc.DepthStencilState = shadowDSS;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;shadowPsoDesc,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mPSOs["shadow"])));</span></p>
+<p class="tx1">We then draw the skull shadow with the shadow PSO with a <span class="code">StencilRef</span> value of 0:</p>
+<p class="code"><span class="code">// Draw shadows</span></p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetStencilRef(0);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["shadow"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);</span></p>
+<p class="tx1">where the skull shadow render-item&rsquo;s world matrix is computed like so:</p>
+<p class="code"><span class="code">// Update shadow world matrix.</span></p>
+<p class="code"><span class="code">XMVECTOR shadowPlane = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f); // xz plane</span></p>
+<p class="code"><span class="code">XMVECTOR toMainLight = -XMLoadFloat3(&amp;mMainPassCB.Lights[0].Direction);</span></p>
+<p class="code"><span class="code">XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);</span></p>
+<p class="code"><span class="code">XMMATRIX shadowOffsetY = XMMatrixTranslation(0.0f, 0.001f, 0.0f);</span></p>
+<p class="code"><span class="code">XMStoreFloat4x4(&amp;mShadowedSkullRitem-&gt;World, skullWorld * S * shadowOffsetY);</span></p>
+<p class="tx1">Note that we offset the projected shadow mesh along<a id="page438"/> the y-axis by a small amount to prevent z-fighting so the shadow mesh does not intersect the floor mesh, but lies slightly above it. If the meshes did intersect, then due to limited precision of the depth buffer, we would see flickering artifacts as the floor and shadow mesh pixels compete to be visible. </p>
+<p class="h1" id="c11.6"><a href="toc.html#toc-11.6"><b>11.6 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The stencil buffer is an off-screen buffer we can use to block the rendering of certain pixel fragments to the back buffer. The stencil buffer is shared with the depth buffer and thus has the same resolution as the depth buffer. Valid depth/stencil buffer formats are <span class="code">DXGI_FORMAT_D32_FLOAT_S8X24_UINT</span> and <span class="code">DXGI_FORMAT_D24_UNORM_S8_UINT</span>.</li>
+<li>The decision to block a particular pixel from being written is decided by the stencil test, which is given by the following:
+<p class="code"><span class="code">&nbsp;&nbsp;if( StencilRef &amp; StencilReadMask&nbsp;&nbsp;Value &amp; StencilReadMask )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;accept pixel</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;reject pixel</span></p></li>
+<li>&nbsp;&nbsp;&nbsp;where the <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> operator is any one of the functions defined in the <span class="code">D3D12_COMPARISON_FUNC</span> enumerated type. The <span class="code">StencilRef, StencilReadMask, StencilReadMask</span>, and comparison operator <img src="images/uleftarw.jpg" alt="image" width="12" height="12"/> are all application-defined quantities set with the Direct3D depth/stencil API. The Value quantity is the current value in the stencil buffer.</li>
+<li>The depth/stencil state is part of a PSO description. Specifically, the depth/stencil state is configured by filling out the <span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState&nbsp;</span>field, where <span class="code">DepthStencilState</span> is of type <span class="code">D3D12_DEPTH_STENCIL_DESC.</span> </li>
+<li>The stencil reference value is set with the <span class="code">ID3D12GraphicsCommandList</span>::<span class="code">OMSetStencilRef</span> method, which takes a single unsigned integer parameter<a id="page439"/> specifying the stencil reference value.</li></ol>
+<p class="h1" id="c11.7"><a href="toc.html#toc-11.7"><b>11.7 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Prove that the general shadow matrix <b>S</b> reduced to <b>S</b><i><sub>dir</sub></i> if <i>L</i><i><sub>w</sub></i> = 0 and <b>S</b> reduces to <b>S</b><i><sub>point</sub></i> for <i>L</i><i><sub>w</sub></i> = 1.</li>
+<li>Prove that <img src="images/eq473-01.jpg" alt="image" width="180" height="40" style="margin-bottom:-0.5em;"/> by doing the matrix multiplication for each component, as was done in &#x00A7;11.5.1 for directional lights.</li>
+<li>Modify the &ldquo;Mirror&rdquo; demo to produce the &ldquo;Left&rdquo; image in Figure <a href="ch11.html#fig11.1">11.1</a>.</li>
+<li>Modify the &ldquo;Mirror&rdquo; demo to produce the &ldquo;Left&rdquo; image in Figure <a href="ch11.html#fig11.10">11.10</a>.</li>
+<li>Modify the &ldquo;Mirror&rdquo; demo in the following way. First draw a wall with the following depth settings:
+<p class="code"><span class="code">depthStencilDesc.DepthEnable&nbsp;&nbsp;= false;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthFunc&nbsp;&nbsp; = D3D12_COMPARISON_LESS;</span></p>
+<br/>Next, draw the skull behind the wall with the depth settings:<br/>
+<p class="code"><span class="code">depthStencilDesc.DepthEnable&nbsp;&nbsp;= true;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthFunc&nbsp;&nbsp; = D3D12_COMPARISON_LESS;</span></p>
+<br/>Does the wall occlude the skull? Explain. What happens if you use the following to draw the wall instead?<br/>
+<p class="code"><span class="code">depthStencilDesc.DepthEnable&nbsp;&nbsp;= true;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;</span></p>
+<p class="code"><span class="code">depthStencilDesc.DepthFunc&nbsp;&nbsp; = D3D12_COMPARISON_LESS;</span></p>
+<br/>Note that this exercise does not use the stencil buffer, so that should be disabled. </li>
+<li>Modify the &ldquo;Mirror&rdquo; demo by not reversing the triangle winding order convention. Does the reflected teapot render correctly?</li>
+<li>Modify the &ldquo;Blend&rdquo; demo from Chapter <a href="ch10.html#chap10">10</a> to draw a cylinder (with no caps) at the center of the scene. Texture the cylinder with the 60 frame animated electric bolt animation found in this chapter&rsquo;s directory using additive blending. Figure <a href="ch11.html#fig11.11">11.11</a> shows an example of the output. 
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Refer back to &#x00A7;10.5.5 for the depth states to use when rendering additive blending geometry.</i></p></td></tr>
+</tbody>
+</table>
+<p class="caption"><img src="images/Fig11-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.11"><b><i>Figure 11.11.</i></b>&nbsp;&nbsp;Sample screenshot of the solution to Exercise 7.</p></li>
+<li><i>Depth complexity </i>refers to the number of pixel fragments that compete<a id="page440"/>, via the depth test, to be written to a particular entry in the back buffer. For example, a pixel we have drawn may be overwritten by a pixel that is closer to the camera (and this can happen several times before the closest pixel is actually figured out once the entire scene has been drawn). The pixel in Figure <a href="ch11.html#fig11.12">11.12</a> has a depth complexity of 3 since three pixel fragments compete for the pixel.
+<p class="caption"><img src="images/Fig11-12.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.12"><b><i>Figure 11.12.</i></b>&nbsp;&nbsp;Multiple pixel fragments competing to be rendering to a single pixel on the projection window. In this scene, the pixel P has a depth complexity of 3.</p>
+
+<br/>Potentially, the graphics card could fill a pixel several times each frame. This <i>overdraw</i> has performance implications, as the graphics card is wasting time processing pixels that eventually get overridden and are never seen. Consequently, it is useful to measure the depth complexity in a scene for performance analysis. <br/>
+<br/>We can measure the depth complexity as follows: Render the scene and use the stencil buffer as a counter; that is, each pixel in the stencil buffer is originally cleared to zero, and every time a pixel fragment is processed, we increment its count with <span class="code">D3D12_STENCIL_OP_INCR</span>. The corresponding stencil buffer entry should always be incremented for every pixel fragment no matter what, so use the stencil comparison function <span class="code">D3D12_COMPARISON_ALWAYS.&nbsp;</span>Then, for example, after the frame has been drawn, if the<i> ij</i>th pixel has a corresponding entry of five in the stencil buffer, then we know that that five pixel fragments were processed for that pixel during that frame<a id="page441"/> (i.e., the pixel has a depth complexity of five). Note that when counting the depth complexity, technically you only need to render the scene to the stencil buffer. <br/>
+<br/>To visualize the depth complexity (stored in the stencil buffer), proceed as follows:<br/>
+<ol class="lc-alpha">
+<li>Associate a color <b><i>c</i></b><sub>k</sub> for each level of depth complexity <i>k.</i> For example, blue for a depth complexity of one, green for a depth complexity of two, red for a depth complexity of three, and so on. (In very complex scenes where the depth complexity for a pixel could get very large, you probably do not want to associate a color for each level. Instead, you could associate a color for a range of disjoint levels. For example, pixels with depth complexity 1-5 are colored blue, pixels with depth complexity 6-10 are colored green, and so on.)</li>
+<li>Set the stencil buffer operation to <span class="code">D3D12_STENCIL_OP_KEEP</span> so that we do not modify it anymore. (We modify the stencil buffer with <span class="code">D3D12_STENCIL_OP_INCR</span> when we are counting the depth complexity as the scene is rendered, but when writing the code to visualize the stencil buffer, we only need to <i>read</i> from the stencil buffer and we should not <i>write</i> to it.) </li>
+<li><i>For each level of depth complexity k:</i>
+<ol class="lc-roman">
+<li>Set the stencil comparison function to <span class="code">D3D12_COMPARISON_EQUAL</span> and set the stencil reference value to <i>k</i>.</li>
+<li>draw a quad of color <b><i>c</i></b><sub>k</sub> that covers the entire projection window. Note that this will only color the pixels that have a depth complexity of <i>k </i>because of the preceding set stencil comparison function and reference value.</li></ol>
+<br/>With this setup, we have colored each pixel based on its depth complexity uniquely, and so we can easily study the depth complexity of the scene. For this exercise, render the depth complexity of the scene used in the &ldquo;Blend&rdquo; demo from Chapter <a href="ch10.html#chap10">10</a>. Figure <a href="ch11.html#fig11.13">11.13</a> shows a sample screenshot.</li></ol>
+<p class="caption"><img src="images/Fig11-13.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig11.13"><b><i>Figure 11.13.</i></b>&nbsp;&nbsp;Sample screenshot of the solution to Exercise 8.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The depth test occurs in the output merger stage of the<a id="page442"/> pipeline, which occurs after the pixel shader stage. This means that a pixel fragment is processed through the pixel shader, even if it may ultimately be rejected by the depth test. However, modern hardware does an &ldquo;early z-test&rdquo; where the depth test is performed before the pixel shader. This way, a rejected pixel fragment will be discarded before being processed by a potentially expensive pixel shader. To take advantage of this optimization, you should try to render your non-blended game objects in front-to-back order with respect to the camera; in this way, the nearest objects will be drawn first, and objects behind them will fail the early z-test and not be processed further. This can be a significant performance benefit if your scene suffers from lots overdraw due to a high depth complexity. We are not able to control the early z-test through the Direct3D API; the graphics driver is the one that decides if it is possible to perform the early z-test. For example, if a pixel shader modifies the pixel fragment&rsquo;s depth value, then the early z-test is not possible, as the pixel shader must be executed before the depth test since the pixel shader modifies depth values. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We mentioned the ability to modify the depth of a pixel in the pixel shader. How does that work? A pixel shader can actually output a structure, not just a single color vector as we have been doing thus far:</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">struct PixelOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 color : SV_Target;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float depth : SV_Depth;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">PixelOut PS(VertexOut pin)&nbsp;</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;PixelOut pout;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// &hellip; usual pixel work</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;pout.Color = float4(litColor, alpha);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// set pixel depth in normalized [0, 1] range</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pout.depth = pin.PosH.z - 0.05f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return pout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The z-coordinate of the </i><span class="code">SV_Position</span><i> element (</i><span class="code">pin.PosH.z</span><i>) gives the unmodified pixel depth value. Using the special system value semantic </i><span class="code">SV_Depth</span><i>, the pixel shader can output a modified depth value. </i></p>
+</td></tr>
+</tbody>
+</table>
+</li>
+<li>Another way to implement depth complexity visualization is to<a id="page443"/> use additive blending. First clear the back buffer black and disable the depth test. Next, set the source and destination blend factors both to <span class="code">D3D12_BLEND_ONE</span>, and the blend operation to <span class="code">D3D12_BLEND_OP_ADD</span> so that the blending equation looks like <b>C</b> = <b>C</b><i><sub>src</sub></i> + <b>C</b><i><sub>dst</sub></i>. Observe that with this formula, for each pixel, we are accumulating the colors of all the pixel fragments written to it. Now render all the objects in the scene with a pixel shader that outputs a low intensity color like (0.05, 0.05, 0.05). The more overdraw a pixel has, the more of these low intensity colors will be summed in, thus increasing the brightness of the pixel. If a pixel was overdrawn ten times, for example, then it will have a color intensity of (0.5, 0.5, 0.5). Thus by looking at the intensity of each pixel after rendering the scene, we obtain an idea of the scene depth complexity. Implement this version of depth complexity measurement using the &ldquo;Blend&rdquo; demo from Chapter <a href="ch10.html#chap10">10</a> as a test scene.</li>
+<li>Explain how you can count the number of pixels that pass the depth test. Explain how you can count the number of pixels that fail the depth test?</li>
+<li>Modify the &ldquo;Mirror&rdquo; demo to reflect the floor into the mirror in addition to the skull.</li>
+<li>Remove the vertical offset from the world matrix of the shadow render-item so that you can see z-fighting.</li>
+</ol>
+</body>
+</html>

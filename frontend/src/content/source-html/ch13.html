@@ -1,0 +1,1348 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page469"/><a href="toc.html#toc-13" id="chap13">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">13</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-13"><b>T</b><span class="sc">HE</span><br/><br/><b>C</b><span class="sc">OMPUTE</span><br/><br/><b>S</b><span class="sc">HADER</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+
+
+<p class="tx1">GPUs have been optimized to process a large amount of memory from a single location or sequential locations (so-called <i>streaming operation</i>); this is in contrast to a CPU designed for random memory accesses [Boyd10]. Moreover, because vertices and pixels can be independently processed, GPUs have been architected to be massively parallel; for example, the NVIDIA &ldquo;Fermi&rdquo; architecture supports up to sixteen streaming multiprocessors of thirty-two CUDA cores for a total of 512 CUDA cores [NVIDIA09]. </p>
+<p class="tx">Obviously, graphics benefit from this GPU architecture, as the architecture was designed for graphics. However, some non-graphical applications benefit from the massive amount of computational power a GPU can provide with its parallel architecture. Using the GPU for non-graphical applications is called <i>general purpose GPU </i>(GPGPU) <i>programming</i>. Not all algorithms are ideal for a GPU implementation; GPUs need data-parallel algorithms to take advantage of the parallel architecture of the GPU. That is, we need a large amount of data elements that will have similar operations performed on them so that the elements can be processed in parallel. Graphical operations like shading pixels is a good example, as each pixel fragment being drawn is operated on by the pixel shader. As another example, if you look at the code for our wave simulation from the previous chapters, you will see that in the update step, we perform a calculation on each grid element. So this, too, is a good candidate for a GPU implementation, as each grid element can be updated in parallel by the GPU. Particle systems provide yet another example<a id="page470"/>, where the physics of each particle can be computed independently provided we take the simplification that the particles do not interact with each other. </p>
+<p class="tx">For GPGPU programming, the user generally needs to access the computation results back on the CPU. This requires copying the result from video memory to system memory, which is slow (see Figure <a href="ch13.html#fig13.1">13.1</a>), but may be a negligible issue compared to the speed up from doing the computation on the GPU. For graphics, we typically use the computation result as an input to the rendering pipeline, so no transfer from GPU to CPU is needed. For example, we can blur a texture with the compute shader, and then bind a shader resource view to that blurred texture to a shader as input. </p>
+<p class="caption"><img src="images/Fig13-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.1"><b><i>Figure 13.1.</i></b>&nbsp;&nbsp;Image has been redrawn from [Boyd10]. The relative memory bandwidth speeds between CPU and RAM, CPU and GPU, and GPU and VRAM. These numbers are just illustrative numbers to show the order of magnitude difference between the bandwidths. Observe that transferring memory between CPU and GPU is the bottleneck.</p>
+
+<p class="tx">The Compute Shader is a programmable shader Direct3D exposes that is not directly part of the rendering pipeline. Instead, it sits off to the side and can read from GPU resources and write to GPU resources (Figure <a href="ch13.html#fig13.2">13.2</a>). Essentially, the Compute Shader allows us to access the GPU to implement data-parallel algorithms without drawing anything. As mentioned, this is useful for GPGPU programming, but there are still many graphical effects that can be implemented on the compute shader as well&mdash;so it is still very relevant for a graphics programmer. And as already mentioned, because the Compute Shader is part of Direct3D, it reads from and writes to Direct3D resources, which enables us to bind the output of a compute shader directly to the rendering pipeline. </p>
+
+<p class="caption"><img src="images/Fig13-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.2"><b><i>Figure 13.2.</i></b>&nbsp;&nbsp;The compute shader is not part of the rendering pipeline but sits off to the side. The compute shader can read and write to GPU resources. The compute shader can be mixed with graphics rendering, or used alone for GPGPU programming.<a id="page471"/></p>
+
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn how to program compute shaders.</li>
+<li>To obtain a basic high-level understanding of how the hardware processes thread groups, and the threads within them.</li>
+<li>To discover which Direct3D resources can be set as an input to a compute shader and which Direct3D resources can be set as an output to a compute shader.</li>
+<li>To understand the various thread IDs and their uses.</li>
+<li>To learn about shared memory and how it can be used for performance optimizations.</li>
+<li>To find out where to obtain more detailed information about GPGPU programming.</li></ol>
+<p class="h1" id="c13.1"><a href="toc.html#toc-13.1"><b>13.1 THREADS AND THREAD GROUPS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In GPU programming, the number of threads desired for execution is divided up into a grid of <i>thread groups</i>. A thread group is executed on a single multiprocessor. Therefore, if you had a GPU with sixteen multiprocessors, you would want to break up your problem into at least sixteen thread groups so that each multiprocessor has work to do. For better performance, you would want at least two thread groups per multiprocessor since a multiprocessor can switch to processing the threads in a different group to hide stalls [Fung10] (a stall can occur, for example, if a shader needs to wait for a texture operation result before it can continue to the next instruction).</p>
+<p class="tx">Each thread group gets shared memory that all threads in that group can access; a thread cannot access shared memory in a different thread group. Thread synchronization operations can take place amongst the threads in a thread group, but different thread groups cannot be synchronized. In fact, we have no control over the order in which different thread groups are processed. This makes sense as the thread groups can be executed on different multiprocessors.</p>
+<p class="tx">A thread group consists of <i>n</i> threads. The hardware actually divides these threads up into <i>warps</i> (thirty-two threads per warp), and a warp is processed by the multiprocessor in SIMD32 (i.e., the same instructions are executed for the thirty-two threads simultaneously). Each CUDA core processes a thread and recall that a &ldquo;Fermi&rdquo; multiprocessor has thirty-two CUDA cores (so a CUDA core is like an SIMD &ldquo;lane.&rdquo;) In Direct3D, you can specify a thread group size with dimensions that are not multiples of thirty-two, but for performance reasons, the thread group dimensions should always be multiples of the warp size [Fung10]. </p>
+<p class="tx">Thread group sizes of<a id="page472"/> 256 seems to be a good starting point that should work well for various hardware. Then experiment with other sizes. Changing the number of threads per group will change the number of groups dispatched. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>NVIDIA hardware uses warp sizes of thirty-two threads. ATI uses &ldquo;wavefront&rdquo; sizes of sixty-four threads, and recommends the thread group size should always be a multiple of the wavefront size [Bilodeau10]. Also, the warp size or wavefront size can change in future generations of hardware. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">In Direct3D, thread groups are launched via the following method call:</p>
+<p class="code"><span class="code">void ID3D12GraphicsCommandList::Dispatch(</span></p>
+<p class="code"><span class="code">&nbsp;UINT ThreadGroupCountX,</span></p>
+<p class="code"><span class="code">&nbsp;UINT ThreadGroupCountY,</span></p>
+<p class="code"><span class="code">&nbsp;UINT ThreadGroupCountZ);</span></p>
+<p class="tx1">This enables you to launch a 3D grid of thread groups; however, in this book we will only be concerned with 2D grids of thread groups. The following example call launches three groups in the <i>x</i> direction and two groups in the <i>y</i> direction for a total of 3 &times; 2 = 6 thread groups (see Figure <a href="ch13.html#fig13.3">13.3</a>).</p>
+
+<p class="caption"><img src="images/Fig13-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.3"><b><i>Figure 13.3.</i></b>&nbsp;&nbsp;Dispatching a grid of 3 &times; 2 thread groups. Each thread group has 8 &times; 8 threads.</p>
+
+<p class="h1" id="c13.2"><a href="toc.html#toc-13.2"><b>13.2 A SIMPLE COMPUTE SHADER</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Below is a simple compute shader that sums two textures, assuming all the textures are the same size. This shader is not very interesting, but it illustrates the basic syntax of writing a compute shader.</p>
+<p class="code"><span class="code">cbuffer cbSettings</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute shader can access values in constant buffers.</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Data sources and outputs.</span></p>
+<p class="code"><span class="code">Texture2D gInputA;&nbsp;</span></p>
+<p class="code"><span class="code">Texture2D gInputB;</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// The number of threads in the thread group. The threads in a group can</span></p>
+<p class="code"><span class="code">// be arranged in a 1D, 2D, or 3D grid layout.</span></p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dispatchThreadID : SV_DispatchThreadID) // Thread ID</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sum the xyth texels and store the result in the xyth texel of</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// gOutput.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gInputA[dispatchThreadID.xy] +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gInputB[dispatchThreadID.xy];</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">A compute shader consists of<a id="page473"/> the following components:</p>
+<ol><li>Global variable access via constant buffers.</li>
+<li>Input and output resources, which are discussed in the next section.</li>
+<li>The <span class="code">[numthreads(X, Y, Z)]</span> attribute, which specifies the number of threads in the thread group as a 3D grid of threads. </li>
+<li>The shader body that has the instructions to execute for each thread. </li>
+<li>Thread identification system value parameters (discussed in &#x00A7;13.4).</li></ol>
+<p class="tx1">Observe that we can define different topologies of the thread group; for example, a thread group could be a single line of <i>X</i> threads <span class="code">[numthreads(X, 1, 1)]</span> or a single column of <i>Y</i> threads <span class="code">[numthreads(1, Y, 1)]</span>. 2D thread groups of <i>X</i> &times; <i>Y</i> threads can be made by setting the <i>z</i>-dimension to 1 like this <span class="code">[numthreads(X, Y, 1)]</span>. The topology you choose will be dictated by the problem you are working on. As mentioned in the previous section, the total thread count per group should be a multiple of the warp size (thirty-two for NVIDIA cards) or a multiple of the wavefront size (sixty-four for ATI cards). A multiple of the wavefront size is also a multiple of the warp size, so choosing a multiple of the wavefront size works for both types of cards.</p>
+<p class="h2" id="c13.2.1"><a href="toc.html#toc-13.2.1"><b>13.2.1 Compute PSO</b></a></p>
+<p class="tx1">To enable a compute shader, we use a special &ldquo;compute pipeline state description.&rdquo; This structure has far fewer fields than <span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC</span> because the compute shader sits to the side of the graphics pipeline, so all the graphics pipeline state does not apply to compute shaders and thus does not need to be set. Below shows an example of creating a compute pipeline state object:</p>
+<p class="code"><span class="code">D3D12_COMPUTE_PIPELINE_STATE_DESC wavesUpdatePSO = {};</span></p>
+<p class="code"><span class="code">wavesUpdatePSO.pRootSignature = mWavesRootSignature.Get();</span></p>
+<p class="code"><span class="code">wavesUpdatePSO.CS =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;reinterpret_cast&lt;BYTE*&gt;(mShaders["wavesUpdateCS"]-&gt;GetBufferPointer()),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mShaders["wavesUpdateCS"]-&gt;GetBufferSize()</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">wavesUpdatePSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateComputePipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;wavesUpdatePSO, IID_PPV_ARGS(&amp;mPSOs["wavesUpdate"])));</span></p>
+<p class="tx1">The root signature defines<a id="page474"/> what parameters the shader expects as input (CBVs, SRVs, etc.). The <span class="code">CS</span> field is where we specify the compute shader. The following code shows an example of compiling a compute shader to bytecode:</p>
+<p class="code"><span class="code">mShaders["wavesUpdateCS"] = d3dUtil::CompileShader(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;L"Shaders\\WaveSim.hlsl", nullptr, "UpdateWavesCS", "cs_5_0");</span></p>
+<p class="h1" id="c13.3"><a href="toc.html#toc-13.3"><b>13.3 DATA INPUT AND OUTPUT RESOURCES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Two types of resources can be bound to a compute shader: buffers and textures. We have worked with buffers already such as vertex and index buffers, and constant buffers. We are also familiar with texture resources from Chapter <a href="ch09.html#chap09">9</a>. </p>
+<p class="h2" id="c13.3.1"><a href="toc.html#toc-13.3.1"><b>13.3.1 Texture Inputs</b></a></p>
+<p class="tx1">The compute shader defined in the previous section defined two input texture resources:</p>
+<p class="code"><span class="code">Texture2D gInputA;&nbsp;</span></p>
+<p class="code"><span class="code">Texture2D gInputB;</span></p>
+<p class="tx1">The input textures <span class="code">gInputA</span> and <span class="code">gInputB</span> are bound as inputs to the shader by creating (SRVs) to the textures and passing them as arguments to the root parameters; for example:</p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRootDescriptorTable(1, mSrvA);</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRootDescriptorTable(2, mSrvB);</span></p>
+<p class="tx1">This is exactly the same way we bind shader resource views to pixel shaders. Note that SRVs are read-only.</p>
+<p class="h2" id="c13.3.2"><a href="toc.html#toc-13.3.2"><b>13.3.2 Texture Outputs and Unordered Access Views (UAVs)</b></a></p>
+<p class="tx1">The compute shader defined in the previous section defined one output resource:</p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput;</span></p>
+<p class="tx1">Outputs are treated special and have the special prefix to their type &ldquo;RW,&rdquo; which stands for read-write, and as the name implies, you can read and write to elements in this resource in the compute<a id="page475"/> shader. In contrast, the textures <span class="code">gInputA</span> and <span class="code">gInputB</span> are read-only. Also, it is necessary to specify the type and dimensions of the output with the template angle brackets syntax &lt;float4&gt;. If our output was a 2D integer like <span class="code">DXGI_FORMAT_R8G8_SINT</span>, then we would have instead written:</p>
+<p class="code"><span class="code">RWTexture2D&lt;int2&gt; gOutput;</span></p>
+<p class="tx1">Binding an output resource is different than an input, however. To bind a resource that we will write to in a compute shader, we need to bind it using a new view type called an <i>unordered access view</i> (UAV), which is represented in code by a descriptor handle and described in code by the <span class="code">D3D12_UNORDERED_ACCESS_VIEW_DESC</span> structure. This is created in a similar way to a shader resource view. Here is an example that creates a UAV to a texture resource:</p>
+<p class="code"><span class="code">D3D12_RESOURCE_DESC texDesc;</span></p>
+<p class="code"><span class="code">ZeroMemory(&amp;texDesc, sizeof(D3D12_RESOURCE_DESC));</span></p>
+<p class="code"><span class="code">texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">texDesc.Alignment = 0;</span></p>
+<p class="code"><span class="code">texDesc.Width = mWidth;</span></p>
+<p class="code"><span class="code">texDesc.Height = mHeight;</span></p>
+<p class="code"><span class="code">texDesc.DepthOrArraySize = 1;</span></p>
+<p class="code"><span class="code">texDesc.MipLevels = 1;</span></p>
+<p class="code"><span class="code">texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;</span></p>
+<p class="code"><span class="code">texDesc.SampleDesc.Count = 1;</span></p>
+<p class="code"><span class="code">texDesc.SampleDesc.Quality = 0;</span></p>
+<p class="code"><span class="code">texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;</span></p>
+<p class="code"><span class="code">texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;texDesc,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mBlurMap0)));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};</span></p>
+<p class="code"><span class="code">srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;</span></p>
+<p class="code"><span class="code">srvDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MostDetailedMip = 0;</span></p>
+<p class="code"><span class="code">srvDesc.Texture2D.MipLevels = 1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">uavDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">uavDesc.Texture2D.MipSlice = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateShaderResourceView(mBlurMap0.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;srvDesc, mBlur0CpuSrv);</span></p>
+<p class="code"><span class="code">md3dDevice-&gt;CreateUnorderedAccessView(mBlurMap0.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;nullptr, &amp;uavDesc, mBlur0CpuUav);</span></p>
+<p class="tx1">Observe that if a texture<a id="page476"/> is going to be bound as UAV, then it must be created with the <span class="code">D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS</span> flag; in the above example, the texture will be bound as a UAV and as a SRV (but not simultaneously). This is common, as we often use the compute shader to perform some operation on a texture (so the texture will be bound to the compute shader as a UAV), and then after, we want to texture geometry with it, so it will be bound to the vertex or pixel shader as a SRV.</p>
+<p class="tx">Recall that a descriptor heap of type <span class="code">D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV</span> can mix CBVs, SRVs, and UAVs all in the same heap. Therefore, we can put UAV descriptors in that heap. Once they are in a heap, we simply pass the descriptor handles as arguments to the root parameters to bind the resources to the pipeline for a dispatch call. Consider the following root signature for a compute shader:</p>
+<p class="code"><span class="code">void BlurApp::BuildPostProcessRootSignature()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_DESCRIPTOR_RANGE srvTable;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_DESCRIPTOR_RANGE uavTable;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_PARAMETER slotRootParameter[3];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Perfomance TIP: Order from most frequent to least frequent.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[0].InitAsConstants(12, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[1].InitAsDescriptorTable(1, &amp;srvTable);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[2].InitAsDescriptorTable(1, &amp;uavTable);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0, nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// create a root signature with a single slot which points to a</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// descriptor range consisting of a single constant buffer</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ComPtr&lt;ID3DBlob&gt; serializedRootSig = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ComPtr&lt;ID3DBlob&gt; errorBlob = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HRESULT hr = D3D12SerializeRootSignature(&amp;rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(errorBlob != nullptr)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;::OutputDebugStringA((char*)errorBlob-&gt;GetBufferPointer());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(hr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateRootSignature(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig-&gt;GetBufferPointer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;serializedRootSig-&gt;GetBufferSize(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(mPostProcessRootSignature.GetAddressOf())));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The root signature defines<a id="page477"/> that the shader expects a constant buffer for root parameter slot 0, an SRV for root parameter slot 1, and a UAV for root parameter slot 2. Before a dispatch invocation, we bind the constants and descriptors to use for this dispatch call:</p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRootSignature(rootSig);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRoot32BitConstants(0, 1, &amp;blurRadius, 0);</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRoot32BitConstants(0, (UINT)weights.size(), weights.data(), 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRootDescriptorTable(1, mBlur0GpuSrv);</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetComputeRootDescriptorTable(2, mBlur1GpuUav);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">UINT numGroupsX = (UINT)ceilf(mWidth / 256.0f);</span></p>
+<p class="code"><span class="code">cmdList-&gt;Dispatch(numGroupsX, mHeight, 1);</span></p>
+<p class="h2" id="c13.3.3"><a href="toc.html#toc-13.3.3"><b>13.3.3 Indexing and Sampling Textures</b></a></p>
+<p class="tx1">The elements of the textures can be accessed using 2D indices. In the compute shader defined in &#x00A7;13.2, we index the texture based on the dispatch thread ID (thread IDs are discussed in &#x00A7;13.4). Each thread is given a unique dispatch ID.</p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sum the xyth texels and store the result in the xyth texel of</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// gOutput.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gInputA[dispatchThreadID.xy] +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gInputB[dispatchThreadID.xy];</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Assuming that we dispatched enough thread groups to cover the texture (i.e., so there is one thread being executed for one texel), then this code sums the texture images and stores the result in the texture <span class="code">gOutput</span>.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The behavior of out-of-bounds indices are well defined in a compute shader. Out-of-bounds reads return 0, and out-of-bounds writes result in no-ops [Boyd08].</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Because the compute shader is executed on the GPU, it has access to the usual GPU tools. In particular, we can sample textures using texture filtering. There are two issues, however. First, we cannot use the <span class="code">Sample</span> method, but instead must use the <span class="code">SampleLevel</span> method. <span class="code">SampleLevel</span> takes an additional third parameter that specifies the mipmap<a id="page478"/> level of the texture; 0 takes the top most level, 1 takes the second mip level, etc., and fractional values are used to interpolate between two mip levels of linear mip filtering is enabled. On the other hand, <span class="code">Sample</span> automatically selects the best mipmap level to use based on how many pixels on the screen the texture will cover. Since compute shaders are not used for rendering directly, it does not know how to automatically select a mipmap level like this, and therefore, we must explicitly specify the level with <span class="code">SampleLevel</span> in a compute shader. The second issue is that when we sample a texture, we use normalized texture-coordinates in the range [0, 1]<sup>2</sup> instead of integer indices. However, the texture size (<i>width</i>, <i>height</i>) can be set to a constant buffer variable, and then normalized texture coordinates can be derived from the integer indices (<i>x</i>, <i>y</i>):</p>
+
+<p class="eq"><img src="images/eq512-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The following code shows a compute shader using integer indices, and a second equivalent version using texture coordinates and <span class="code">SampleLevel</span>, where it is assumed the texture size is 512 &times; 512 and we only need the top level mip:</p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// VERSION 1: Using integer indices.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbUpdateSettings</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gDisturbMag;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;int2 gDisturbIndex;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gPrevSolInput : register(u0);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gCurrSolInput : register(u1);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gOutput&nbsp;&nbsp;&nbsp;&nbsp;: register(u2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;int x = dispatchThreadID.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;int y = dispatchThreadID.y;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gNextSolOutput[int2(x,y)] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gWaveConstants0*gPrevSolInput[int2(x,y)].r +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gWaveConstants1*gCurrSolInput[int2(x,y)].r +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gWaveConstants2*(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput[int2(x,y+1)].r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput[int2(x,y-1)].r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput[int2(x+1,y)].r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput[int2(x-1,y)].r);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// VERSION 2: Using SampleLevel and texture coordinates.<a id="page479"/></span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbUpdateSettings</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gWaveConstant2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float gDisturbMag;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;int2 gDisturbIndex;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState samPoint : register(s0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gPrevSolInput : register(u0);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gCurrSolInput : register(u1);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gOutput&nbsp;&nbsp;&nbsp;&nbsp;: register(u2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;// Equivalently using SampleLevel() instead of operator [].</span></p>
+<p class="code"><span class="code">&nbsp;int x = dispatchThreadID.x;</span></p>
+<p class="code"><span class="code">&nbsp;int y = dispatchThreadID.y;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;float2 c = float2(x,y)/512.0f;</span></p>
+<p class="code"><span class="code">&nbsp;float2 t = float2(x,y-1)/512.0;</span></p>
+<p class="code"><span class="code">&nbsp;float2 b = float2(x,y+1)/512.0;</span></p>
+<p class="code"><span class="code">&nbsp;float2 l = float2(x-1,y)/512.0;</span></p>
+<p class="code"><span class="code">&nbsp;float2 r = float2(x+1,y)/512.0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;gNextSolOutput[int2(x,y)] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gWaveConstants0*gPrevSolInput.SampleLevel(samPoint, c, 0.0f).r +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gWaveConstants1*gCurrSolInput.SampleLevel(samPoint, c, 0.0f).r +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gWaveConstants2*(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput.SampleLevel(samPoint, b, 0.0f).r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput.SampleLevel(samPoint, t, 0.0f).r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput.SampleLevel(samPoint, r, 0.0f).r +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gCurrSolInput.SampleLevel(samPoint, l, 0.0f).r);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c13.3.4"><a href="toc.html#toc-13.3.4"><b>13.3.4 Structured Buffer Resources</b></a></p>
+<p class="tx1">The following examples show how structured buffers are defined in the HLSL:<a id="page480"/></p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 v1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float2 v2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">StructuredBuffer&lt;Data&gt; gInputA : register(t0);</span></p>
+<p class="code"><span class="code">StructuredBuffer&lt;Data&gt; gInputB : register(t1);</span></p>
+<p class="code"><span class="code">RWStructuredBuffer&lt;Data&gt; gOutput : register(u0);</span></p>
+<p class="tx1">A structured buffer is simply a buffer of elements of the same type&mdash;essentially an array. As you can see, the type can be a user-defined structure in the HLSL. </p>
+<p class="tx">A structured buffer used as an SRV can be created just like we have been creating our vertex and index buffers. A structured buffer used as a UAV is almost created the same way, except that we must specify the flag <span class="code">D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS</span>, and it is good practice to put it in the <span class="code">D3D12_RESOURCE_STATE_UNORDERED_ACCESS</span> state.</p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 v1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT2 v2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Generate some data to fill the SRV buffers with.</span></p>
+<p class="code"><span class="code">std::vector&lt;Data&gt; dataA(NumDataElements);</span></p>
+<p class="code"><span class="code">std::vector&lt;Data&gt; dataB(NumDataElements);</span></p>
+<p class="code"><span class="code">for(int i = 0; i &lt; NumDataElements; ++i)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataA[i].v1 = XMFLOAT3(i, i, i);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataA[i].v2 = XMFLOAT2(i, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataB[i].v1 = XMFLOAT3(-i, i, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataB[i].v2 = XMFLOAT2(0, -i);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">UINT64 byteSize = dataA.size()*sizeof(Data);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Create some buffers to be used as SRVs.</span></p>
+<p class="code"><span class="code">mInputBufferA = d3dUtil::CreateDefaultBuffer(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataA.data(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;byteSize,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mInputUploadBufferA);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mInputBufferB = d3dUtil::CreateDefaultBuffer(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataB.data(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;byteSize,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mInputUploadBufferB);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Create the buffer that will be a UAV.</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_DESC::Buffer(byteSize,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_UNORDERED_ACCESS,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mOutputBuffer)));</span></p>
+<p class="tx1">Structured buffers are bound<a id="page481"/> to the pipeline just like textures. We create SRVs or UAV descriptors to them and pass them as arguments to root parameters that take descriptor tables. Alternatively, we can define the root signature to take root descriptors so that we can pass the virtual address of resources directly as root arguments without the need to go through a descriptor heap (this only works for SRVs and UAVs to buffer resource, not textures). Consider the following root signature description:</p>
+<p class="code"><span class="code">// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[3];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Perfomance TIP: Order from most frequent to least frequent.</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsShaderResourceView(0);</span></p>
+<p class="code"><span class="code">slotRootParameter[1].InitAsShaderResourceView(1);</span></p>
+<p class="code"><span class="code">slotRootParameter[2].InitAsUnorderedAccessView(0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;0, nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_NONE);</span></p>
+<p class="tx1">Then we can bind our buffers like so to be used for a dispatch call:</p>
+<p class="code"><span class="code">mCommandList-&gt;SetComputeRootSignature(mRootSignature.Get());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;SetComputeRootShaderResourceView(0,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mInputBufferA-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetComputeRootShaderResourceView(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mInputBufferB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetComputeRootUnorderedAccessView(2,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOutputBuffer-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">mCommandList-&gt;Dispatch(1, 1, 1);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>There is also such a thing called a raw buffer, which is basically a byte array of data. Byte offsets are used and the data can then be casted to the proper type. This could be useful for storing different data types in the same buffer, for example. To be a raw buffer, the resource must be created with the </i><span class="code">DXGI_FORMAT_R32_TYPELESS</span><i> format, and when creating the UAV we must specify the </i><span class="code">D3D12_BUFFER_UAV_FLAG_RAW</span><i> flag. We do not use raw buffers in this book; see the SDK documentation for further details. </i><a id="page482"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c13.3.5"><a href="toc.html#toc-13.3.5"><b>13.3.5 Copying CS Results to System Memory</b></a></p>
+<p class="tx1">Typically, when we use the compute shader to process a texture, we will display that processed texture on the screen; therefore, we visually see the result to verify the accuracy of our compute shader. With structured buffer calculations, and GPGPU computing in general, we might not display our results at all. So the question is how do we get our results from GPU memory (remember when we write to a structured buffer via a UAV, that buffer is stored in GPU memory) back to system memory. The required way is to create system memory buffer with heap properties <span class="code">D3D12_HEAP_TYPE_READBACK</span>. Then we can use the <span class="code">ID3D12GraphicsCommandList</span>::<span class="code">CopyResource</span> method to copy the GPU resource to the system memory resource. The system memory resource must be the same type and size as the resource we want to copy. Finally, we can map the system memory buffer with the mapping API to read it on the CPU. From there we can then copy the data into a system memory array for further processing on the CPU side, save the data to file, or what have you. </p>
+<p class="tx">We have included a structured buffer demo for this chapter called &ldquo;VecAdd,&rdquo; which simply sums the corresponding vector components stored in two structured buffers:</p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 v2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">StructuredBuffer&lt;Data&gt; gInputA : register(t0);</span></p>
+<p class="code"><span class="code">StructuredBuffer&lt;Data&gt; gInputB : register(t1);</span></p>
+<p class="code"><span class="code">RWStructuredBuffer&lt;Data&gt; gOutput : register(u0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(32, 1, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dtid : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dtid.x].v1 = gInputA[dtid.x].v1 + gInputB[dtid.x].v1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dtid.x].v2 = gInputA[dtid.x].v2 + gInputB[dtid.x].v2;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">For simplicity, the structured buffers only contain thirty-two elements; therefore, we only have to dispatch one thread group (since one thread group processes thirty-two elements). After the compute shader completes its work for all threads in this demo, we copy the results to system memory and save them to file. The following code shows how to create the system memory buffer and how to copy the GPU results to CPU memory:<a id="page483"/></p>
+<p class="code"><span class="code">// Create a system memory version of the buffer to read the&nbsp;</span></p>
+<p class="code"><span class="code">// results back from.</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateCommittedResource(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_HEAP_FLAG_NONE,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_DESC::Buffer(byteSize),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COPY_DEST,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(&amp;mReadBackBuffer)));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// &hellip;</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Compute shader finished!</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct Data</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;XMFLOAT3 v1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;XMFLOAT2 v2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Schedule to copy the data to the default buffer to the readback buffer.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOutputBuffer.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COPY_SOURCE));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;CopyResource(mReadBackBuffer.Get(), mOutputBuffer.Get());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOutputBuffer.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COPY_SOURCE,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Done recording commands.</span></p>
+<p class="code"><span class="code">ThrowIfFailed(mCommandList-&gt;Close());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Add the command list to the queue for execution.</span></p>
+<p class="code"><span class="code">ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };</span></p>
+<p class="code"><span class="code">mCommandQueue-&gt;ExecuteCommandLists(_countof(cmdsLists), cmdsLists);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Wait for the work to finish.</span></p>
+<p class="code"><span class="code">FlushCommandQueue();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Map the data so we can read it on CPU.</span></p>
+<p class="code"><span class="code">Data* mappedData = nullptr;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(mReadBackBuffer-&gt;Map(0, nullptr,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; reinterpret_cast&lt;void**&gt;(&amp;mappedData)));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">std::ofstream fout("results.txt");</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">for(int i = 0; i &lt; NumDataElements; ++i)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fout &lt;&lt; "(" &lt;&lt; mappedData[i].v1.x &lt;&lt; ", " &lt;&lt;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mappedData[i].v1.y &lt;&lt; ", " &lt;&lt;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mappedData[i].v1.z &lt;&lt;&nbsp;&nbsp;&nbsp;", " &lt;&lt;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mappedData[i].v2.x &lt;&lt; ", " &lt;&lt;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mappedData[i].v2.y &lt;&lt; ")" &lt;&lt; std::endl;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mReadBackBuffer-&gt;Unmap(0, nullptr);</span></p>
+<p class="code"><span class="code">In the demo, we fill the two input buffers with the following initial data:</span></p>
+<p class="code"><span class="code">std::vector&lt;Data&gt; dataA(NumDataElements);</span></p>
+<p class="code"><span class="code">std::vector&lt;Data&gt; dataB(NumDataElements);</span></p>
+<p class="code"><span class="code">for(int i = 0; i &lt; NumDataElements; ++i)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataA[i].v1 = XMFLOAT3(i, i, i);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataA[i].v2 = XMFLOAT2(i, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataB[i].v1 = XMFLOAT3(-i, i, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dataB[i].v2 = XMFLOAT2(0, -i);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The resulting text file contains<a id="page484"/> the following data, which confirms that the compute shader is working as expected.</p>
+<p class="code"><span class="code">(0, 0, 0, 0, 0)</span></p>
+<p class="code"><span class="code">(0, 2, 1, 1, -1)</span></p>
+<p class="code"><span class="code">(0, 4, 2, 2, -2)</span></p>
+<p class="code"><span class="code">(0, 6, 3, 3, -3)</span></p>
+<p class="code"><span class="code">(0, 8, 4, 4, -4)</span></p>
+<p class="code"><span class="code">(0, 10, 5, 5, -5)</span></p>
+<p class="code"><span class="code">(0, 12, 6, 6, -6)</span></p>
+<p class="code"><span class="code">(0, 14, 7, 7, -7)</span></p>
+<p class="code"><span class="code">(0, 16, 8, 8, -8)</span></p>
+<p class="code"><span class="code">(0, 18, 9, 9, -9)</span></p>
+<p class="code"><span class="code">(0, 20, 10, 10, -10)</span></p>
+<p class="code"><span class="code">(0, 22, 11, 11, -11)</span></p>
+<p class="code"><span class="code">(0, 24, 12, 12, -12)</span></p>
+<p class="code"><span class="code">(0, 26, 13, 13, -13)</span></p>
+<p class="code"><span class="code">(0, 28, 14, 14, -14)</span></p>
+<p class="code"><span class="code">(0, 30, 15, 15, -15)</span></p>
+<p class="code"><span class="code">(0, 32, 16, 16, -16)</span></p>
+<p class="code"><span class="code">(0, 34, 17, 17, -17)</span></p>
+<p class="code"><span class="code">(0, 36, 18, 18, -18)</span></p>
+<p class="code"><span class="code">(0, 38, 19, 19, -19)</span></p>
+<p class="code"><span class="code">(0, 40, 20, 20, -20)</span></p>
+<p class="code"><span class="code">(0, 42, 21, 21, -21)</span></p>
+<p class="code"><span class="code">(0, 44, 22, 22, -22)</span></p>
+<p class="code"><span class="code">(0, 46, 23, 23, -23)</span></p>
+<p class="code"><span class="code">(0, 48, 24, 24, -24)</span></p>
+<p class="code"><span class="code">(0, 50, 25, 25, -25)</span></p>
+<p class="code"><span class="code">(0, 52, 26, 26, -26)</span></p>
+<p class="code"><span class="code">(0, 54, 27, 27, -27)</span></p>
+<p class="code"><span class="code">(0, 56, 28, 28, -28)</span></p>
+<p class="code"><span class="code">(0, 58, 29, 29, -29)</span></p>
+<p class="code"><span class="code">(0, 60, 30, 30, -30)</span></p>
+<p class="code"><span class="code">(0, 62, 31, 31, -31)</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>From Figure <a href="ch13.html#fig13.1">13.1</a>, we see that copying between CPU and GPU memory is the slowest. For graphics, we never want to do this copy per frame, as it will kill performance. For GPGPU<a id="page485"/> programming, it is generally required to get the results back on the CPU; however, this is usually not a big deal for GPGPU programming, as the gains of using a GPU outweigh the copy cost from GPU to CPU&mdash;moreover, for GPGPU, the copy will be less frequent than &ldquo;per frame.&rdquo; For example, suppose an application uses GPGPU programming to implement a costly image processing calculation. After the calculation is done the result is copied to the CPU. The GPU is not used again until the user requests another calculation.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c13.4"><a href="toc.html#toc-13.4"><b>13.4 THREAD IDENTIFICATION SYSTEM VALUES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Consider Figure <a href="ch13.html#fig13.4">13.4</a>.</p>
+
+<p class="caption"><img src="images/Fig13-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.4"><b><i>Figure 13.4.</i></b>&nbsp;&nbsp;Consider the marked thread T. Thread T has thread group ID .(1, 1, 0). It has group thread ID (1, 5, 0). It has dispatch thread ID (1, 1, 0) &#x2297; (8, 8, 0) + (2, 5, 0) = (10, 13, 0). It has group index ID 5&#x00B7;8 + 2 = 42.</p>
+
+<ol><li>Each thread group is assigned an ID by the system; this is called the <i>group ID </i>and has the system value semantic <span class="code">SV_GroupID</span>. If <i>G</i><sub>x</sub> &times; <i>G</i><sub>y</sub> &times; <i>G</i><sub>z</sub> are the number of thread groups dispatched, then the group ID ranges from (0, 0, 0) to (<i>G</i><sub>x</sub> &ndash; 1, <i>G</i><sub>y</sub> &ndash; 1, <i>G</i><sub>z</sub> &ndash; 1).</li>
+<li>Inside a thread group, each thread is given a unique ID relative to its group. If the thread group has size <i>X</i> &times; <i>Y</i> &times; <i>Z</i>, then the <i>group thread IDs</i> will range from (0, 0, 0) to (<i>X</i> &ndash; 1, <i>Y</i> &ndash; 1, <i>Z</i> &ndash; 1). The system value semantic for the group thread ID is <span class="code">SV_GroupThreadID</span>.</li>
+<li>A <span class="code">Dispatch</span> call dispatches a grid of thread groups. The <i>dispatch thread ID </i>uniquely identifies a thread relative to <i>all</i> the threads generated by a <span class="code">Dispatch</span> call. In other words, whereas the group thread ID uniquely identifies a thread relative to its thread group, the dispatch thread ID uniquely identifies a thread relative to the union of all the threads from all the thread groups dispatched by a <span class="code">Dispatch</span> call. Let, <span class="code">ThreadGroupSize = (X,Y,Z)&nbsp;</span>be the thread group size, then the dispatch thread ID<a id="page486"/> can be derived from the group ID and the group thread ID as follows:
+<p class="code"><span class="code">dispatchThreadID.xyz =&nbsp;&nbsp;groupID.xyz * ThreadGroupSize.xyz + groupThreadID.xyz;</span></p>
+<p class="tx">The dispatch thread ID has the system value semantic <span class="code">SV_DispatchThreadID</span>. If  3 &times; 2 thread groups are dispatched, where each thread group is 10 &times;10, then a total of 60 threads are dispatched and the dispatch thread IDs will range from (0, 0, 0) to (29, 19, 0).</p></li>
+<li>A linear index version of the group thread ID is given to us by Direct3D through the SV_GroupIndex system value; it is computed as:
+<p class="code"><span class="code">groupIndex = groupThreadID.z*ThreadGroupSize.x*ThreadGroupSize.y +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; groupThreadID.y*ThreadGroupSize.x + groupThreadID.x;</span></p></li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Regarding the indexing coordinate order, the first coordinate gives the x-position (or column) and the second coordinate gives the y-position (or row). This is in contrast to common matrix notation, where M</i><sub>ij</sub><i> denotes the element in the ith row and jth column.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">So why do we need these thread ID values. Well a compute shader generally takes some input data structure and outputs to some data structure. We can use the thread ID values as indexes into these data structures: </p>
+<p class="code"><span class="code">Texture2D gInputA;&nbsp;</span></p>
+<p class="code"><span class="code">Texture2D gInputB;</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Use dispatch thread ID to index into output and input textures.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gOutput[dispatchThreadID.xy] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gInputA[dispatchThreadID.xy] +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gInputB[dispatchThreadID.xy];</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The <span class="code">SV_GroupThreadID</span> is useful for indexing into thread local storage memory (&#x00A7;13.6). </p>
+<p class="h1" id="c13.5"><a href="toc.html#toc-13.5"><b>13.5 APPEND AND CONSUME BUFFERS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Suppose we have a buffer of particles defined by the structure:</p>
+<p class="code"><span class="code">struct Particle</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Velocity;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Acceleration;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">and we want to update<a id="page487"/> the particle positions based on their constant acceleration and velocity in the compute shader. Moreover, suppose that we do not care about the order the particles are updated nor the order they are written to the output buffer. Consume and append structured buffers are ideal for this scenario, and they provide the convenience that we do not have to worry about indexing: </p>
+<p class="code"><span class="code">struct Particle</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Velocity;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float3 Acceleration;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float TimeStep = 1.0f / 60.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">ConsumeStructuredBuffer&lt;Particle&gt; gInput;</span></p>
+<p class="code"><span class="code">AppendStructuredBuffer&lt;Particle&gt; gOutput;</span></p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void CS()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Consume a data element from the input buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Particle p = gInput.Consume();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;p.Velocity += p.Acceleration*TimeStep;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;p.Position += p.Velocity*TimeStep;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Append normalized vector to output buffer.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;gOutput.Append( p );</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Once a data element is consumed, it cannot be consumed again by a different thread; one thread will consume exactly one data element. And again, we emphasize that the order elements are consumed and appended are unknown; therefore, it is generally not the case that the ith element in the input buffer gets written to the <i>i</i>th element in the output buffer.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Append structured buffers do not dynamically grow. They must still be large enough to store all the elements you will append to it. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c13.6"><a href="toc.html#toc-13.6"><b>13.6 SHARED MEMORY AND SYNCHRONIZATION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Thread groups are given a section of so-called shared memory or thread local storage. Accessing this memory is fast and can be thought of being as fast as a hardware cache. In the compute shader code, shared memory is declared like so:</p>
+<p class="code"><span class="code">groupshared float4 gCache[256];</span></p>
+<p class="tx1">The array size can be<a id="page488"/> whatever you want, but the maximum size of group shared memory is 32kb. Because the shared memory is local to the thread group, it is indexed with the SV_ThreadGroupID; so, for example, you might give each thread in the group access to one slot in the shared memory. </p>
+<p class="tx">Using too much shared memory can lead to performance issues [Fung10], as the following example illustrates. Suppose a multiprocessor supports 32kb of shared memory, and your compute shader requires 20kb of shared memory. This means that only one thread group will fit on the multiprocessor because there is not enough memory left for another thread group [Fung10], as 20kb + 20kb = 40kb &gt; 32kb. This limits the parallelism of the GPU, as a multiprocessor cannot switch off between thread groups to hide latency (recall from &#x00A7;13.1 that at least two thread groups per multiprocessor is recommended). Thus, even though the hardware technically supports 32kb of shared memory, performance improvements can be achieved by using less. </p>
+<p class="tx">A common application of shared memory is to store texture values in it. Certain algorithms, such as blurs, require fetching the same texel multiple times. Sampling textures is actually one of the slower GPU operations because memory bandwidth and memory latency have not improved as much as the raw computational power of GPUs [M&ouml;ller08]. A thread group can avoid redundant texture fetches by preloading all the needed texture samples into the shared memory array. The algorithm then proceeds to look up the texture samples in the shared memory array, which is very fast. Suppose we implement this strategy with the following erroneous code:</p>
+<p class="code"><span class="code">Texture2D gInput;</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">groupshared float4 gCache[256];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(256, 1, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 groupThreadID : SV_GroupThreadID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp; int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Each thread samples the texture and stores the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// value in shared memory.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gCache[groupThreadID.x] = gInput[dispatchThreadID.xy];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Do computation work: Access elements in shared memory&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// that other threads stored:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// BAD!!! Left and right neighbor threads might not have</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// finished sampling tzZhe texture and storing it in shared memory.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 left = gCache[groupThreadID.x - 1];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 right = gCache[groupThreadID.x + 1];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">A problem arises with this<a id="page489"/> scenario because we have no guarantee that all the threads in the thread group finish at the same time. Thus a thread could go to access a shared memory element that is not yet initialized because the neighboring threads responsible for initializing those elements have not finished yet. To fix this problem, before the compute shader can continue, it must wait until all the threads have done their texture loading into shared memory. This is accomplished by a synchronization command:</p>
+<p class="code"><span class="code">Texture2D gInput;</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">groupshared float4 gCache[256];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(256, 1, 1)]</span></p>
+<p class="code"><span class="code">void CS(int3 groupThreadID : SV_GroupThreadID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp; int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Each thread samples the texture and stores the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// value in shared memory.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gCache[groupThreadID.x] = gInput[dispatchThreadID.xy];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Wait for all threads in group to finish.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GroupMemoryBarrierWithGroupSync();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Safe now to read any element in the shared memory&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//and do computation work.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 left = gCache[groupThreadID.x - 1];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 right = gCache[groupThreadID.x + 1];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c13.7"><a href="toc.html#toc-13.7"><b>13.7 BLUR DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this section, we explain how to implement a blur algorithm on the compute shader. We begin by describing the mathematical theory of blurring. Then we discuss the technique of technique of render-to-texture, which our demo uses to generate a source image to blur. Finally, we review the code for a compute shader implementation and discuss how to handle certain details that make the implementation a little tricky. </p>
+<p class="caption"><img src="images/Fig13-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.5"><b><i>Figure 13.5.</i></b>&nbsp;&nbsp;To blur the pixel Pij we compute the weighted average of the m &times; n matrix of pixels centered<a id="page490"/> about the pixel. In this example, the matrix is a square 3 &times; 3 matrix, with blur radius <i>a</i> = <i>b</i> = 1. Observe that the center weight <i>w</i><sub>00</sub> aligns with the pixel <i>P<sub>ij</sub></i>.</p>
+<p class="h2" id="c13.7.1"><a href="toc.html#toc-13.7.1"><b>13.7.1 Blurring Theory</b></a></p>
+<p class="tx1">The blurring algorithm we use is described as follows: For each pixel <i>P</i><sub>ij</sub>. in the source image, compute the weighted average of the <i>m</i> &times; <i>n</i> matrix of pixels centered about the pixel <i>P</i><sub>ij</sub> (see Figure <a href="ch13.html#fig13.5">13.5</a>); this weighted average becomes the <i>ij</i>th pixel in the blurred image. Mathematically, </p>
+<p class="eq"><img src="images/eq524-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <i>m</i> = 2<i>a </i>+ 1 and <i>n</i> = 2<i>b</i> + 1. By forcing <i>m</i> and <i>n</i> to be odd, we ensure that the <i>m</i> &times; <i>n</i> matrix always has a natural &ldquo;center.&rdquo; We call <i>a</i> the vertical blur radius and <i>b</i> the horizontal blur radius. If <i>a</i> = <i>b</i>, then we just refer to the <i>blur radius </i>without having to specify the dimension. The <i>m</i> &times; <i>n</i> matrix of weights is called the <i>blur kernel</i>. Observe also that the weights must sum to 1. If the sum of the weights is less than one, the blurred image will appear darker as color has been removed. If the sum of the weights is greater than one, the blurred image will appear brighter as color has been added.</p>
+<p class="tx">There are various ways to compute the weights so long as they sum to 1. A well-known blur operator found in many image editing programs is the Gaussian blur, which obtains its weights from the Gaussian function <img src="images/eq524-02.jpg" alt="image" width="120" height="30" style="margin-bottom:-0.5em;"/>. A graph of this function is shown in Figure <a href="ch13.html#fig13.6">13.6</a> for different &#x03C3;. </p>
+
+<p class="caption"><img src="images/Fig13-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.6"><b><i>Figure 13.6.</i></b>&nbsp;&nbsp;Plot of <i>G</i>(<i>x</i>) for &#x03C3; = 1, 2, 3. Observe that a larger &#x03C3; flattens the curve out and gives more weight to the neighboring points.</p>
+
+<p class="tx">Let us suppose we are doing a 1 &times; 5 Gaussian blur (i.e., a 1D blur in the horizontal direction), and let &#x03C3; = 1. Evaluating <i>G</i>(<i>x</i>) for <i>x</i> = &minus;2, &minus;1, 0, 1, 2  we have:</p>
+
+<p class="eq"><img src="images/eq524-03.jpg" alt="image" width="100%"/></p>
+
+<p class="eq"><img src="images/eq525-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1"><a id="page491"/>However, these values are not the weights because they do not sum to 1:</p>
+
+<p class="eq"><img src="images/eq525-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If we normalize the above equation by dividing by the sum <img src="images/eq525-03.jpg" alt="image" width="70" height="40" style="margin-bottom:-0.5em;"/>, then we obtain weights based on the Gaussian function that sum to 1:</p>
+
+<p class="eq"><img src="images/eq525-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1"><a id="page492"/>Therefore, the Gaussian blur weights are:</p>
+
+<p class="eq"><img src="images/eq526-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The Gaussian blur is known to be separable, which means it can be broken up into two 1D blurs as follows. </p>
+<ol><li>Blur the input image I using a 1D horizontal blur: <i>I<sub>H</sub> = Blur<sub>H</sub></i> ( <i>I</i> ).</li>
+<li>Blur the output from the previous step using a 1D vertical blur: <i>Blur</i> ( <i>I</i> ) = Blur<sub>V</sub> (<i> I<sub>H</sub></i> ). </li></ol>
+<p class="tx">Written more succinctly, we have:</p>
+
+<p class="eq"><img src="images/eq526-02.jpg" alt="image" width="100%"/></p>
+<p class="tx11">Suppose that the blur kernel is a 9 &times; 9 matrix, so that we needed a total of 81 samples to do the 2D blur. By separating the blur into two 1D blurs, we only need 9 + 9 = 18 samples. Typically, we will be blurring textures; as mentioned in this chapter, fetching texture samples is expensive, so reducing texture samples by separating a blur is a welcome improvement. Even if a blur is not separable (some blur operators are not), we can often make the simplification and assume it is for the sake of performance, as long as the final image looks accurate enough. <a id="page493"/></p>
+<p class="h2" id="c13.7.2"><a href="toc.html#toc-13.7.2"><b>13.7.2 Render-to-Texture</b></a></p>
+<p class="tx1">So far in our programs, we have been rendering to the back buffer. But what is the back buffer? If we review our D3DApp code, we see that the back buffer is just a texture in the swap chain:</p>
+<p class="code"><span class="code">Microsoft::WRL::ComPtr&lt;ID3D12Resource&gt; mSwapChainBuffer[SwapChainBufferCount];</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(mRtvHeap-&gt;GetCPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">for (UINT i = 0; i &lt; SwapChainBufferCount; i++)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(mSwapChain-&gt;GetBuffer(i,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(&amp;mSwapChainBuffer[i])));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateRenderTargetView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mSwapChainBuffer[i].Get(), nullptr, rtvHeapHandle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rtvHeapHandle.Offset(1, mRtvDescriptorSize);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">We instruct Direct3D to render to the back buffer by binding a render target view of the back buffer to the OM stage of the rendering pipeline:</p>
+<p class="code"><span class="code">// Specify the buffers we are going to render to.</span></p>
+<p class="code"><span class="code">mCommandList-&gt;OMSetRenderTargets(1, &amp;CurrentBackBufferView(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;true, &amp;DepthStencilView());</span></p>
+<p class="tx1">The contents of the back buffer are eventually displayed on the screen when the back buffer is presented via the <span class="code">IDXGISwapChain::Present</span> method.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>A texture that will be used as a render target must be created with the flag </i><span class="code">D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET.</span> </p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">If we think about this code, there is nothing that stops us from creating another texture, creating a render target view to it, and binding it to the OM stage of the rendering pipeline. Thus we will be drawing to this different &ldquo;off-screen&rdquo; texture (possible with a different camera) instead of the back buffer. This technique is known as <i>render-to-off-screen-texture</i> or simply <i>render-to-texture</i>. The only difference is that since this texture is not the back buffer, it does not get displayed to the screen during presentation. </p>
+<p class="caption"><img src="images/Fig13-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.7"><b><i>Figure 13.7.</i></b>&nbsp;&nbsp;A camera is placed above the player from a bird&rsquo;s eye view and renders the scene into an off-screen texture. When we draw the scene from the player&rsquo;s eye to the back buffer, we map the texture onto a quad in the bottom-right corner of the screen to display the radar map.</p>
+<p class="tx">Consequently, render-to-texture might seem worthless at first as it does not get presented to the screen. But, after we have rendered-to-texture, we can bind the back buffer back to the OM stage, and resume drawing geometry to the back buffer. We can texture the geometry with the texture we generated during the render-to-texture period. This strategy is used to implement a variety of special effects. For example, you can render-to-texture the scene from a bird&rsquo;s eye view to a texture. Then, when drawing to the back buffer, you can draw a quad in the lower-right corner of the screen with the<a id="page494"/> bird&rsquo;s eye view texture to simulate a radar system (see Figure <a href="ch13.html#fig13.7">13.7</a>). Other render-to-texture techniques include:</p>
+<ol><li>Shadow mapping</li>
+<li>Screen Space Ambient Occlusion</li>
+<li>Dynamic reflections with cube maps</li></ol>
+<p class="tx1">Using render-to-texture, implementing a blurring algorithm on the GPU would work the following way: render our normal demo scene to an off-screen texture. This texture will be the input into our blurring algorithm that executes on the compute shader. After the texture is blurred, we will draw a full screen quad to the back buffer with the blurred texture applied so that we can see the blurred result to test our blur implementation. The steps are outlined as follows:</p>
+<ol><li>Draw scene as usual to an off-screen texture.</li>
+<li>Blur the off-screen texture using a compute shader program.</li>
+<li>Restore the back buffer as the render target, and draw a full screen quad with the blurred texture applied. </li></ol>
+<p class="tx1">Using render-to-texture to implement a blur works fine, and is the required approach if we want to render the scene to a different sized texture than the back buffer. However, if we make the assumption that our off-screen textures match the format and size of our back buffer, instead of redirecting rendering to our off-screen texture, we can render to the back buffer as usual, and then do a <span class="code">CopyResource</span> to copy the back-buffer contents to our off-screen texture. Then we can do our compute work on our off-screen textures, and then draw a full-screen quad to the back buffer with the blurred texture to produce the final screen output.<a id="page495"/></p>
+<p class="code"><span class="code">// Copy the input (back-buffer in this example) to BlurMap0.</span></p>
+<p class="code"><span class="code">cmdList-&gt;CopyResource(mBlurMap0.Get(), input);</span></p>
+<p class="tx">This is the technique we will use to implement our blur demo, but Exercise 6 asks you to implement a different filter using render-to-texture.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The above process requires us to draw with the usual rendering pipeline, switch to the compute shader and do compute work, and finally switch back to the usual rendering pipeline. In general, try to avoid switching back and forth between rendering and doing compute work, as there is overhead due to a context switch [NVIDIA10]. For each frame, try to do all compute work, and then do all rendering work. Sometimes it is impossible; for example, in the process described above, we need to render the scene to a texture, blur it with the compute shader, and then render the blurred results. However, try to minimize the number of switches.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c13.7.3"><a href="toc.html#toc-13.7.3"><b>13.7.3 Blur Implementation Overview</b></a></p>
+<p class="tx1">We assume that the blur is separable, so we break the blur down into computing two 1D blurs&mdash;a horizontal one and a vertical one. Implementing this requires two texture buffers where we can read and write to both; therefore, we need a SRV and UAV to both textures. Let us call one of the textures <b>A</b> and the other texture <b>B</b>. The blurring algorithm proceeds as follows:</p>
+<ol><li>Bind the SRV to <b>A</b> as an input to the compute shader (this is the input image that will be horizontally blurred).</li>
+<li>Bind the UAV to <b>B</b> as an output to the compute shader (this is the output image that will store the blurred result).</li>
+<li>Dispatch the thread groups to perform the horizontal blur operation. After this, texture <b>B</b> stores the horizontally blurred result <i>Blur</i><sub>H</sub>(<i>I</i>), where <i>I</i> is the image to blur. </li>
+<li>Bind the SRV to <b>B</b> as an input to the compute shader (this is the horizontally blurred image that will next be vertically blurred).</li>
+<li>Bind the UAV to <b>A</b> as an output to the compute shader (this is the output image that will store the final blurred result).</li>
+<li>Dispatch the thread groups to perform the vertical blur operation. After this, texture <b>A</b> stores the final blurred result <i>Blur</i> (<i>I</i>), where <i>I</i> is the image to blur. </li></ol>
+<p class="tx1">This logic implements the separable blur formula <i>Blur</i>(<i>I</i>) = <i>Blur<sub>V</sub></i>(<i>Blur<sub>H</sub></i>(<i>I</i>)). Observe that both texture <b>A</b> and texture <b>B</b> serve as an input and an output to the compute shader at some point, but not simultaneously. (It is Direct3D error to bind a resource as an input and output at the same time.) The combined horizontal and vertical blur passes constitute one complete blur pass. The resulting image<a id="page496"/> can be blurred further by performing another blur pass on it. We can repeatedly blur an image until the image is blurred to the desired level.</p>
+<p class="tx">The texture we render the scene to has the same resolution as the window client area. Therefore, we need to rebuild the off-screen texture, as well as the second texture buffer <b>B</b> used in the blur algorithm. We do this on the OnResize method:</p>
+<p class="code"><span class="code">void BlurApp::OnResize()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3DApp::OnResize();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The window resized, so update the aspect ratio and</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// recompute the projection matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX P = XMMatrixPerspectiveFovLH(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0.25f*MathHelper::Pi, AspectRatio(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1.0f, 1000.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mProj, P);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(mBlurFilter != nullptr)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mBlurFilter-&gt;OnResize(mClientWidth, mClientHeight);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void BlurFilter::OnResize(UINT newWidth, UINT newHeight)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if((mWidth != newWidth) || (mHeight != newHeight))</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mWidth = newWidth;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mHeight = newHeight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Rebuild the off-screen texture resource with new dimensions.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;BuildResources();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// New resources, so we need new descriptors to that resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;BuildDescriptors();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The <span class="code">mBlur</span> variable is an instance of a <span class="code">BlurFilter</span> helper class we make. This class encapsulates the texture resources to textures <b>A</b> and <b>B</b>, encapsulates SRVs and UAVs to the textures, and provides a method that kicks off the actual blur operation on the compute shader, the implementation of which we will see in a moment. </p>
+<p class="tx">The <span class="code">BlurFilter</span> class encapsulates texture resources. To bind these resources to the pipeline to use for a draw/dispatch command, we are going to need to create descriptors to these resources. That means we will have to allocate extra room in the <span class="code">D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV</span> descriptor heap to store these descriptors. The <span class="code">BlurFilter::BuildDescriptors</span> method takes descriptor handles to the starting location in the descriptor heap to store the descriptors used by<a id="page497"/> <span class="code">BlurFilter</span>. The method caches the handles for all the descriptors it needs and then creates the corresponding descriptors. The reason it caches the handles is so that it can recreate the descriptors when the resources change, which happens when the screen is resized:</p>
+<p class="code"><span class="code">void BlurFilter::BuildDescriptors(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE hCpuDescriptor,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE hGpuDescriptor,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT descriptorSize)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Save references to the descriptors.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur0CpuSrv = hCpuDescriptor;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur0CpuUav = hCpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur1CpuSrv = hCpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur1CpuUav = hCpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur0GpuSrv = hGpuDescriptor;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur0GpuUav = hGpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur1GpuSrv = hGpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mBlur1GpuUav = hGpuDescriptor.Offset(1, descriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildDescriptors();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void BlurFilter::BuildDescriptors()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Texture2D.MostDetailedMip = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;srvDesc.Texture2D.MipLevels = 1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uavDesc.Format = mFormat;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uavDesc.Texture2D.MipSlice = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateShaderResourceView(mBlurMap0.Get(), &amp;srvDesc, mBlur0CpuSrv);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateUnorderedAccessView(mBlurMap0.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;nullptr, &amp;uavDesc, mBlur0CpuUav);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateShaderResourceView(mBlurMap1.Get(), &amp;srvDesc, mBlur1CpuSrv);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;md3dDevice-&gt;CreateUnorderedAccessView(mBlurMap1.Get(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;nullptr, &amp;uavDesc, mBlur1CpuUav);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// In BlurApp.cpp&hellip;Offset to location in heap to&nbsp;</span></p>
+<p class="code"><span class="code">// store descriptors for BlurFilter</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mBlurFilter-&gt;BuildDescriptors(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCbvSrvUavDescriptorHeap-&gt;GetCPUDescriptorHandleForHeapStart(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;3, mCbvSrvUavDescriptorSize),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_GPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCbvSrvUavDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;3, mCbvSrvUavDescriptorSize),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCbvSrvUavDescriptorSize);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><a id="page498"/><i>Blurring is an expensive operation and the time it takes is a function of the image size being blurred. Often, when rendering the scene to an off-screen texture, the off-screen texture will be made a quarter of the size of the back buffer. For example, if the back buffer is 800 </i>&times;<i> 600, the off-screen texture will be 400 </i>&times;<i> 30. This speeds up the drawing to the off-screen texture (less pixels to fill); moreover, it speeds up the blur (less pixels to blur), and there is additional blurring performed by the magnification texture filter when the texture is stretched from a quarter of the screen resolution to the full screen resolution. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Suppose our image has width <i>w</i> and height <i>h</i>. As we will see in the next section when we look at the compute shader, for the horizontal 1D blur, our thread group is a horizontal line segment of 256 threads, and each thread is responsible for blurring one pixel in the image. Therefore, we need to dispatch <img src="images/eq532-01.jpg" alt="image" width="60" height="30" style="margin-bottom:-0.5em;"/> thread groups in the <i>x</i>-direction and <i>h</i> thread groups in the <i>y</i>-direction in order for each pixel in the image to be blurred. If 256 does not divide evenly into <i>w</i>, the last horizontal thread group will have extraneous threads (see Figure (13.8)). There is not really anything we can do about this since the thread group size is fixed. We take care of out-of-bounds with clamping checks in the shader code. </p>
+<p class="tx">The situation is similar for<a id="page499"/> the vertical 1D blur. Again, our thread group is a vertical line segment of 256 threads, and each thread is responsible for blurring one pixel in the image. Therefore, we need to dispatch <img src="images/eq533-01.jpg" alt="image" width="60" height="30" style="margin-bottom:-0.5em;"/> thread groups in the <i>y</i>-direction and <i>w</i> thread groups in the <i>x</i>-direction in order for each pixel in the image to be blurred.</p>
+<p class="tx">The code below figures out how many thread groups to dispatch in each direction, and kicks off the actual blur operation on the compute shader:</p>
+<p class="code"><span class="code">void BlurFilter::Execute(ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ID3D12RootSignature* rootSig,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ID3D12PipelineState* horzBlurPSO,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ID3D12PipelineState* vertBlurPSO,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ID3D12Resource* input,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int blurCount)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto weights = CalcGaussWeights(2.5f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int blurRadius = (int)weights.size() / 2;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetComputeRootSignature(rootSig);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetComputeRoot32BitConstants(0, 1, &amp;blurRadius, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetComputeRoot32BitConstants(0, (UINT)weights.size(), weights.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; data(), 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(input,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap0.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Copy the input (back-buffer in this example) to BlurMap0.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;CopyResource(mBlurMap0.Get(), input);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap0.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(mBlurMap1.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; blurCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Horizontal Blur pass.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetPipelineState(horzBlurPSO);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetComputeRootDescriptorTable(1, mBlur0GpuSrv);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetComputeRootDescriptorTable(2, mBlur1GpuUav);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><a id="page500"/><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// How many groups do we need to dispatch to cover a row of pixels, where&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// each group covers 256 pixels (the 256 is defined in the ComputeShader).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT numGroupsX = (UINT)ceilf(mWidth / 256.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;Dispatch(numGroupsX, mHeight, 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mBlurMap0.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_UNORDERED_ACCESS));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mBlurMap1.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_UNORDERED_ACCESS,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Vertical Blur pass.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetPipelineState(vertBlurPSO);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetComputeRootDescriptorTable(1, mBlur1GpuSrv);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetComputeRootDescriptorTable(2, mBlur0GpuUav);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// How many groups do we need to dispatch to cover a column of pixels,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// where each group covers 256 pixels (the 256 is defined in the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// ComputeShader).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT numGroupsY = (UINT)ceilf(mHeight / 256.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;Dispatch(mWidth, numGroupsY, 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mBlurMap0.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_UNORDERED_ACCESS,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;ResourceBarrier(1, &amp;CD3DX12_RESOURCE_BARRIER::Transition(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mBlurMap1.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_GENERIC_READ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_UNORDERED_ACCESS));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="caption"><img src="images/Fig13-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.8"><b><i>Figure 13.8.</i></b>&nbsp;&nbsp;Consider a 28 &times; 14 texture, where our horizontal thread groups are 8 &times; 1 and our vertical thread groups are 1 &times; 8 (<i>X</i> &times; <i>Y</i> format). For the horizontal pass, in order to cover all the pixels we need to dispatch <img src="images/eq532-02.jpg" alt="image" width="100" height="30" style="margin-bottom:-0.5em;"/> thread groups in the <i>x</i>-direction and 14 thread groups in the <i>y</i>-direction. Since 28 is not a multiple of 8, we end of with extraneous threads that do not do any work in the right-most thread groups. For the vertical pass, in order to cover all the pixels we need to dispatch <img src="images/eq532-03.jpg" alt="image" width="100" height="30" style="margin-bottom:-0.5em;"/> thread groups in the <i>y</i>-direction and 28 thread groups in the <i>x</i>-direction. Since 14 is not a multiple of 8, we end up with extraneous threads that do not do any work in the bottom-most thread groups. The same concepts apply to a larger texture with thread groups of size 256.</p>
+<p class="caption"><img src="images/Fig13-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.9"><b><i>Figure 13.9.</i></b>&nbsp;&nbsp;Left: A screenshot of the &ldquo;Blur&rdquo; demo where the image has been blurred two times. Right: A screen shot of the &ldquo;Blur&rdquo; demo where the image has been blurred eight times.<a id="page501"/></p>
+
+<p class="h2" id="c13.7.4"><a href="toc.html#toc-13.7.4"><b>13.7.4 Compute Shader Program</b></a></p>
+<p class="tx1">In this section, we look the compute shader program that actually does the blurring. We will only discuss the horizontal blur case. The vertical blur case is analogous, but the situation transposed. </p>
+<p class="tx">As mentioned in the previous section, our thread group is a horizontal line segment of 256 threads, and each thread is responsible for blurring one pixel in the image. An inefficient first approach is to just implement the blur algorithm directly. That is, each thread simply performs the weighted average of the row matrix (row matrix because we are doing the 1D horizontal pass) of pixels centered about the pixel the thread is processing. The problem with this approach is that it requires fetching the same texel multiple times (see Figure <a href="ch13.html#fig13.10">13.10</a>).</p>
+
+<p class="caption"><img src="images/Fig13-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.10"><b><i>Figure 13.10.</i></b>&nbsp;&nbsp;Consider just two neighboring pixels in the input image, and suppose that the blur kernel is 1 &times; 7. Observe that six out of the eight unique pixels are sampled twice&mdash;once for each pixel.</p>
+
+<p class="tx">We can optimize by following the strategy described in &#x00A7;13.6 and take advantage of shared memory. Each thread can read in a texel value and store it in shared memory. After all the threads are done reading their texel values into shared memory, the threads can proceed to perform the blur, but where it reads the texels from the shared memory, which is fast to access. The only tricky thing about this is that a thread group of <i>n</i> = 256 threads requires <i>n </i>+ 2<i>R</i> texels to perform the blur, where <i>R</i> is the blur radius (Figure <a href="ch13.html#fig13.11">13.11</a>). </p>
+<p class="caption"><img src="images/Fig13-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.11"><b><i>Figure 13.11.</i></b>&nbsp;&nbsp;Pixels near the boundaries of the thread group will read pixels outside the thread group due to the blur radius.</p>
+
+<p class="tx">The solution is simple; we allocate <i>n</i> + 2<i>R</i> elements of shared memory, and have 2<i>R</i> threads lookup two texel values. The only thing that is tricky about this is that it requires a little more book keeping when indexing into the shared memory; we no longer have the ith group thread ID corresponding to the ith element in the shared memory. Figure <a href="ch13.html#fig13.12">13.12</a> shows the mapping from threads to shared memory for <i>R</i> = 4. </p>
+<p class="caption"><img src="images/Fig13-12.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.12"><b><i>Figure 13.12.</i></b>&nbsp;&nbsp;In this example, <i>R</i> = 4. The four leftmost threads each read two texel values and store them into shared memory. The four rightmost threads each read two texel values and store them into shared memory. Every other thread just reads one texel value and stores it in shared memory. This gives us all the texel values we need to blur <i>N</i> pixels with blur radius <i>R</i>.</p>
+
+<p class="tx">Finally, the last situation to discuss is that the left-most thread group and the right-most thread group can index the input image out-of-bounds, as shown in Figure <a href="ch13.html#fig13.13">13.13</a>. </p>
+
+<p class="caption"><img src="images/Fig13-13.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.13"><b><i>Figure 13.13.</i></b>&nbsp;&nbsp;Situations where we can read outside the bounds of the image</p>
+
+<p class="tx"><a id="page502"/>Reading from an out-of-bounds index is not illegal&mdash;it is defined to return 0 (and writing to an out-of-bounds index results in a no-op). However, we do not want to read 0 when we go out-of-bounds, as it means 0 colors (i.e., black) will make their way into the blur at the boundaries. Instead, we want to implement something analogous to the <i>clamp</i> texture address mode, where if we read an out-of-bounds value, it returns the same value as the boundary texel. This can be implemented by clamping the indices:</p>
+<p class="code"><span class="code">// Clamp out of bound samples that occur at left image borders.</span></p>
+<p class="code"><span class="code">int x = max(dispatchThreadID.x - gBlurRadius, 0);</span></p>
+<p class="code"><span class="code">gCache[groupThreadID.x] = gInput[int2(x, dispatchThreadID.y)];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Clamp out of bound samples that occur at right image borders.</span></p>
+<p class="code"><span class="code">int x = min(dispatchThreadID.x + gBlurRadius, gInput.Length.x-1);</span></p>
+<p class="code"><span class="code">gCache[groupThreadID.x+2*gBlurRadius] =&nbsp;</span></p>
+<p class="code"><span class="code">gInput[int2(x, dispatchThreadID.y)];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">gCache[groupThreadID.x+gBlurRadius] =&nbsp;</span></p>
+<p class="code"><span class="code">gInput[min(dispatchThreadID.xy, gInput.Length.xy-1)];</span></p>
+<p class="tx">The full shader code is shown below:</p>
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code"><span class="code">// Performs a separable Guassian blur with a blur radius up to 5 pixels.</span></p>
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbSettings : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We cannot have an array entry in a constant buffer that gets mapped onto</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// root constants, so list each element.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int gBlurRadius;</span></p>
+<p class="code">&nbsp;<a id="page503"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Support up to 11 blur weights.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w3;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w4;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w5;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w6;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w7;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w8;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w9;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float w10;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">static const int gMaxBlurRadius = 5;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Texture2D gInput&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: register(t0);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput : register(u0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#define N 256</span></p>
+<p class="code"><span class="code">#define CacheSize (N + 2*gMaxBlurRadius)</span></p>
+<p class="code"><span class="code">groupshared float4 gCache[CacheSize];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(N, 1, 1)]</span></p>
+<p class="code"><span class="code">void HorzBlurCS(int3 groupThreadID : SV_GroupThreadID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Put in an array for each indexing.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float weights[11] = { w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10 };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fill local thread storage to reduce bandwidth. To blur&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// N pixels, we will need to load N + 2*BlurRadius pixels</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// due to the blur radius.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// This thread group runs N threads. To get the extra 2*BlurRadius&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// pixels, have 2*BlurRadius threads sample an extra pixel.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(groupThreadID.x &lt; gBlurRadius)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int x = max(dispatchThreadID.x - gBlurRadius, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gCache[groupThreadID.x] = gInput[int2(x, dispatchThreadID.y)];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(groupThreadID.x &gt;= N-gBlurRadius)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int x = min(dispatchThreadID.x + gBlurRadius, gInput.Length.x-1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gCache[groupThreadID.x+2*gBlurRadius] = gInput[int2(x, dispatchThreadID.y)];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gCache[groupThreadID.x+gBlurRadius] = gInput[min(dispatchThreadID.xy, gInput.Length.xy-1)];</span></p>
+<p class="code">&nbsp;<a id="page504"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Wait for all threads to finish.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GroupMemoryBarrierWithGroupSync();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Now blur each pixel.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 blurColor = float4(0, 0, 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = -gBlurRadius; i &lt;= gBlurRadius; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int k = groupThreadID.x + gBlurRadius + i;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;blurColor += weights[i+gBlurRadius]*gCache[k];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] = blurColor;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(1, N, 1)]</span></p>
+<p class="code"><span class="code">void VertBlurCS(int3 groupThreadID : SV_GroupThreadID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Put in an array for each indexing.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float weights[11] = { w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10 };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fill local thread storage to reduce bandwidth. To blur&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// N pixels, we will need to load N + 2*BlurRadius pixels</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// due to the blur radius.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// This thread group runs N threads. To get the extra 2*BlurRadius&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// pixels, have 2*BlurRadius threads sample an extra pixel.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(groupThreadID.y &lt; gBlurRadius)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int y = max(dispatchThreadID.y - gBlurRadius, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gCache[groupThreadID.y] = gInput[int2(dispatchThreadID.x, y)];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(groupThreadID.y &gt;= N-gBlurRadius)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int y = min(dispatchThreadID.y + gBlurRadius, gInput.Length.y-1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gCache[groupThreadID.y+2*gBlurRadius] = gInput[int2(dispatchThreadID.x, y)];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Clamp out of bound samples that occur at image borders.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gCache[groupThreadID.y+gBlurRadius] = gInput[min(dispatchThreadID.xy,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gInput.Length.xy-1)];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Wait for all threads to finish.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GroupMemoryBarrierWithGroupSync();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Now blur each pixel.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 blurColor = float4(0, 0, 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = -gBlurRadius; i &lt;= gBlurRadius; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int k = groupThreadID.y + gBlurRadius + i;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;blurColor += weights[i+gBlurRadius]*gCache[k];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] = blurColor;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">For the last line</p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] = blurColor;</span></p>
+<p class="tx1"><a id="page505"/>it is possible in the right-most thread group to have extraneous threads that do not correspond to an element in the output texture (Figure <a href="ch13.html#fig13.13">13.13</a>). That is, the <span class="code">dispatchThreadID.xy</span> will be an out-of-bounds index for the output texture. However, we do not need to worry about handling this case, as an out-of-bound write results in a no-op.</p>
+<p class="h1" id="c13.8"><a href="toc.html#toc-13.8"><b>13.8 FURTHER RESOURCES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Compute shader programming is a subject in its own right, and there are several books on using GPUs for compute programs:</p>
+<ol><li><i>Programming Massively Parallel Processors: A Hands-on Approach</i> by David B. Kirk and Wen-mei W. Hwu. </li>
+<li><i>OpenCL Programming Guide</i> by Aaftab Munshi, Benedict R. Gaster, Timothy G. Mattson, James Fung, and Dan Ginsburg.</li></ol>
+<p class="tx1">Technologies like CUDA and OpenCL are just different APIs for accessing the GPU for writing compute programs. Best practices for CUDA and OpenCL programs are also best practices for Direct Compute programs, as the programs are all executed on the same hardware. In this chapter, we have shown the majority of Direct Compute syntax, and so you should have no trouble porting a CUDA or OpenCL program to Direct Compute. </p>
+<p class="tx">Chuck Walbourn has posted a blog page consisting of links to many Direct Compute presentations: </p>
+<p class="tx"><i><a href="http://blogs.msdn.com/b/chuckw/archive/2010/07/14/directcompute.aspx">http://blogs.msdn.com/b/chuckw/archive/2010/07/14/directcompute.aspx</a></i></p>
+<p class="tx1">In addition, Microsoft&rsquo;s Channel 9 has a series of lecture videos on<a id="page506"/> Direct Compute programming:</p>
+<p class="tx"><i><a href="http://channel9.msdn.com/tags/DirectCompute-Lecture-Series/">http://channel9.msdn.com/tags/DirectCompute-Lecture-Series/</a></i></p>
+<p class="tx">Finally, NVIDIA has a whole section on CUDA training. </p>
+<p class="tx"><i><a href="http://developer.nvidia.com/cuda-training">http://developer.nvidia.com/cuda-training</a></i></p>
+<p class="tx1">In particular, there are full video lectures on CUDA programming from the University of Illinois, which we highly recommend. Again, we emphasize that CUDA is just another API for accessing the compute functionality of the GPU. Once you understand the syntax, the hard part about GPU computing is learning how to write efficient programs for it. By studying these lectures on CUDA, you will get a better idea of how GPU hardware works so that you can write optimal code.</p>
+<p class="h1" id="c13.9"><a href="toc.html#toc-13.9"><b>13.9 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The <span class="code">ID3D12GraphicsCommandList::Dispatch</span> API call dispatches a grid of thread groups. Each thread group is a 3D grid of threads; the number of threads per thread group is specified by the <span class="code">[numthreads(x,y,z)]</span> attribute in the compute shader. For performance reasons, the total number of threads should be a multiple of the warp size (thirty-two for NVIDIA hardware) or a multiple of the wavefront size (sixty-four ATI hardware). </li>
+<li>To ensure parallelism, at least two thread groups should be dispatched per multiprocessor. So if your hardware has sixteen multiprocessors, then at least thirty-two thread groups should be dispatched so a multiprocessor always has work to do. Future hardware will likely have more multiprocessors, so the number of thread groups should be even higher to ensure your program scales well to future hardware. </li>
+<li>Once thread groups are assigned to a multiprocessor, the threads in the thread groups are divided into warps of thirty-two threads on NVIDIA hardware. The multiprocessor than works on a warp of threads at a time in an SIMD fashion (i.e., the same instruction is executed for each thread in the warp). If a warp becomes stalled, say to fetch texture memory, the multiprocessor can quickly switch and execute instructions for another warp to hide this latency. This keeps the multiprocessor always busy. You can see why there is the recommendation of the thread group size being a multiple of the warp size; if it were not then when the thread group is divided into warps, there will be warps with threads that are not doing anything. </li>
+<li>Texture resources can be<a id="page507"/> accessed by the compute shader for input by creating a SRV to the texture and binding it to the compute shader. A read-write texture (<span class="code">RWTexture</span>) is a texture the compute shader can read and write output to. To set a texture for reading and writing to the compute shader, a UAV (unordered access view) to the texture is created and bound to the compute shader. Texture elements can be indexed with operator [] notation, or sampled via texture coordinates and sampler state with the <span class="code">SampleLevel</span> method. </li>
+<li>A structured buffer is a buffer of elements that are all the same type, like an array. The type can be a user-defined type defined by a struct for example. Read-only structured buffers are defined in the HLSL like this:
+<p class="code"><span class="code">StructuredBuffer&lt;DataType&gt; gInputA;</span></p>
+<p class="tx1">Read-write structured buffers are defined in the HLSL like this:</p>
+<p class="code"><span class="code">RWStructuredBuffer&lt;DataType&gt; gOutput;</span></p>
+<br/>Read-only buffer resources can be accessed by the compute shader for input by create a SRV to a structured buffer and binding it to the compute shader. Read-write buffer resources can be accessed by the compute shader for reading and writing by creating a UAV to a structured buffer and binding it to the compute shader. </li>
+<li>Various thread IDs are passed into the compute shader via the system values. These IDs are often used to index into resources and shared memory.</li>
+<li>Consume and append structured buffers are defined in the HLSL like this:
+<p class="code"><span class="code">ConsumeStructuredBuffer&lt;DataType&gt; gInput;</span></p>
+<p class="code"><span class="code">AppendStructuredBuffer&lt;DataType&gt; gOutput;</span></p>
+<br/>Consume and append structured buffers are useful if you do not care about the order in which data elements are processed and written to the output buffer, as it allows you to avoid indexing syntax. Note that append buffers do not automatically grow, and they must have be large enough to store all the data elements you will append to it.</li>
+<li>Thread groups are given a section of so-called shared memory or thread local storage. Accessing this memory is fast and can be thought of being as fast as a hardware cache. This shared memory cache can be useful for optimizations or needed for algorithm implementations. In the compute shader code, shared memory is declared like so:
+<p class="code"><span class="code">groupshared float4 gCache[N];</span></p>
+<br/>The array size <a id="page508"/><span class="code">N</span> can be whatever you want, but the maximum size of group shared memory is 32kb. Assuming a multiprocessor supports the maximum of 32kb for shared memory, for performance, a thread group should not use more than 16kb of shared memory; otherwise it is impossible to fit two thread groups on a single multiprocessor. </li>
+<li>Avoid switching between compute processing and rendering when possible, as there is overhead required to make the switch. In general, for each frame try to do all of your compute work first, then do all of your rendering work. </li></ol>
+<p class="h1" id="c13.10"><a href="toc.html#toc-13.10"><b>13.10 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Write a compute shader that inputs a structured buffer of sixty-four 3D vectors with random magnitudes contained in [1, 10]. The compute shader computes the length of the vectors and outputs the result into a floating-point buffer. Copy the results to CPU memory and save the results to file. Verify that all the lengths are contained in [1, 10].</li>
+<li>Redo the previous exercise using typed buffers; that is, <span class="code">Buffer&lt;float3&gt;</span> for the input buffer and <span class="code">Buffer&lt;float&gt;</span> for the output buffer.</li>
+<li>Assume that in the previous exercises that we do not care the order in which the vectors are normalized. Redo Exercise 1 using Append and Consume buffers.</li>
+<li>Research the bilateral blur technique and implement it on the compute shader. Redo the &ldquo;Blur&rdquo; demo using the bilateral blur. </li>
+<li>So far in our demos we have done a 2D wave equation on the CPU with the <span class="code">Waves</span> class in Waves.h/.cpp. Port this to a GPU implementation. Use textures of <span class="code">floats</span> to store the previous, current, and next height solutions. Because UAVs are read/write, we can just use UAVs throughout and not bother with SRVs:
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gPrevSolInput : register(u0);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gCurrSolInput : register(u1);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float&gt; gOutput&nbsp;&nbsp;&nbsp;&nbsp;: register(u2);&nbsp;</span></p>
+<br/>Use the compute shader to perform the wave update computations. A separate compute shader can be used to disturb the water to generate waves. After you have update the grid heights, you can render a triangle grid with the same vertex resolution as the wave textures (so there is a texel corresponding to each grid vertex), and bind the current wave solution texture to a new &ldquo;waves&rdquo; vertex shader. Then in the vertex shader, you can sample the solution texture<a id="page509"/> to offset the heights (this is called <i>displacement mapping</i>) and estimate the normal.
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">#ifdef DISPLACEMENT_MAP</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sample the displacement map using non-transformed [0,1]^2 tex-coords.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vin.PosL.y += gDisplacementMap.SampleLevel(gsamLinearWrap, vin.TexC, 1.0f).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Estimate normal using finite difference.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float du = gDisplacementMapTexelSize.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dv = gDisplacementMapTexelSize.y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float l = gDisplacementMap.SampleLevel( gsamPointClamp,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vin.TexC-float2(du, 0.0f), 0.0f ).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float r = gDisplacementMap.SampleLevel( gsamPointClamp,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vin.TexC+float2(du, 0.0f), 0.0f ).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float t = gDisplacementMap.SampleLevel( gsamPointClamp,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vin.TexC-float2(0.0f, dv), 0.0f ).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float b = gDisplacementMap.SampleLevel( gsamPointClamp,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vin.TexC+float2(0.0f, dv), 0.0f ).r;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vin.NormalL = normalize( float3(-r+l, 2.0f*gGridSpatialStep, b-t) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosW = posW.xyz;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to use inverse-transpose of&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, gMatTransform).xy;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<br/>Compare your performance results (time per frame) to a CPU implementation with 512 &times; 512 grid points in release mode.</li>
+<li>The <i>Sobel Operator</i> measures edges in an image. For each pixel, it estimates the magnitude of the gradient. A pixel with a large gradient magnitude means the color difference between<a id="page510"/> the pixel and its neighbors has high variation, and so that pixel must be on an edge. A pixel with a small gradient magnitude means the color difference between the pixel and its neighbors has low variation, and so that pixel is not on an edge. Note that the Sobel Operator does not return a binary result (on edge or not on edge); it returns a grayscale value in the range [0, 1] that denotes an edge &ldquo;steepness&rdquo; amount, where 0 denotes no edge (the color is not changing locally about a pixel) and 1 denotes a very steep edge or discontinuity (the color is changing a lot locally about a pixel). The inverse Sobel image (1 &minus; <i>c</i>) is often more useful, as white denotes no edge and black denotes edges (see Figure <a href="ch13.html#fig13.14">13.14</a>). 
+<p class="caption"><img src="images/Fig13-14.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.14"><b><i>Figure 13.14.</i></b>&nbsp;&nbsp;Left: In image after applying Sobel Operator, the white pixels denote edges. In the inverse image of the Sobel Operator, the black pixels denote edge.</p>
+<br/>If you color multiply the original image by the inverse of the image generated by the Sobel Operator, then you get a stylized cartoon/comic book like effect by making edges look like black pen strokes (see Figure <a href="ch13.html#fig13.15">13.15</a>). You can take this stylized cartoon/comic book effect even further by first blurring the original image to wash out details, then applying the Sobel Operator on the blurred image to build the edge detection image, and finally multiplying the blurred image by the inverse of the edge detection image.
+<p class="caption"><img src="images/Fig13-15.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig13.15"><b><i>Figure 13.15.</i></b>&nbsp;&nbsp;Multiplying the original image by the inverse of the edge detection image to produce a stylized look where edge look like black pen strokes</p>
+
+<br/>Use render-to-texture and a compute shader to implement the <i>Sobel Operator</i>. After you have generated the edge detection image, multiply the original image with the inverse<a id="page511"/> of the image generated by the Sobel Operator to get the results shown in Figure <a href="ch13.html#fig13.15">13.15</a>. The necessary shader code is included below:
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code"><span class="code">// Performs edge detection using Sobel operator.</span></p>
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Texture2D gInput&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: register(t0);</span></p>
+<p class="code"><span class="code">RWTexture2D&lt;float4&gt; gOutput : register(u0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Approximates luminance ("brightness") from an RGB value. These weights are&nbsp;</span></p>
+<p class="code"><span class="code">// derived from experiment based on eye sensitivity to different wavelengths&nbsp;</span></p>
+<p class="code"><span class="code">// of light.</span></p>
+<p class="code"><span class="code">float CalcLuminance(float3 color)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return dot(color, float3(0.299f, 0.587f, 0.114f));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[numthreads(16, 16, 1)]</span></p>
+<p class="code"><span class="code">void SobelCS(int3 dispatchThreadID : SV_DispatchThreadID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sample the pixels in the neighborhood of this pixel.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 c[3][3];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 3; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(int j = 0; j &lt; 3; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int2 xy = dispatchThreadID.xy + int2(-1 + j, -1 + i);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c[i][j] = gInput[xy];&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each color channel, estimate partial x derivative using Sobel scheme.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 Gx = -1.0f*c[0][0] - 2.0f*c[1][0] - 1.0f*c[2][0] +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1.0f*c[0][2] + 2.0f*c[1][2] + 1.0f*c[2][2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each color channel, estimate partial y derivative using Sobel scheme.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 Gy = -1.0f*c[2][0] - 2.0f*c[2][1] - 1.0f*c[2][1] +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1.0f*c[0][0] + 2.0f*c[0][1] + 1.0f*c[0][2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Gradient is (Gx, Gy). For each color channel, compute magnitude to</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// get maximum rate of change.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 mag = sqrt(Gx*Gx + Gy*Gy);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Make edges black, and nonedges white.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mag = 1.0f - saturate(CalcLuminance(mag.rgb));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;gOutput[dispatchThreadID.xy] = mag;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">//****************************************************************************</span></p>
+<p class="code"><span class="code">// Composite.hlsl by Frank Luna (C) 2015 All Rights Reserved.<a id="page512"/></span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Combines two images.</span></p>
+<p class="code"><span class="code">//****************************************************************************</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Texture2D gBaseMap : register(t0);</span></p>
+<p class="code"><span class="code">Texture2D gEdgeMap : register(t1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">static const float2 gTexCoords[6] =&nbsp;</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 1.0f)</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(uint vid : SV_VertexID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = gTexCoords[vid];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Map [0,1]^2 to NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; 1.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 c = gBaseMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 e = gEdgeMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Multiple edge map with original image.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return c*e;</span></p>
+<p class="code"><span class="code">}</span></p>
+</li></ol>
+</body>
+</html>

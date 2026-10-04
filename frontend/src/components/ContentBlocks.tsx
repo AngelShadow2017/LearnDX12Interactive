@@ -1,4 +1,5 @@
 import type { ComponentProps, HTMLAttributes } from 'react';
+import { renderToString } from 'katex';
 import { LearningActivity, MiniQuiz } from './LearningActivity';
 import { InlineFigure } from './InlineFigure';
 import { ChapterCheckpoint } from './ChapterCheckpoint';
@@ -16,8 +17,15 @@ export function Figure(props: FigureProps) {
   return <InlineFigure {...props} />;
 }
 
+type MathBlockProps = { tex: string };
+export function MathBlock({ tex }: MathBlockProps) {
+  const html = renderToString(tex, { displayMode: true, throwOnError: false });
+  return <div className="math-block" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
 export const mdxComponents = {
   Figure,
+  MathBlock,
   Activity: LearningActivity,
   MiniQuiz,
   Callout,

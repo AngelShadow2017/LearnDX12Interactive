@@ -1,0 +1,702 @@
+<div className="translation-progress"><b>本章译文进度</b><span>已录入：11.1–11.7 全部小节（含深度/模板格式与清空、模板测试、深度/模板状态、平面镜像与平面阴影实现及 StencilApp 代码、习题 1–12），依据 EPUB ch11.html 逐段录入 · 状态：录入完成并已完成独立审校（2026-10-05；记录见 REVIEW-CH10-CH13.md）</span></div>
+
+<a id="page419"/>
+
+模板缓冲（stencil buffer）是一个离屏缓冲，我们可以用它实现一些特殊效果。模板缓冲与后台缓冲、深度缓冲具有相同的分辨率，因此模板缓冲中的第 *ij* 个像素与后台缓冲和深度缓冲中的第 *ij* 个像素一一对应。回忆 §4.1.5，当指定模板缓冲时，它是附着在深度缓冲上的。顾名思义，模板缓冲像一块模板那样工作，允许我们阻止某些像素片段被渲染到后台缓冲。
+
+例如，实现镜子时，我们需要把物体沿镜面平面反射；然而我们只想把反射画进镜子里。我们可以用模板缓冲阻止反射被渲染，除非它正被画进镜子（见图 11.1）。
+
+<Figure src="images/Fig11-1.jpg" alt="左图：反射的骷髅正确显示在镜中，但反射透过砖墙也能看到，破坏了错觉；右图：用模板缓冲阻止反射被渲染到镜子之外" figureNumber="图 11.1" caption="（左）反射的骷髅正确显示在镜子中。反射没有透过墙壁的砖块显示出来，因为在该区域它未通过深度测试。然而，从墙后面看我们能看到反射，这就破坏了错觉（反射应当只能透过镜子看到）。（右）通过使用模板缓冲，我们可以阻止反射的骷髅被渲染，除非它正被画进镜子。" />
+
+模板缓冲（以及深度缓冲）的状态是通过填写一个 `D3D12_DEPTH_STENCIL_DESC` 实例，并把它赋给管线状态对象（PSO）的 `D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState` 字段来配置的。学好模板缓冲的最佳途径是研究现有的示例应用程序。一旦理解了模板缓冲的几种应用，你就会更清楚如何把它用于自己的特定需求。
+
+**本章目标：**
+
+1. 弄清如何通过填写管线状态对象中的 `D3D12_DEPTH_STENCIL_DESC` 字段来控制深度和模板缓冲状态。
+2. <a id="page420"/>学习如何实现镜子：用模板缓冲阻止反射被绘制到非镜面表面上。
+3. 能够识别双重混合（double blending），并理解模板缓冲如何防止它。
+4. 解释深度复杂度（depth complexity），并描述测量场景深度复杂度的两种方法。
+
+<section className="lesson-section" id="s111">
+<h2>11.1 深度/模板格式与清空</h2>
+
+回忆一下，深度/模板缓冲是一种纹理，因此必须用某种数据格式创建。用于深度/模板缓冲的格式如下：
+
+1. `DXGI_FORMAT_D32_FLOAT_S8X24_UINT:` 指定一个 32 位浮点深度缓冲，其中 8 位（无符号整数）保留给模板缓冲，映射到 [0, 255] 范围，另有 24 位不使用的填充位。
+2. `DXGI_FORMAT_D24_UNORM_S8_UINT:` 指定一个映射到 [0, 1] 范围的无符号 24 位深度缓冲，其中 8 位（无符号整数）保留给模板缓冲，映射到 [0, 255] 范围。
+
+**译者注**：上面第 1 条原文写作 "24-bits not used for padding"（24 位不用作填充），表述不完整，按其含义应为"24 位用作填充、不存放数据"，此处照录原文。
+
+在我们的 `D3DApp` 框架中，创建深度缓冲时我们指定：
+
+```cpp
+DXGI_FORMAT mDepthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+depthStencilDesc.Format = mDepthStencilFormat;
+```
+
+此外，在每帧开始时应把模板缓冲重置为某个值。这用下面的方法完成（它同时清空深度缓冲）：
+
+```cpp
+void ID3D12GraphicsCommandList::ClearDepthStencilView( 
+  D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView,
+  D3D12_CLEAR_FLAGS ClearFlags,
+  FLOAT Depth,
+  UINT8 Stencil,
+  UINT NumRects,
+  const D3D12_RECT *pRects);
+```
+
+1. <a id="page421"/>`DepthStencilView`：指向要清空的深度/模板缓冲视图的描述符。
+2. `ClearFlags`：指定 `D3D12_CLEAR_FLAG_DEPTH` 只清空深度缓冲；指定 `D3D12_CLEAR_FLAG_STENCIL` 只清空模板缓冲；指定 `D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL` 清空两者。
+3. `Depth`：深度缓冲中每个像素要设置的浮点值；它必须是满足 0 ≤ *x* ≤ 1 的浮点数 *x*。
+4. `Stencil`：模板缓冲中每个像素要设置的整数值；它必须是满足 0 ≤ *n* ≤ 255 的整数 *n*。
+5. `NumRects`：数组 `pRects` 指向的矩形数量。
+6. `pRects`：由 `D3D12_RECT` 组成的数组，标记深度/模板缓冲上要清空的矩形区域；指定 `nullptr` 清空整个深度/模板缓冲。
+
+我们的演示在每一帧都已经在调用这个方法。例如：
+
+```cpp
+mCommandList->ClearDepthStencilView(DepthStencilView(), 
+  D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 
+  1.0f, 0, 0, nullptr);
+```
+</section>
+
+<section className="lesson-section" id="s112">
+<h2>11.2 模板测试</h2>
+
+如前所述，我们可以用模板缓冲阻止向后台缓冲的某些区域渲染。是否阻止某个特定像素被写入，由*模板测试*（stencil test）决定，模板测试如下：
+
+```cpp
+  if( StencilRef & StencilReadMask ← Value & StencilReadMask )
+    accept pixel
+  else
+    reject pixel
+```
+
+**译者注**：源 HTML 中上面伪代码里的比较运算符原本是一个内联箭头小图（uleftarw.jpg，表示"由应用指定的比较函数"），首次出现处该图缺失（原书留白），译文按上下文以 ← 标示。
+
+假设启用了模板操作，则模板测试在像素被光栅化时（即在输出合并阶段）执行，它取两个操作数：
+
+1. 左操作数（LHS）：由应用定义的*模板参考值*（stencil reference value，`StencilRef`）与应用定义的*掩码值*（masking value，`StencilReadMask`）做 `AND` 运算得到。
+2. 右操作数（RHS）：由我们正在测试的那个像素在模板缓冲中已有的条目（`Value`）与应用定义的掩码值（`StencilReadMask`）做 `AND` 运算得到。
+
+注意，LHS 与 RHS 使用的 `StencilReadMask` 是同一个。<a id="page422"/>然后，模板测试按应用选择的*比较函数*（comparison function）比较 LHS 与 RHS，比较函数返回真或假。若测试结果为真，我们就把像素写入后台缓冲（假设深度测试也通过）。若测试结果为假，我们就阻止该像素被写入后台缓冲。当然，如果像素因未通过模板测试而被拒绝，它也不会被写入深度缓冲。
+
+← 运算符可以是 `D3D12_COMPARISON_FUNC` 枚举类型定义的函数之一：
+
+```cpp
+typedef enum D3D12_COMPARISON_FUNC
+{
+  D3D12_COMPARISON_NEVER = 1,
+  D3D12_COMPARISON_LESS = 2,
+  D3D12_COMPARISON_EQUAL = 3,
+  D3D12_COMPARISON_LESS_EQUAL = 4,
+  D3D12_COMPARISON_GREATER = 5,
+  D3D12_COMPARISON_NOT_EQUAL = 6,
+  D3D12_COMPARISON_GREATER_EQUAL = 7,
+  D3D12_COMPARISON_ALWAYS = 8,
+} D3D12_COMPARISON_FUNC;
+```
+
+1. `D3D12_COMPARISON_NEVER:` 该函数总是返回 false。
+2. `D3D12_COMPARISON_LESS:` 用 &lt; 运算符替换 ←。
+3. `D3D12_COMPARISON_EQUAL:` 用 == 运算符替换 ←。
+4. `D3D12_COMPARISON_LESS_EQUAL:` 用 ≤ 运算符替换 ←。
+5. `D3D12_COMPARISON_GREATER:` 用 &gt; 运算符替换 ←。
+6. `D3D12_COMPARISON_NOT_EQUAL:` 用 != 运算符替换 ←。
+7. `D3D12_COMPARISON_GREATER_EQUAL:` 用 ≥ 运算符替换 ←。
+8. `D3D12_COMPARISON_ALWAYS:` 该函数总是返回 true。
+</section>
+
+<section className="lesson-section" id="s113">
+<h2>11.3 描述深度/模板状态</h2>
+
+深度/模板状态通过填写一个 `D3D12_DEPTH_STENCIL_DESC` 实例来描述：
+
+```cpp
+typedef struct D3D12_DEPTH_STENCIL_DESC {
+  BOOL DepthEnable; // Default True
+
+  // Default: D3D11_DEPTH_WRITE_MASK_ALL
+  D3D12_DEPTH_WRITE_MASK DepthWriteMask;
+
+  // Default: D3D11_COMPARISON_LESS
+  D3D12_COMPARISON_FUNC DepthFunc;   
+
+  BOOL StencilEnable;        // Default: False
+  UINT8 StencilReadMask;     // Default: 0xff
+  UINT8 StencilWriteMask;    // Default: 0xff
+  D3D12_DEPTH_STENCILOP_DESC FrontFace; 
+  D3D12_DEPTH_STENCILOP_DESC BackFace; 
+} D3D12_DEPTH_STENCIL_DESC;
+```
+
+**译者注**：上面结构中两个默认值注释在原书中写作 `D3D11_DEPTH_WRITE_MASK_ALL` 和 `D3D11_COMPARISON_LESS`，均应为 `D3D12_` 前缀，此处照录原文。
+
+<h3 id="s1131">11.3.1 深度设置</h3>
+
+1. <a id="page423"/>`DepthEnable`：设为 true 启用深度缓冲；设为 false 禁用它。禁用深度测试后，绘制顺序就变得重要，即使像素片段位于遮挡物体之后也会被绘制（复习 §4.1.5）。如果禁用了深度缓冲，那么无论 `DepthWriteMask` 如何设置，深度缓冲中的元素也*不会*被更新。
+2. `DepthWriteMask`：它可以是 `D3D12_DEPTH_WRITE_MASK_ZERO` 或 `D3D12_DEPTH_WRITE_MASK_ALL`，但不能两者都是。假设 DepthEnable 设为 true，`D3D12_DEPTH_WRITE_MASK_ZERO` 禁用对深度缓冲的写入，但深度测试仍会进行。`D3D12_DEPTH_WRITE_MASK_ALL` 启用对深度缓冲的写入；只要深度测试和模板测试都通过，就会写入新深度。控制深度读写的能力对实现某些特殊效果是必需的。
+3. `DepthFunc`：指定 `D3D12_COMPARISON_FUNC` 枚举类型的某个成员，定义深度测试的比较函数。通常它总是 `D3D12_COMPARISON_LESS`，以便执行 §4.1.5 所述的常规深度测试。也就是说，只要像素片段的深度值小于先前写入后台缓冲的像素深度，它就被接受。但如你所见，必要时 Direct3D 允许你自定义深度测试。
+
+<h3 id="s1132">11.3.2 模板设置</h3>
+
+1. `StencilEnable`：设为 true 启用模板测试；设为 false 禁用它。
+2. `StencilReadMask`：模板测试中使用的 `StencilReadMask`：
+
+   ```cpp
+     if( StencilRef & StencilReadMask ← Value & StencilReadMask )
+       accept pixel
+     else
+       reject pixel
+   ```
+
+   默认值不屏蔽任何位：
+
+   ```cpp
+     #define   D3D12_DEFAULT_STENCIL_READ_MASK   ( 0xff )
+   ```
+
+3. <a id="page424"/>`StencilWriteMask`：更新模板缓冲时，我们可以用写掩码屏蔽某些位，不让它们被写入。例如，如果你想防止最高的 4 位被写入，可以使用写掩码 0x0f。默认值不屏蔽任何位：
+
+   ```cpp
+     #define   D3D12_DEFAULT_STENCIL_WRITE_MASK   ( 0xff )
+   ```
+
+4. `FrontFace`：一个填写好的 `D3D12_DEPTH_STENCILOP_DESC` 结构，指示模板缓冲对正面三角形如何工作。
+5. `BackFace`：一个填写好的 `D3D12_DEPTH_STENCILOP_DESC` 结构，指示模板缓冲对背面三角形如何工作。
+
+```cpp
+typedef struct D3D12_DEPTH_STENCILOP_DESC {
+
+  D3D12_STENCIL_OP StencilFailOp;      // Default: D3D12_STENCIL_OP_KEEP
+  D3D12_STENCIL_OP StencilDepthFailOp; // Default: D3D12_STENCIL_OP_KEEP
+  D3D12_STENCIL_OP StencilPassOp;    // Default: D3D12_STENCIL_OP_KEEP
+  D3D12_COMPARISON_FUNC StencilFunc; // Default: D3D12_COMPARISON_ALWAYS
+} D3D12_DEPTH_STENCILOP_DESC;
+```
+
+1. `StencilFailOp`：`D3D12_STENCIL_OP` 枚举类型的成员，描述当像素片段的模板测试失败时，模板缓冲应如何更新。
+2. `StencilDepthFailOp`：`D3D12_STENCIL_OP` 枚举类型的成员，描述当像素片段的模板测试通过但深度测试失败时，模板缓冲应如何更新。
+3. `StencilPassOp`：`D3D12_STENCIL_OP` 枚举类型的成员，描述当像素片段的模板测试和深度测试都通过时，模板缓冲应如何更新。
+4. `StencilFunc`：`D3D12_COMPARISON_FUNC` 枚举类型的成员，定义模板测试的比较函数。
+
+   ```cpp
+   typedef 
+   enum D3D12_STENCIL_OP
+   {
+     D3D12_STENCIL_OP_KEEP  = 1,
+     D3D12_STENCIL_OP_ZERO  = 2,
+     D3D12_STENCIL_OP_REPLACE  = 3,
+     D3D12_STENCIL_OP_INCR_SAT  = 4,
+     D3D12_STENCIL_OP_DECR_SAT  = 5,
+     D3D12_STENCIL_OP_INVERT  = 6,
+     D3D12_STENCIL_OP_INCR  = 7,
+     D3D12_STENCIL_OP_DECR  = 8
+   } D3D12_STENCIL_OP;
+   ```
+
+   1. `D3D12_STENCIL_OP_KEEP`：指定不改变模板缓冲；即保持当前值。
+   2. `D3D12_STENCIL_OP_ZERO`：指定把模板缓冲<a id="page425"/>条目设为零。
+   3. `D3D12_STENCIL_OP_REPLACE`：指定用模板测试中使用的模板参考值（`StencilRef`）替换模板缓冲条目。注意，`StencilRef` 值在我们把深度/模板状态块绑定到渲染管线时设置（§11.3.3）。
+   4. `D3D12_STENCIL_OP_INCR_SAT`：指定递增模板缓冲条目。如果递增后的值超过最大值（例如 8 位模板缓冲的 255），则把条目限制（clamp）到该最大值。
+   5. `D3D12_STENCIL_OP_DECR_SAT`：指定递减模板缓冲条目。如果递减后的值小于零，则把条目限制为零。
+   6. `D3D12_STENCIL_OP_INVERT`：指定反转模板缓冲条目的位。
+   7. `D3D12_STENCIL_OP_INCR`：指定递增模板缓冲条目。如果递增后的值超过最大值（例如 8 位模板缓冲的 255），则回绕（wrap）到 0。
+   8. `D3D12_STENCIL_OP_DECR`：指定递减模板缓冲条目。如果递减后的值小于零，则回绕到允许的最大值。
+
+**注意**：正面三角形与背面三角形的模板行为可以不同。在因背面剔除而不渲染背面多边形的情况下，`BackFace` 设置无关紧要。但有时我们确实需要为某些图形算法或透明几何体（比如铁丝网箱子，我们可以透过箱子看到背面）渲染背面多边形。在这些情况下，`BackFace` 设置就是相关的。
+
+<h3 id="s1133">11.3.3 创建并绑定深度/模板状态</h3>
+
+一旦完整填写好描述深度/模板状态的 `D3D12_DEPTH_STENCIL_DESC` 实例，我们就可以把它赋给 PSO 的 `D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState` 字段。用这个 PSO 绘制的任何几何体都会按该 PSO 的深度/模板设置渲染。
+
+前面还没提到的一个细节是如何设置模板参考值。模板参考值用 `ID3D12GraphicsCommandList::OMSetStencilRef` 方法设置，它接受单个无符号整数参数；例如，下面把模板参考值设为 1：
+
+```cpp
+mCommandList->OMSetStencilRef(1);
+```
+
+<a id="page426"/>
+</section>
+
+<section className="lesson-section" id="s114">
+<h2>11.4 实现平面镜像</h2>
+
+自然界中的许多表面都能充当镜子，让我们看到物体的反射。本节描述如何在 3D 应用程序中模拟镜子。注意，为简单起见，我们把实现镜子的任务限定为平面表面。例如，一辆光亮的车可以显示反射；然而车身是光滑、圆润的，不是平面。我们渲染的是那种出现在光亮大理石地板上或挂在墙上的镜子中的反射——换句话说，是位于平面上的镜子。
+
+用程序实现镜子需要我们解决两个问题。第一，我们必须学会如何把物体关于任意平面反射，以便正确绘制反射。第二，我们必须只在镜子中显示反射，也就是说，我们必须以某种方式把一个表面"标记"为镜子，然后在渲染时只在反射位于镜子中时才绘制它。回顾首次引入这一概念的图 11.1。
+
+第一个问题用一些解析几何就能轻松解决，在附录 C 中讨论。第二个问题可以用模板缓冲解决。
+
+<h3 id="s1141">11.4.1 镜像概述</h3>
+
+**注意**：绘制反射时，我们还需要把光源沿镜面平面反射。否则，反射中的光照将不准确。
+
+图 11.2 表明，要绘制物体的反射，只需把它沿镜面平面翻转。然而，这带来了图 11.1 所示的问题。即物体的反射（这里是骷髅）只是场景中的另一个物体，如果没有东西遮挡它，眼睛就会看到它。但是，反射应当只能透过镜子看到。我们可以用模板缓冲解决这个问题，因为模板缓冲允许我们<a id="page427"/>阻止向后台缓冲的某些区域渲染。于是，如果反射的骷髅不是正被渲染进镜子，我们就可以用模板缓冲阻止它被渲染。下面概述实现步骤：
+
+<Figure src="images/Fig11-2.jpg" alt="眼睛透过镜子看到箱子的反射；为模拟这一效果，我们把箱子沿镜面平面反射并照常渲染反射的箱子" figureNumber="图 11.2" caption="眼睛透过镜子看到箱子的反射。为模拟这一效果，我们把箱子沿镜面平面反射，并照常渲染反射后的箱子。" />
+
+<Figure src="images/Fig11-3.jpg" alt="地板、墙壁和骷髅已绘制到后台缓冲，模板缓冲清零（用浅灰色表示）；模板缓冲上的黑色轮廓线仅用于说明后台缓冲像素与模板缓冲像素的对应关系" figureNumber="图 11.3" caption="地板、墙壁和骷髅绘制到后台缓冲，模板缓冲被清为 0（用浅灰色表示）。画在模板缓冲上的黑色轮廓线用来说明后台缓冲像素与模板缓冲像素之间的关系——它们并不表示绘制在模板缓冲上的任何数据。" />
+
+1. 照常把地板、墙壁和骷髅渲染到后台缓冲（但不渲染镜子）。注意，这一步不修改模板缓冲。
+2. 把模板缓冲清为 0。图 11.3 显示了此时的后台缓冲和模板缓冲（为便于绘图，我们用箱子代替骷髅）。
+3. 只把镜子渲染到模板缓冲。我们可以通过创建一个把 `D3D12_RENDER_TARGET_BLEND_DESC::RenderTargetWriteMask = 0;` 的混合状态来禁用对后台缓冲的颜色写入；并通过设置
+
+   ```cpp
+   D3D12_DEPTH_STENCIL_DESC::DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+   ```
+
+   来禁用对深度缓冲的写入。
+
+   向模板缓冲渲染镜子时，我们把模板测试设为总是成功（`D3D12_COMPARISON_ALWAYS`），并指定若测试通过，模板缓冲条目应被替换（`D3D12_STENCIL_OP_REPLACE`）为 1（`StencilRef`）。若深度测试失败，我们指定 `D3D12_STENCIL_OP_KEEP`，这样深度测试失败时模板缓冲不变（例如骷髅遮住部分镜子时就会发生这种情况）。由于我们只把镜子渲染到模板缓冲，因此模板缓冲中除了与镜子可见部分对应的像素（它们为 1）之外，所有像素都是 0。图 11.4 显示了更新后的模板缓冲。本质上，我们是在模板缓冲中标记镜子的可见像素。
+
+   <Figure src="images/Fig11-4.jpg" alt="把镜子渲染到模板缓冲，标记与镜子可见部分对应的模板像素；被箱子遮挡的模板区域不置 1" figureNumber="图 11.4" caption="把镜子渲染到模板缓冲，本质上是在标记模板缓冲中与镜子可见部分对应的像素。模板缓冲上的实心黑色区域表示被置为 1 的模板条目。注意，模板缓冲上被箱子遮挡的区域不会被置为 1，因为它未通过深度测试（箱子位于镜子那部分的前面）。" />
+
+   **注意**：重要的是，要先绘制骷髅再把镜子绘制到模板缓冲，这样被骷髅遮挡的镜子像素才会因深度测试失败而不修改模板缓冲。我们不想开启被遮挡的那部分模板缓冲；否则反射会透过骷髅显示出来。
+
+4. 现在我们把反射的骷髅渲染到后台<a id="page428"/>缓冲和模板缓冲。但回顾一下，只有模板测试通过时我们才渲染到后台缓冲。这一次，我们把模板测试设为只在模板缓冲的值等于 1 时才成功；这用 `StencilRef` 为 1 和模板比较运算符 `D3D12_COMPARISON_EQUAL` 完成。这样，反射的骷髅只会被渲染到对应模板缓冲条目为 1 的区域。由于模板缓冲中与镜子可见部分对应的条目是唯一为 1 的条目，因此反射的骷髅只会被渲染进镜子的可见部分。
+5. 最后，我们照常把镜子渲染到后台缓冲。然而，为了让骷髅反射（位于镜子后面）透出来，我们需要用透明混合渲染镜子。如果不以透明方式渲染镜子，镜子就会简单地遮住反射，因为它的深度小于反射的深度。为实现这一点，我们只需为镜子定义一个新的材质实例；我们把漫反射分量的 alpha 通道设为 0.3，使镜子有 30% 不透明，然后按上一章（§10.5.4）所述用透明混合状态渲染镜子。
+
+   ```cpp
+   auto icemirror = std::make_unique<Material>();
+   icemirror->Name = "icemirror";
+   icemirror->MatCBIndex = 2;
+   icemirror->DiffuseSrvHeapIndex = 2;
+   icemirror->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);
+   icemirror->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+   icemirror->Roughness = 0.5f;
+   ```
+
+   这些设置给出如下混合方程：
+
+   <MathBlock tex="\mathbf{C}=0.3\cdot\mathbf{C}_{src}+0.7\cdot\mathbf{C}_{dst}" />
+
+假设我们已经把反射的骷髅像素写入后台缓冲，可以看到 30% 的颜色来自镜子（源），70% 的颜色来自骷髅（目标）。
+
+<h3 id="s1142">11.4.2 定义镜像深度/模板状态</h3>
+
+要实现前面描述的算法，<a id="page429"/>我们需要两个 PSO。第一个用于绘制镜子，在模板缓冲上标记镜子像素。第二个用于绘制反射的骷髅，使它只画进镜子的可见部分。
+
+```cpp
+//
+// PSO for marking stencil mirrors.
+//
+
+// Turn off render target writes. 
+CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
+mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0;
+
+D3D12_DEPTH_STENCIL_DESC mirrorDSS;
+mirrorDSS.DepthEnable = true;
+mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+mirrorDSS.StencilEnable = true;
+mirrorDSS.StencilReadMask = 0xff;
+mirrorDSS.StencilWriteMask = 0xff;
+   
+mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+// We are not rendering backfacing polygons, so these settings do not
+// matter.
+mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPsoDesc = opaquePsoDesc;
+markMirrorsPsoDesc.BlendState = mirrorBlendState;
+markMirrorsPsoDesc.DepthStencilState = mirrorDSS;
+ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+  &markMirrorsPsoDesc, 
+  IID_PPV_ARGS(&mPSOs["markStencilMirrors"])));
+
+//
+// PSO for stencil reflections.
+//
+
+D3D12_DEPTH_STENCIL_DESC reflectionsDSS;
+reflectionsDSS.DepthEnable = true;
+reflectionsDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+reflectionsDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+reflectionsDSS.StencilEnable = true;
+reflectionsDSS.StencilReadMask = 0xff;
+reflectionsDSS.StencilWriteMask = 0xff;
+
+reflectionsDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+// We are not rendering backfacing polygons, so these settings do not 
+// matter.
+reflectionsDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+reflectionsDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionsPsoDesc = opaquePsoDesc;
+drawReflectionsPsoDesc.DepthStencilState = reflectionsDSS;
+drawReflectionsPsoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+drawReflectionsPsoDesc.RasterizerState.FrontCounterClockwise = true;
+ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+  &drawReflectionsPsoDesc, 
+  IID_PPV_ARGS(&mPSOs["drawStencilReflections"])));
+```
+
+<h3 id="s1143">11.4.3 绘制场景</h3>
+
+下面的代码概述了我们的绘制方法<a id="page430"/>。为简洁起见，我们省略了无关细节，比如设置常量缓冲的值（完整细节见示例代码）。
+
+```cpp
+// Draw opaque items--floors, walls, skull.
+auto passCB = mCurrFrameResource->PassCB->Resource();
+mCommandList->SetGraphicsRootConstantBufferView(2, 
+  passCB->GetGPUVirtualAddress());
+DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);
+   
+// Mark the visible mirror pixels in the stencil buffer with the value 1
+mCommandList->OMSetStencilRef(1);
+mCommandList->SetPipelineState(mPSOs["markStencilMirrors"].Get());
+DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Mirrors]);
+
+// Draw the reflection into the mirror only (only for pixels where the 
+// stencil buffer is 1).
+// Note that we must supply a different per-pass constant buffer--one
+// with the lights reflected.
+mCommandList->SetGraphicsRootConstantBufferView(2, 
+  passCB->GetGPUVirtualAddress() + 1 * passCBByteSize);
+mCommandList->SetPipelineState(mPSOs["drawStencilReflections"].Get());
+DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Reflected]);
+
+// Restore main pass constants and stencil ref.
+mCommandList->SetGraphicsRootConstantBufferView(2, 
+  passCB->GetGPUVirtualAddress());
+mCommandList->OMSetStencilRef(0);
+
+// Draw mirror with transparency so reflection blends through.
+mCommandList->SetPipelineState(mPSOs["transparent"].Get());
+DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Transparent]);
+```
+
+上面代码中值得注意的一点是，绘制 `RenderLayer::Reflected` 层时我们如何<a id="page431"/>更换逐 pass 常量缓冲。这是因为绘制反射时，场景光照也需要被反射。光照存储在逐 pass 常量缓冲中，所以我们再创建一个存储反射后场景光照的逐 pass 常量缓冲。用于绘制反射的逐 pass 常量缓冲在下面的方法中设置：
+
+```cpp
+PassConstants StencilApp::mMainPassCB;
+PassConstants StencilApp::mReflectedPassCB;
+void StencilApp::UpdateReflectedPassCB(const GameTimer& gt)
+{
+  mReflectedPassCB = mMainPassCB;
+
+  XMVECTOR mirrorPlane = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f); // xy plane
+  XMMATRIX R = XMMatrixReflect(mirrorPlane);
+
+  // Reflect the lighting.
+  for(int i = 0; i < 3; ++i)
+  {
+    XMVECTOR lightDir = XMLoadFloat3(&mMainPassCB.Lights[i].Direction);
+    XMVECTOR reflectedLightDir = XMVector3TransformNormal(lightDir, R);
+    XMStoreFloat3(&mReflectedPassCB.Lights[i].Direction, reflectedLightDir);
+  }
+
+  // Reflected pass stored in index 1
+  auto currPassCB = mCurrFrameResource->PassCB.get();
+  currPassCB->CopyData(1, mReflectedPassCB);
+}
+```
+
+<h3 id="s1144">11.4.4 环绕顺序与反射</h3>
+
+三角形沿平面反射后，其环绕顺序不会反转，因此它的面法线也不会反转。于是，反射之后原本朝外的法线变成了朝内的法线（见图 11.5）。为纠正这一点，我们告诉 Direct3D 把逆时针环绕顺序的三角形解释为正面，把顺时针环绕顺序的三角形解释为背面（这与我们通常的约定相反——§5.10.2）。这实际上相当于把法线方向反射，使它们在反射之后仍然朝外。我们通过在 PSO 中设置如下光栅器属性来反转环绕顺序约定：
+
+```cpp
+drawReflectionsPsoDesc.RasterizerState.FrontCounterClockwise = true;
+```
+
+<Figure src="images/Fig11-5.jpg" alt="多边形法线不随反射反转，反射之后变成朝内的法线" figureNumber="图 11.5" caption="多边形法线不随反射而反转，这使得它们在反射之后朝向内侧。" />
+</section>
+
+<section className="lesson-section" id="s115">
+<h2>11.5 实现平面阴影</h2>
+
+**注意**：本节的部分内容出自 Frank D. Luna 所著 *Introduction to 3D Game Programming with DirectX 9.0c: A Shader Approach*（2006 年，Jones and Bartlett Learning，Burlington, MA，www.jblearning.com），经授权重印。
+
+阴影有助于我们感知场景中光<a id="page432"/>从何处发出，并最终使场景更真实。本节我们将展示如何实现平面阴影（planar shadows）；即位于平面上的阴影（见图 11.6）。
+
+<Figure src="images/Fig11-6.jpg" alt="Mirror 演示中主光源投射出的平面阴影" figureNumber="图 11.6" caption="Mirror 演示中主光源投射出的平面阴影。" />
+
+要实现平面阴影，我们必须先求出物体投射到某平面上的阴影，并把它的几何形状建模出来以便渲染。这用一些三维数学就能轻松做到。然后，我们用 50% 透明的黑色材质渲染描述阴影的三角形。这样渲染阴影会引入一些称为"双重混合"（double blending）的渲染瑕疵，我们将在几小节之后解释；我们利用模板缓冲来防止双重混合的发生。
+
+<Figure src="images/Fig11-7.jpg" alt="物体相对平行光源投射的阴影" figureNumber="图 11.7" caption="物体相对平行光源投射的阴影。" />
+
+<h3 id="s1151">11.5.1 平行光阴影</h3>
+
+图 11.7 显示了物体相对平行光<a id="page433"/>源投射的阴影。给定方向为 **L** 的平行光源，穿过顶点 **p** 的光线由 **r**(*t*) = **p** + *t***L** 给出。光线 *r*(*t*) 与阴影平面 (**n**, *d*) 的交点给出 **s**。（读者可以在附录 C 中进一步了解光线与平面的内容。）对物体的每个顶点都发射一条光线与平面求交，所得交点的集合就定义了阴影的投影几何。对顶点 **p**，它的阴影投影由下式给出：
+
+<MathBlock tex="\mathbf{s}=\mathbf{r}(t_s)=\mathbf{p}-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot\mathbf{L}}\mathbf{L}\tag{11.1}" />
+
+光线/平面求交测试的细节见附录 C。
+
+式 11.1 可以写成矩阵形式。
+
+<MathBlock tex="\mathbf{s}'=\begin{bmatrix}p_x & p_y & p_z & 1\end{bmatrix}\begin{bmatrix} \mathbf{n}\cdot\mathbf{L}-L_xn_x & -L_yn_x & -L_zn_x & 0\\ -L_xn_y & \mathbf{n}\cdot\mathbf{L}-L_yn_y & -L_zn_y & 0\\ -L_xn_z & -L_yn_z & \mathbf{n}\cdot\mathbf{L}-L_zn_z & 0\\ -L_xd & -L_yd & -L_zd & \mathbf{n}\cdot\mathbf{L} \end{bmatrix}" />
+
+我们把上面的 4 × 4 矩阵称为方向光阴影矩阵（directional shadow matrix），记作 $\mathbf{S}_{dir}$。要看清这个矩阵为什么与式 11.1 等价，只需执行乘法。不过，首先注意这个方程修改了 w 分量，使 $s_w=\mathbf{n}\cdot\mathbf{L}$。于是，当透视除法（§5.6.3.4）发生时，**s** 的每个坐标都会除以 $\mathbf{n}\cdot\mathbf{L}$；这就是我们用矩阵得到式 11.1 中除以 $\mathbf{n}\cdot\mathbf{L}$ 的方式。现在执行矩阵乘法得到第 *i* 个坐标 $s'_i$（$i\in\{1,2,3\}$），再作透视除法，我们得到：
+
+<MathBlock tex="\begin{aligned} s'_i &= \frac{(\mathbf{n}\cdot\mathbf{L})p_i-L_in_xp_x-L_in_yp_y-L_in_zp_z-L_id}{\mathbf{n}\cdot\mathbf{L}}\\ &= \frac{(\mathbf{n}\cdot\mathbf{L})p_i-(\mathbf{n}\cdot\mathbf{p}+d)L_i}{\mathbf{n}\cdot\mathbf{L}}\\ &= p_i-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot\mathbf{L}}L_i \end{aligned}" />
+
+这正是式 11.1 中 **s** 的第 *i* 个坐标，所以 **s** = **s**′。
+
+要使用阴影矩阵，我们把它与世界矩阵组合<a id="page434"/>。然而，世界变换之后，几何体其实还没有真正投影到阴影平面上，因为透视除法尚未发生。如果 $s_w=\mathbf{n}\cdot\mathbf{L}<0$ 就会出现问题，因为这会使 *w* 坐标为负。通常在透视投影过程中，我们把 *z* 坐标复制到 *w* 坐标，而负的 *w* 坐标意味着该点不在视见体（view volume）内，因此会被裁剪掉（裁剪在除法之前的齐次空间进行）。这对平面阴影是个问题，因为我们现在除了透视除法之外，还要用 w 坐标实现阴影。图 11.8 显示了 $\mathbf{n}\cdot\mathbf{L}<0$ 的一个合法情形，但阴影不会显示出来。
+
+<Figure src="images/Fig11-8.jpg" alt="n·L &lt; 0 的情形" figureNumber="图 11.8" caption="n·L &lt; 0 的一个情形。" />
+
+为了解决这个问题，我们应当不用光线方向 **L**，而用指向无限远光源的向量 $\tilde{\mathbf{L}}=-\mathbf{L}$。注意，$\mathbf{r}(t)=\mathbf{p}+t\mathbf{L}$ 与 $\mathbf{r}(t)=\mathbf{p}+t\tilde{\mathbf{L}}$ 定义的是同一条三维直线，直线与平面的交点相同（交点参数 $t_s$ 会不同，以补偿 $\tilde{\mathbf{L}}$ 与 **L** 之间的符号差异）。所以使用 $\tilde{\mathbf{L}}$ 给出同样的答案，但 $\mathbf{n}\cdot\mathbf{L}>0$，从而避免了负的 *w* 坐标。
+
+<Figure src="images/Fig11-9.jpg" alt="物体相对点光源投射的阴影" figureNumber="图 11.9" caption="物体相对点光源投射的阴影。" />
+
+<h3 id="s1152">11.5.2 点光源阴影</h3>
+
+图 11.9 显示了物体相对点光源投射的阴影，点光源的位置由点 **L** 描述。从点光源穿过任意顶点 **p** 的光线由 **r**(*t*) = **p** + *t*(**p** − **L**) 给出。光线 **r**(*t*) 与阴影平面 (**n**, *d*) 的交点给出 **s**。对物体的每个顶点都发射<a id="page435"/>一条光线与平面求交，所得交点的集合定义了阴影的投影几何。对顶点 **p**，它的阴影投影由下式给出：
+
+<MathBlock tex="\mathbf{s}=\mathbf{r}(t_s)=\mathbf{p}-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot(\mathbf{p}-\mathbf{L})}(\mathbf{p}-\mathbf{L})\tag{11.2}" />
+
+式 11.2 也可以写成一个矩阵方程：
+
+<MathBlock tex="\mathbf{S}_{point}=\begin{bmatrix} \mathbf{n}\cdot\mathbf{L}+d-L_xn_x & -L_yn_x & -L_zn_x & -n_x\\ -L_xn_y & \mathbf{n}\cdot\mathbf{L}+d-L_yn_y & -L_zn_y & -n_y\\ -L_xn_z & -L_yn_z & \mathbf{n}\cdot\mathbf{L}+d-L_zn_z & -n_z\\ -L_xd & -L_yd & -L_zd & \mathbf{n}\cdot\mathbf{L} \end{bmatrix}" />
+
+要看清这个矩阵为什么与式 11.2 等价，只需按上一节的方式执行乘法。注意最后一列没有零，它给出：
+
+<MathBlock tex="\begin{aligned} s_w &= -p_xn_x-p_yn_y-p_zn_z+\mathbf{n}\cdot\mathbf{L}\\ &= -\mathbf{p}\cdot\mathbf{n}+\mathbf{n}\cdot\mathbf{L}\\ &= -\mathbf{n}\cdot(\mathbf{p}-\mathbf{L}) \end{aligned}" />
+
+这是式 11.2 中分母的相反数，但只要把分子也取负，我们就可以把分母取负。
+
+**注意**：**L** 对点光源和平行光的用途不同。对点光源，我们用 **L** 定义点光源的位置。对平行光，我们用 **L** 定义指向无限远光源的方向（即平行光线行进的反方向）。
+
+<h3 id="s1153">11.5.3 一般阴影矩阵</h3>
+
+利用齐次坐标，可以创建一个对点光源和平行光都适用的一般阴影矩阵。
+
+1. 若 $L_w=0$，则 **L** 描述指向无限远光源的方向（即平行光线行进的反方向）。
+2. 若 $L_w=1$，则 **L** 描述点光源的位置。
+
+于是，我们用下面的*阴影矩阵*（shadow matrix）表示从顶点 p 到它的投影 s 的变换：
+
+<MathBlock tex="\mathbf{S}=\begin{bmatrix} \mathbf{n}\cdot\mathbf{L}+dL_w-L_xn_x & -L_yn_x & -L_zn_x & -L_wn_x\\ -L_xn_y & \mathbf{n}\cdot\mathbf{L}+dL_w-L_yn_y & -L_zn_y & -L_wn_y\\ -L_xn_z & -L_yn_z & \mathbf{n}\cdot\mathbf{L}+dL_w-L_zn_z & -L_wn_z\\ -L_xd & -L_yd & -L_zd & \mathbf{n}\cdot\mathbf{L} \end{bmatrix}" />
+
+很容易看出，若 $L_w=0$，**S** 就退化为 $\mathbf{S}_{dir}$；若 $L_w=1$，**S** 退化为 $\mathbf{S}_{point}$。
+
+**译者注**：上面一句在原书中两处条件都写作 $L_w=0$（"and **S** reduces to **S**_point for *L*_w = 0"），按其语义第二处应为 $L_w=1$，译文取 $L_w=1$ 并加注。
+
+DirectX 数学库提供了下面的函数，给定我们希望把阴影投影到其上的平面，以及一个在 $w=0$ 时描述平行光、$w=1$ 时描述点光源的向量，它构建<a id="page436"/>出阴影矩阵：
+
+```cpp
+inline XMMATRIX XM_CALLCONV XMMatrixShadow(
+  FXMVECTOR ShadowPlane, 
+  FXMVECTOR LightPosition); 
+```
+
+延伸阅读方面，[Blinn96] 和 [Möller02] 都讨论了平面阴影。
+
+<h3 id="s1154">11.5.4 用模板缓冲防止双重混合</h3>
+
+当我们把物体的几何压平（flatten）到平面上来描述它的阴影时，两个或多个被压平的三角形可能会重叠（事实上这很可能发生）。当我们用透明方式（使用混合）渲染阴影时，这些三角形重叠的区域会被混合多次，因而显得更暗。图 11.10 展示了这一点。
+
+<Figure src="images/Fig11-10.jpg" alt="左图中阴影可见较暗的瑕疵区域，对应被压平骷髅重叠、发生双重混合的部分；右图为正确渲染、无双重混合的阴影" figureNumber="图 11.10" caption="注意左图中阴影较暗的『痤疮』（acne）区域；这些区域对应被压平的骷髅部分重叠的地方，因此发生『双重混合』。右图显示正确渲染、没有双重混合的阴影。" />
+
+我们可以用模板缓冲解决这个问题。
+
+1. 假设阴影将被渲染到的那部分模板缓冲像素已被清为 0。在我们的镜像演示中这是成立的，因为我们只把阴影投射到地面，并且只修改了镜子对应的模板缓冲像素。
+2. 把模板测试设为只在模板缓冲条目为 0 时接受像素。若模板测试通过，则把模板缓冲的值递增到 1。
+
+我们第一次渲染某个阴影像素时，模板测试会通过，因为模板缓冲条目是 0。然而，当我们渲染这个像素时，我们同时把对应的模板缓冲条目递增到 1。于是，如果我们试图*覆盖一个已经渲染过的区域（在模板缓冲中被标记为 1），模板测试就会失败。这就防止了在同一像素上绘制多次，从而防止了双重混合。*
+
+<h3 id="s1155">11.5.5 阴影代码</h3>
+
+我们定义一个用于给阴影着色<a id="page437"/>的阴影材质，它只是一个 50% 透明的黑色材质：
+
+```cpp
+auto shadowMat = std::make_unique<Material>();
+shadowMat->Name = "shadowMat";
+shadowMat->MatCBIndex = 4;
+shadowMat->DiffuseSrvHeapIndex = 3;
+shadowMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);
+shadowMat->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
+shadowMat->Roughness = 0.0f;
+```
+
+为了防止双重混合，我们用如下深度/模板状态设置 PSO：
+
+```cpp
+// We are going to draw shadows with transparency, so base it off
+// the transparency description.
+D3D12_DEPTH_STENCIL_DESC shadowDSS;
+shadowDSS.DepthEnable = true;
+shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+shadowDSS.StencilEnable = true;
+shadowDSS.StencilReadMask = 0xff;
+shadowDSS.StencilWriteMask = 0xff;
+
+shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+// We are not rendering backfacing polygons, so these settings do not
+// matter.
+shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPsoDesc = transparentPsoDesc;
+shadowPsoDesc.DepthStencilState = shadowDSS;
+ThrowIfFailed(md3dDevice->CreateGraphicsPipelineState(
+  &shadowPsoDesc, 
+  IID_PPV_ARGS(&mPSOs["shadow"])));
+```
+
+然后我们用阴影 PSO 并把 `StencilRef` 值设为 0 来绘制骷髅阴影：
+
+```cpp
+// Draw shadows
+mCommandList->OMSetStencilRef(0);
+mCommandList->SetPipelineState(mPSOs["shadow"].Get());
+DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Shadow]);
+```
+
+其中骷髅阴影渲染项的世界矩阵按如下方式计算：
+
+```cpp
+// Update shadow world matrix.
+XMVECTOR shadowPlane = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f); // xz plane
+XMVECTOR toMainLight = -XMLoadFloat3(&mMainPassCB.Lights[0].Direction);
+XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight);
+XMMATRIX shadowOffsetY = XMMatrixTranslation(0.0f, 0.001f, 0.0f);
+XMStoreFloat4x4(&mShadowedSkullRitem->World, skullWorld * S * shadowOffsetY);
+```
+
+注意，我们把投影后的阴影网格沿<a id="page438"/> y 轴偏移了一个小量，以防止 z-fighting，使阴影网格不与地板网格相交，而是略高于它。如果两个网格相交，那么由于深度缓冲精度有限，我们会看到闪烁的瑕疵，因为地板和阴影网格的像素会争相显示。
+</section>
+
+<section className="lesson-section" id="s116">
+<h2>11.6 本章小结</h2>
+
+1. 模板缓冲是一个离屏缓冲，我们可以用它阻止某些像素片段被渲染到后台缓冲。模板缓冲与深度缓冲共享，因此与深度缓冲具有相同的分辨率。有效的深度/模板缓冲格式是 `DXGI_FORMAT_D32_FLOAT_S8X24_UINT` 和 `DXGI_FORMAT_D24_UNORM_S8_UINT`。
+2. 是否阻止某个特定像素被写入由模板测试决定，模板测试如下：
+
+   ```cpp
+     if( StencilRef & StencilReadMask ← Value & StencilReadMask )
+       accept pixel
+     else
+       reject pixel
+   ```
+
+3. 其中 ← 运算符可以是 `D3D12_COMPARISON_FUNC` 枚举类型定义的函数之一。`StencilRef`、`StencilReadMask`、`StencilReadMask` 和比较运算符 ← 都是用 Direct3D 深度/模板 API 设置的应用定义量。Value 是模板缓冲中的当前值。
+
+   **译者注**：上面一句在原书中 `StencilReadMask` 出现了两次（"The *StencilRef, StencilReadMask, StencilReadMask*, and comparison operator…"），按其语义第二处应为 `StencilWriteMask`，此处照录原文。
+4. 深度/模板状态是 PSO 描述的一部分。具体来说，深度/模板状态通过填写 `D3D12_GRAPHICS_PIPELINE_STATE_DESC::DepthStencilState` 字段来配置，其中 `DepthStencilState` 的类型是 `D3D12_DEPTH_STENCIL_DESC`。
+5. 模板参考值用 `ID3D12GraphicsCommandList::OMSetStencilRef` 方法设置，它接受单个无符号整数参数<a id="page439"/>来指定模板参考值。
+</section>
+
+<section className="lesson-section" id="s117">
+<h2>11.7 习题</h2>
+
+1. 证明：若 $L_w=0$，一般阴影矩阵 **S** 退化为 $\mathbf{S}_{dir}$；若 $L_w=1$，**S** 退化为 $\mathbf{S}_{point}$。
+2. 对每个分量执行矩阵乘法（如 §11.5.1 中对平行光的做法），证明
+
+   <MathBlock tex="\mathbf{s}=\mathbf{p}-\frac{\mathbf{n}\cdot\mathbf{p}+d}{\mathbf{n}\cdot(\mathbf{p}-\mathbf{L})}(\mathbf{p}-\mathbf{L})=\mathbf{p}\mathbf{S}_{point}" />
+
+3. 修改"Mirror"演示，产生图 11.1 中的"左"图。
+4. 修改"Mirror"演示，产生图 11.10 中的"左"图。
+5. 按下面的方式修改"Mirror"演示。先用如下深度设置绘制一堵墙：
+
+   ```cpp
+   depthStencilDesc.DepthEnable  = false;
+   depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+   depthStencilDesc.DepthFunc   = D3D12_COMPARISON_LESS;
+   ```
+
+   接着，用如下深度设置绘制墙后面的骷髅：
+
+   ```cpp
+   depthStencilDesc.DepthEnable  = true;
+   depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+   depthStencilDesc.DepthFunc   = D3D12_COMPARISON_LESS;
+   ```
+
+   墙会遮挡骷髅吗？请解释。如果改用下面的设置绘制墙，会发生什么？
+
+   ```cpp
+   depthStencilDesc.DepthEnable  = true;
+   depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+   depthStencilDesc.DepthFunc   = D3D12_COMPARISON_LESS;
+   ```
+
+   注意，本习题不使用模板缓冲，因此应将其禁用。
+6. 修改"Mirror"演示，不反转三角形环绕顺序约定。反射的茶壶能正确渲染吗？
+7. 修改第 10 章的"Blend"演示，在场景中央绘制一个圆柱体（无端盖）。用本章目录中提供的 60 帧闪电（electric bolt）动画给圆柱体贴纹理，并使用相加混合。图 11.11 给出了输出示例。
+
+   **提示**：渲染相加混合几何体时应使用的深度状态，请回顾 §10.5.5。
+
+   <Figure src="images/Fig11-11.jpg" alt="习题 7 解答的示例截图，场景中央是一个带闪电动画纹理的圆柱体" figureNumber="图 11.11" caption="习题 7 解答的示例截图。" />
+
+8. *深度复杂度*（depth complexity）指通过深度测试竞争写入后台缓冲某个特定条目的像素片段数量<a id="page440"/>。例如，我们绘制的某个像素可能被一个离摄像机更近的像素覆盖（这可能发生多次，直到整个场景绘制完毕后最近的那次绘制才最终确定下来）。图 11.12 中的像素深度复杂度为 3，因为有三个像素片段竞争该像素。
+
+   <Figure src="images/Fig11-12.jpg" alt="多个像素片段竞争渲染到投影窗口上的同一个像素；此场景中像素 P 的深度复杂度为 3" figureNumber="图 11.12" caption="多个像素片段竞争渲染到投影窗口上的一个像素。在这个场景中，像素 P 的深度复杂度为 3。" />
+
+   显然，显卡每帧可能对同一个像素填充多次。这种*过度绘制*（overdraw）会影响性能，因为显卡把时间浪费在处理最终被覆盖、永远看不见的像素上。因此，测量场景的深度复杂度对性能分析很有用。
+
+   我们可以按如下方式测量深度复杂度：渲染场景，并把模板缓冲当作计数器；即模板缓冲中的每个像素最初被清为零，每当处理一个像素片段，我们就用 `D3D12_STENCIL_OP_INCR` 递增它的计数。无论如何，每个像素片段对应的模板缓冲条目都应当递增，所以使用模板比较函数 `D3D12_COMPARISON_ALWAYS`。然后，例如在绘制完一帧之后，如果第 *ij* 个像素在模板缓冲中有对应条目 5，我们就知道该帧为那个像素处理了 5 个像素片段<a id="page441"/>（即该像素的深度复杂度为 5）。注意，统计深度复杂度时，严格来说你只需把场景渲染到模板缓冲。
+
+   要把（存储在模板缓冲中的）深度复杂度可视化，步骤如下：
+
+   1. 为每级深度复杂度 *k* 关联一个颜色 $\mathbf{c}_k$。例如，深度复杂度为 1 用蓝色，为 2 用绿色，为 3 用红色，依此类推。（在非常复杂的场景中，某个像素的深度复杂度可能非常大，你可能不想为每级都关联一个颜色。此时可以为互不重叠的若干级范围关联一个颜色。例如，深度复杂度 1–5 的像素着蓝色，6–10 的着绿色，依此类推。）
+   2. 把模板缓冲操作设为 `D3D12_STENCIL_OP_KEEP`，以便我们不再修改它。（在渲染场景统计深度复杂度时，我们用 `D3D12_STENCIL_OP_INCR` 修改模板缓冲；但编写把模板缓冲可视化的代码时，我们只需要从模板缓冲*读取*，不应向它*写入*。）
+   3. *对每级深度复杂度 k：*
+      1. 把模板比较函数设为 `D3D12_COMPARISON_EQUAL`，并把模板参考值设为 *k*。
+      2. 绘制一个覆盖整个投影窗口、颜色为 $\mathbf{c}_k$ 的四边形。注意，由于前一步设置的比较函数和参考值，这只会给深度复杂度为 *k* 的像素着色。
+
+   有了这些设置，我们就按深度复杂度给每个像素唯一地着了色，从而可以方便地研究场景的深度复杂度。本习题要求渲染第 10 章"Blend"演示所用场景的深度复杂度。图 11.13 给出示例截图。
+
+   <Figure src="images/Fig11-13.jpg" alt="习题 8 解答的示例截图，以颜色可视化场景深度复杂度" figureNumber="图 11.13" caption="习题 8 解答的示例截图。" />
+
+   **注意**：深度测试发生在管线输出合并阶段<a id="page442"/>，位于像素着色器阶段之后。这意味着一个像素片段即使最终可能被深度测试拒绝，也会先经过像素着色器处理。不过，现代硬件会做"early z-test"，即在像素着色器之前执行深度测试。这样，被拒绝的像素片段会在进入可能开销很大的像素着色器之前被丢弃。要利用这一优化，你应当尽量按从前往后的顺序（相对摄像机）渲染不混合的游戏对象；这样，最近的物体先绘制，其后的物体将无法通过 early z-test，不再继续处理。如果你的场景因深度复杂度高而存在大量过度绘制，这可以带来显著的性能收益。我们无法通过 Direct3D API 控制 early z-test；由图形驱动程序决定能否执行 early z-test。例如，如果像素着色器修改了像素片段的深度值，那么 early z-test 就不可能进行，因为像素着色器必须在深度测试之前执行（它修改了深度值）。
+
+   我们提到过在像素着色器中修改像素深度的能力。它是如何工作的？像素着色器实际上可以输出一个结构体，而不像我们迄今为止那样只输出单个颜色向量：
+
+   ```cpp
+   struct PixelOut
+   {
+     float4 color : SV_Target;
+     float depth : SV_Depth;
+   };
+
+   PixelOut PS(VertexOut pin) 
+   {
+     PixelOut pout;
+
+     // … usual pixel work
+
+     pout.Color = float4(litColor, alpha);
+
+     // set pixel depth in normalized [0, 1] range
+     pout.depth = pin.PosH.z - 0.05f;
+
+     return pout;
+   }
+   ```
+
+   `SV_Position` 元素的 z 坐标（`pin.PosH.z`）给出未修改的像素深度值。使用特殊的系统值语义 `SV_Depth`，像素着色器可以输出一个修改后的深度值。
+
+9. 实现深度复杂度可视化的另一种方法是使用相加混合。首先把后台缓冲清成黑色并禁用深度测试。接着，把源混合因子和目标混合因子都设为 `D3D12_BLEND_ONE`，把混合运算设为 `D3D12_BLEND_OP_ADD`，使混合方程形如 $\mathbf{C}=\mathbf{C}_{src}+\mathbf{C}_{dst}$。注意，用这个公式，对每个像素我们都在累加写入它的所有像素片段的颜色。现在用一个输出低强度颜色（如 (0.05, 0.05, 0.05)）的像素着色器渲染场景中的所有物体。一个像素被过度绘制的次数越多，被累加进来的低强度颜色就越多，像素也就越亮。例如，一个像素被过度绘制十次，它的颜色强度就会是 (0.5, 0.5, 0.5)。于是，渲染完场景后观察每个像素的强度，我们就能大致了解场景的深度复杂度。以第 10 章"Blend"演示为测试场景，实现这种深度复杂度测量方法。<a id="page443"/>
+10. 解释如何统计通过深度测试的像素数量。解释如何统计未通过深度测试的像素数量。
+11. 修改"Mirror"演示，让镜子除了反射骷髅之外还反射地板。
+12. 从阴影渲染项的世界矩阵中移除竖直偏移，让你能看到 z-fighting。
+</section>
+

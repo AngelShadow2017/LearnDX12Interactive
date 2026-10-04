@@ -1,0 +1,479 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page59"/><a href="toc.html#toc-03" id="chap03">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">3</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-01"><b>T</b><span class="sc">RANSFORMATIONS</span></a><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+<p class="tx1">We describe objects in our 3D worlds geometrically; that is, as a collection of triangles that approximate the exterior surfaces of the objects. It would be an uninteresting world if our objects remained motionless. Thus we are interested in methods for transforming geometry; examples of geometric transformations are translation, rotation, and scaling. In this chapter, we develop matrix equations, which can be used to transform points and vectors in 3D space. </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To understand how linear and affine transformations can be represented by matrices.</li>
+<li>To learn the coordinate transformations for scaling, rotating, and translating geometry.</li>
+<li>To discover how several transformation matrices can be combined into one net transformation matrix through matrix-matrix multiplication.</li>
+<li>To find out how we can convert coordinates from one coordinate system to another, and how this change of coordinate transformation can be represented by a matrix.</li>
+<li>To become familiar with the subset of functions provided by the DirectX Math library used for constructing transformation matrices. <a id="page60"/></li></ol>
+<p class="h1" id="c3.1"><a href="toc.html#toc-3.1"><b>3.1 LINEAR TRANSFORMATIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c3.1.1"><a href="toc.html#toc-3.1.1"><b>3.1.1 Definition</b></a></p>
+<p class="tx1">Consider the mathematical function &tau;(<b>v</b>) = &tau;(<i>x</i>, <i>y</i>, <i>z</i>) = (<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;). This function inputs a 3D vector and outputs a 3D vector. We say that &tau; is a <i>linear transformation</i> if and only if the following properties hold:</p>
+<p class="tx" id="eq3.1"><img src="images/eq94-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <b>u</b> = (<i>u<sub>x</sub></i>, <i>u<sub>y</sub></i>, <i>u<sub>z</sub></i>) and <b>v</b> = (<i>v<sub>x</sub></i>, <i>v<sub>y</sub></i>, <i>v<sub>z</sub></i>) are any 3D vectors, and <i>k</i> is a scalar. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>A linear transformation can consist of input and output values other than 3D vectors, but we do not need such generality in a 3D graphics book. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 3.1</b></p>
+<p class="tx1">Define the function &tau;(<i>x</i>, <i>y</i>, <i>z</i>) = (<i>x</i><sup>2</sup>, <i>y</i><sup>2</sup>, <i>z</i><sup>2</sup>); for example, &tau;(1, 2, 3) = (1, 4, 9). This function is not linear since, for <i>k</i> = 2 and <b>u</b> = (1, 2, 3) we have:</p>
+  <p class="eq">&tau;(<i>k</i><b>u</b>) = &tau;(2, 4, 6) = (4, 16, 36)</p>
+<p class="tx1">but</p>
+  <p class="eq"><i>k</i>&tau;(<b>u</b>) = 2(1, 4, 9) = (2, 8, 18)</p>
+<p class="tx1">So property 2 of Equation <a href="ch03.html#eq3.1">3.1</a> is not satisfied. </p>
+<p class="tx">If &tau; is linear, then it follows that:</p>
+<p class="eq" id="eq3.2"><img src="images/eq94-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We will use this result in the next section.</p>
+<p class="h2" id="c3.1.2"><a href="toc.html#toc-3.1.2"><b>3.1.2 Matrix Representation</b></a></p>
+<p class="tx1">Let <b>u</b> = (<i>x</i>, <i>y</i>, <i>z</i>). Observe that we can always write this as:</p>
+  <p class="eq"><b>u</b> = (<i>x</i>, <i>y</i>, <i>z</i>) = <i>x</i><b>i</b> + <i>y</i><b>j</b> + <i>z</i><b>k</b> = <i>x</i>(1, 0, 0) + <i>y</i>(0, 1, 0) + <i>z</i>(0, 0, 1)</p>
+<p class="tx1">The vectors <b>i</b> = (1, 0, 0), <b>j</b> = (0, 1, 0), and <b>k</b> = (0, 0, 1), which are unit vectors that aim along the working coordinate axes, respectively, are called the <i>standard basis vectors</i> for <b>R</b><sup>3</sup>. (<b>R</b><sup>3</sup> denotes the set of all 3D coordinate vectors (<i>x</i>, <i>y</i>, <i>z</i>)). Now let &tau; be a linear transformation; <a id="page61"/>by linearity (i.e., Equation <a href="ch03.html#eq3.2">3.2</a>), we have:</p>
+
+<p class="eq" id="eq3.3"><img src="images/eq95-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Observe that this is nothing more than a linear combination, which, as we learned in the previous chapter, can be written by a vector-matrix multiplication. By Equation <a href="ch02.html#eq2.2">2.2</a> we may rewrite Equation <a href="ch03.html#eq3.3">3.3</a> as:</p>
+
+<p class="eq" id="eq3.4"><img src="images/eq95-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">where &tau;(<b>i</b>) = (<i>A</i><sub>11</sub>, <i>A</i><sub>12</sub>, <i>A</i><sub>13</sub>), &tau;(<b>j</b>) = (<i>A</i><sub>21</sub>, <i>A</i><sub>22</sub>, <i>A</i><sub>23</sub>), and &tau;(<b>k</b>) = (<i>A</i><sub>31</sub>, <i>A</i><sub>32</sub>, <i>A</i><sub>33</sub>). We call the matrix <b>A</b> the matrix representation of the linear transformation &tau;.</p>
+<p class="h2" id="c3.1.3"><a href="toc.html#toc-3.1.3"><b>3.1.3 Scaling</b></a></p>
+<p class="tx1">Scaling refers to changing the size of an object as shown in Figure <a href="ch03.html#fig3.1">3.1</a>.</p>
+
+<p class="caption"><img src="images/Fig3-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig3.1"><b><i>Figure 3.1.</i></b>&nbsp;&nbsp;The left pawn is the original object. The middle pawn is the original pawn scaled 2 units on the <i>y</i>-axis making it taller. The right pawn is the original pawn scaled 2 units on the <i>x</i>-axis making it fatter.</p>
+
+<p class="tx1">We define the scaling transformation by:</p>
+  <p class="eq"><i>S</i>(<i>x</i>, <i>y</i>, <i>z</i>) = (<i>s<sub>x</sub>x,<sub> </sub>s<sub>y</sub>y,<sub> </sub>s<sub>z</sub>z</i>)</p>
+<p class="tx1">This scales the vector by <i>s<sub>x</sub></i> units on the <i>x</i>-axis, <i>s<sub>y </sub></i>units on the <i>y</i>-axis, and <i>s<sub>z</sub></i> units on the <i>z</i>-axis, relative to the origin of the working coordinate system. We now show that <i>S</i> is indeed a linear transformation. We have that:</p>
+<p class="eq"><img src="images/95-0e.jpg" alt="image" width="100%"/></p>
+<p class="eq"><img src="images/96-0a.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus both properties of Equation <a id="page62"/><a href="ch03.html#eq3.1">3.1</a> are satisfied, so <i>S</i> is linear, and thus there exists a matrix representation. To find the matrix representation, we just apply <i>S</i> to each of the standard basis vectors, as in Equation <a href="ch03.html#eq3.3">3.3</a>, and then place the resulting vectors into the rows of a matrix (as in Equation <a href="ch03.html#eq3.4">3.4</a>):</p>
+<p class="eq"><img src="images/96-0b.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus the matrix representation of <i>S</i> is:</p>
+<p class="eq"><img src="images/eq96-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We call this matrix the <i>scaling matrix</i>.</p>
+<p class="tx">The inverse of the scaling matrix is given by:</p>
+<p class="eq"><img src="images/eq96-02.jpg" alt="image" width="100%"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 3.2</b></p>
+<p class="tx1">Suppose we have a square defined by a minimum point (&minus;4, &minus;4, 0) and a maximum point (4, 4, 0). Suppose now that we wish to scale the square 0.5 units on the <i>x</i>-axis, 2.0 units on the <i>y</i>-axis, and leave the <i>z</i>-axis unchanged. The corresponding scaling matrix is:</p>
+<p class="eq"><img src="images/eq96-03.jpg" alt="image" width="100%"/></p>
+<p class="tx"><a id="page63"/>Now to actually scale (transform) the square, we multiply both the minimum point and maximum point by this matrix:</p>
+<p class="eq"><img src="images/eq97-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The result is shown in Figure <a href="ch03.html#fig3.2">3.2</a>.</p>
+<p class="caption"><img src="images/Fig3-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.2"><b><i>Figure 3.2.</i></b>&nbsp;&nbsp;Scaling by one-half units on the <i>x</i>-axis and two units on the <i>y</i>-axis. Note that when looking down the negative <i>z</i>-axis, the geometry is basically 2D since <i>z</i> = 0.</p>
+
+<p class="h2" id="c3.1.4"><a href="toc.html#toc-3.1.4"><b>3.1.4 Rotation</b></a></p>
+<p class="tx1">In this section, we describe rotating a vector <b>v</b> about an axis <b>n</b> by an angle &theta;; see Figure <a href="ch03.html#fig3.3">3.3</a>. Note that we measure the angle clockwise when looking down the axis <b>n</b>; moreover, we assume ||<b>n</b>|| = 1.</p>
+<p class="caption"><img src="images/Fig3-3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.3"><b><i>Figure 3.3.</i></b>&nbsp;&nbsp;The geometry of rotation about a vector <b>n</b>.</p>
+
+       
+<p class="tx"><a id="page64"/>First, decompose <b>v</b> into two parts: one part parallel to <b>n</b> and the other part orthogonal to <b>n</b>. The parallel part is just proj<b><sub>n</sub></b>(<b>v</b>) (recall Example 1.5); the orthogonal part is given by <b>v</b><sub>&#x22A5;</sub> = perp<b><sub>n</sub></b>(<b>v</b>) = <b>v</b> &ndash; proj<b><sub>n</sub></b>(<b>v</b>). (Recall, also from Example 1.5, that since <b>n</b> is a unit vector, we have proj<b><sub>n</sub></b>(<b>v</b>) = (<b>n</b> &#x00B7; <b>v</b>)<b>n</b>.) The key observation is that the part proj<b><sub>n</sub></b>(<b>v</b>) that is parallel to <b>n</b> is invariant under the rotation, so we only need to figure out how to rotate the orthogonal part. That is, the rotated vector <i>R</i><b><sub>n</sub></b>(<b>v</b>) = proj<b><sub>n</sub></b>(<b>v</b>) + <i>R</i><b><sub>n</sub></b>(<b>v</b><sub>&#x22A5;</sub>), by Figure <a href="ch03.html#fig3.3">3.3</a>.</p>
+<p class="tx">To find <i>R</i><b><sub>n</sub></b>(<b>v</b><sub>&#x22A5;</sub>), we set up a 2D coordinate system in the plane of rotation. We will use <b>v</b><sub>&#x22A5;</sub> as one reference vector. To get a second reference vector orthogonal to <b>v</b><sub>&#x22A5;</sub> and <b>n</b> we take the cross product <b>n</b> &times; <b>v</b> (left-hand-thumb rule). From the trigonometry of Figure <a href="ch03.html#fig3.3">3.3</a> and Exercise 14 of Chapter <a href="ch01.html#chap01">1</a>, we see that </p>
+<p class="eq"><img src="images/98-0d.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where &alpha; is the angle between <b>n</b> and <b>n</b>. So both reference vectors have the same length and lie on the circle of rotation. Now that we have set up these two reference vectors, we see from trigonometry that:</p>
+<p class="eq"><img src="images/98-0e.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This gives us the following rotation formula:</p>
+<p class="eq" id="eq3.5"><img src="images/98-0f.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We leave it as an exercise to show that this is a linear transformation. To find the matrix representation, we just apply <i>R</i><b><sub>n</sub></b> to each of the standard basis vectors, as in Equation <a href="ch03.html#eq3.3">3.3</a>, and then place the resulting vectors into the rows of a matrix (as in Equation <a href="ch03.html#eq3.4">3.4</a>). The final result is:</p>
+<p class="eq"><img src="images/eq98-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where we let <i>c</i> = cos&theta; and <i>s</i> = sin&theta;.</p>
+<p class="tx">The rotation matrices have an interesting property. Each row vector is unit length (verify) and the row vectors are mutually orthogonal (verify). Thus the row vectors are <i>orthonormal</i> (i.e., mutually orthogonal and unit length). A matrix whose rows are orthonormal is said to be an <i>orthogonal matrix</i>. An orthogonal matrix has the attractive <a id="page65"/>property that its inverse is actually equal to its transpose. Thus, the inverse of <i>R</i><b><sub>n</sub></b> is:</p>
+<p class="eq"><img src="images/eq99-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In general, orthogonal matrices are desirable to work with since their inverses are easy and efficient to compute.</p>
+<p class="tx">In particular, if we choose the <i>x</i>-, <i>y</i>-, and <i>z</i>-axes for rotation (i.e., <b>n</b> = (1, 0, 0), <b>n</b> = (0, 1, 0), and <b>n</b> = (0, 0, 1), respectively), then we get the following rotation matrices which rotate about the <i>x</i>-, <i>y</i>-, and <i>z</i>-axis, respectively:</p>
+<p class="eq"><img src="images/eq99-02.jpg" alt="image" width="100%"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example 3.3</b></p>
+<p class="tx1">Suppose we have a square defined by a minimum point (&minus;1, 0, &minus;1) and a maximum point (1, 0, 1). Suppose now that we wish to rotate the square &minus;30&deg; clockwise about the <i>y</i>-axis (i.e., 30&deg; counterclockwise). In this case, <b>n</b> = (0, 1, 0), which simplifies <b>R<sub>n</sub></b> considerably; the corresponding <i><sub>y</sub></i>-axis rotation matrix is:</p>
+<p class="eq"><img src="images/eq99-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Now to actually rotate (transform) the square, we multiply both the minimum point and maximum point by this matrix:</p>
+<p class="eq"><img src="images/eq99-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The result is shown in Figure <a href="ch03.html#fig3.4">3.4</a>.</p>
+<p class="caption"><img src="images/Fig3-4.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.4"><b><i>Figure 3.4.</i></b>&nbsp;&nbsp;Rotating &minus;30&deg; clockwise around the <i>y</i>-axis. Note that when looking down the positive <i>y</i>-axis, the geometry is basically 2D since <i>y</i> = 0.<a id="page66"/></p>
+
+<p class="h1" id="c3.2"><a href="toc.html#toc-3.2"><b>3.2 AFFINE TRANSFORMATIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c3.2.1"><a href="toc.html#toc-3.2.1"><b>3.2.1 Homogeneous Coordinates</b></a></p>
+<p class="tx1">We will see in the next section that an affine transformation is a linear transformation combined with a translation. However, translation does not make sense for vectors because a vector only describes direction and magnitude, independent of location; in other words, vectors should be unchanged under translations. Translations should only be applied to points (i.e., position vectors). <i>Homogeneous coordinates</i> provide a convenient notational mechanism that enables us to handle points and vectors uniformly. With homogeneous coordinates, we augment to 4-tuples and what we place in the fourth <i>w</i>-coordinate depends on whether we are describing a point or vector. Specifically, we write:</p>
+<ol><li>(<i>x</i>, <i>y</i>, <i>z</i>, 0) for vectors</li>
+<li>(<i>x</i>, <i>y</i>, <i>z</i>, 1) for points</li></ol>
+<p class="tx">We will see later that setting <i>w</i> = 1 for points allows translations of points to work correctly, and setting <i>w</i> = 0 for vectors prevents the coordinates of vectors from being modified by translations (we do not want to translate the coordinates of a vector, as that would change its direction and magnitude&mdash;translations should not alter the properties of vectors). </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The notation of homogeneous coordinates is consistent with the ideas shown in Figure <a href="ch01.html#fig1.17">1.17</a>. That is, the difference between two points </i><b>q</b> &minus; <b>p</b> = (<i>q</i><sub>x</sub>,<i> q</i><sub>y</sub>,<i> q</i><sub>z</sub>, 1) &minus; (<i>p</i><sub>x</sub>,<i> p</i><sub>y</sub>,<i> p</i><sub>z</sub>, 1) = (<i>q</i><sub>x</sub> &minus; <i>p</i><sub>x</sub>, <i>q</i><sub>y</sub> &minus; <i>p</i><sub>y</sub>, <i>q</i><sub>z</sub> &minus; <i>p</i><sub>z</sub>, 0)<i> results in a vector, and a point plus a vector </i><b>p</b> + <b>v</b> = (<i>p</i><sub>x</sub>,<i> p</i><sub>y</sub>,<i> p</i><sub>z</sub>, 1) + (<i>v</i><sub>x</sub>,<i> v</i><sub>y</sub>,<i> v</i><sub>z</sub>, 1) = (<i>p</i><sub>x</sub> + <i>v</i><sub>x</sub>, <i>p</i><sub>y</sub> + <i>v</i><sub>y</sub>,<i>p</i><sub>z</sub> + <i>v</i><sub>z</sub>, 1)<i> results in a point.</i><a id="page67"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c3.2.2"><a href="toc.html#toc-3.2.2"><b>3.2.2 Definition and Matrix Representation</b></a></p>
+<p class="tx1">A linear transformation cannot describe all the transformations we wish to do; therefore, we augment to a larger class of functions called affine transformations. An affine transformation is a linear transformation plus a translation vector <b>b</b>; that is:</p>
+<p class="eq"><img src="images/eq101-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Or in matrix notation:</p>
+<p class="eq"><img src="images/eq101-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <b>A</b> is the matrix representation of a linear transformation. </p>
+<p class="tx">If we augment to homogeneous coordinates with <i>w</i> = 1, then we can write this more compactly as:</p>
+
+<p class="eq" id="eq3.6"><img src="images/eq101-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The 4 &times; 4 matrix in Equation <a href="ch03.html#eq3.6">3.6</a> is called the matrix representation of the affine transformation. </p>
+<p class="tx">Observe that the addition by <b>b</b> is essentially a translation (i.e., change in position). We do not want to apply this to vectors because vectors have no position. However, we still want to apply the linear part of the affine transformation to vectors. If we set <i>w</i> = 0 in the fourth component for vectors, then the translation by <b>b</b> is <i>not</i> applied (verify by doing the matrix multiplication). </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Because the dot product of the row vector with the fourth column of the above  4 </i>&times;<i> 4 affine transformation matrix is: [x, y, z, w]</i>&#x00B7;<i>[0, 0, 0, 1] </i>=<i> w, this matrix does not modify the w-coordinate of the input vector.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c3.2.3"><a href="toc.html#toc-3.2.3"><b>3.2.3 Translation</b></a></p>
+<p class="tx1">The <i>identity transformation</i> is a linear transformation that just returns its argument; that is, <i>I</i>(<b>u</b>) = <b>u</b>. It can be shown that the matrix representation of this linear transformation is the identity matrix. </p>
+<p class="tx"><a id="page68"/>Now, we define the translation transformation to be the affine transformation whose linear transformation is the identity transformation; that is,</p>
+<p class="eq"><img src="images/eq102-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1">As you can see, this simply translates (or displaces) point <b>u</b> by <b>b</b>. Figure <a href="ch03.html#fig3.5">3.5</a> illustrates how this could be used to displace objects&mdash;we translate every point on the object by the same vector <b>b</b> to move it.</p>
+
+<p class="caption"><img src="images/Fig3-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.5"><b><i>Figure 3.5.</i></b>&nbsp;&nbsp;Displacing the position of the ant by some displacement vector <b>b</b>.</p>
+<p class="tx">By Equation <a href="ch03.html#eq3.6">3.6</a>, &tau; has the matrix representation:</p>
+<p class="eq"><img src="images/eq102-01.jpg" alt="image" width="100%"/></p>
+<p class="tx">This is called the <i>translation matrix</i>. </p>
+<p class="tx">The inverse of the translation matrix is given by:</p>
+<p class="eq"><img src="images/eq102-02.jpg" alt="image" width="100%"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>Example 3.4</b></p>
+<p class="tx1">Suppose we have a square defined by a minimum point (&minus;8, 2, 0) and a maximum point (&minus;2, 8, 0). Suppose now that we wish to translate the square 12 units on the <i>x</i>-axis, &minus;10.0 units on the <i>y</i>-axis, and leave the <i>z</i>-axis unchanged. The corresponding translation matrix is:</p>
+<p class="eq"><img src="images/eq102-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Now to actually translate<a id="page69"/> (transform) the square, we multiply both the minimum point and maximum point by this matrix:</p>
+<p class="eq"><img src="images/eq103-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The result is shown in Figure <a href="ch03.html#fig3.6">3.6</a>.</p>
+
+<p class="caption"><img src="images/Fig3-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.6"><b><i>Figure 3.6.</i></b>&nbsp;&nbsp;Translating 12 units on the <i>x</i>-axis and &minus;10 units on the <i>y</i>-axis. Note that when looking down the negative <i>z</i>-axis, the geometry is basically 2D since <i>z</i> = 0.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Let </i><b>T</b><i> be a transformation matrix, and recall that we transform a point/vector by computing the product </i><b>vT</b> = <b>v</b>&prime;<i>. Observe that if we transform a point/vector by </i><b>T</b><i> and then transform it again by the inverse </i><b>T</b><sup>&minus;1</sup><i> we end up with the original vector: </i><b>vTT</b><sup>&minus;1</sup> = <b>vI</b> = <b>v</b><i>. In other words, the inverse transformation undoes the transformation. For example, if we translate a point 5 units on the x-axis, and then translate by the inverse -5 units on the x-axis, we end up where we started. Likewise, if we rotate a point 30&deg; about the y-axis, and then rotate by the inverse </i>&minus;<i>30</i>&deg;<i> about the y-axis, then we end up with our original point. In summary, the inverse of a transformation matrix does the opposite transformation such that the composition of the two transformations leaves the geometry unchanged. </i><a id="page70"/></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c3.2.4"><a href="toc.html#toc-3.2.4"><b>3.2.4 Affine Matrices for Scaling and Rotation</b></a></p>
+<p class="tx1">Observe that if <b>b</b> = 0, the affine transformation reduces to a linear transformation. Thus we can express any linear transformation as an affine transformation with <b>b</b> = <b>0</b>. This, in turn, means we can represent any linear transformation by a 4 &times; 4 affine matrix. For example, the scaling and rotation matrices written using 4 &times; 4 matrices are given as follows:</p>
+<p class="eq"><img src="images/eq104-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In this way, we can express all of our transformations consistently using 4 &times; 4 matrices and points and vectors using 1 &times; 4 homogeneous row vectors. </p>
+<p class="h2" id="c3.2.5"><a href="toc.html#toc-3.2.5"><b>3.2.5 Geometric Interpretation of an Affine  Transformation Matrix</b></a></p>
+<p class="tx1">In this section, we develop some intuition of what the numbers inside an affine transformation matrix mean geometrically. First, let us consider a <i>rigid body transformation</i>, which is essentially a shape preserving transformation. A real world example of a rigid body transformation might be picking a book off your desk and placing it on a bookshelf; during this process you are translating the book from your desk to the bookshelf, but also very likely changing the orientation of the book in the process (rotation). Let &tau; be a rotation transformation describing how we want to rotate an object and let <b>b</b> define a displacement vector describing how we want to translate an object. This rigid body transform can be described by the affine transformation:</p>
+<p class="eq"><img src="images/eq104-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In matrix notation, using homogeneous coordinates (<i>w</i> = 1 for points and <i>w</i> = 0 for vectors so that the translation is not applied to vectors), this is written as:</p>
+
+
+<p class="eq" id="eq3.7"><img src="images/eq105-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Now, to see what this<a id="page71"/> equation is doing geometrically, all we need to do is graph the row vectors in the matrix (see Figure <a href="ch03.html#fig3.7">3.7</a>). Because &tau; is a rotation transformation it preserves lengths and angles; in particular, we see that &tau; is just rotating the standard basis vectors <b>i</b>, <b>j</b>, and <b>k</b> into a new orientation &tau;(<b>i</b>), &tau;(<b>j</b>), and &tau;(<b>k</b>). The vector <b>b</b> is just a position vector denoting a displacement from the origin. Now Figure <a href="ch03.html#fig3.7">3.7</a> shows how the transformed point is obtained geometrically when &alpha;(<i>x</i>, <i>y</i>, <i>z</i>) = <i>x</i>&tau;(<b>i</b>) + <i>y</i>&tau;(<b>j</b>) + <i>z</i>&tau;(<b>k</b>) + <b>b</b> is computed.</p>
+
+
+<p class="caption"><img src="images/Fig3-7A.jpg" alt="image" width="40%"/> <img src="images/Fig3-7B.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig3.7"><b><i>Figure 3.7.</i></b>&nbsp;&nbsp;The geometry of the rows of an affine transformation matrix. The transformed point, &alpha;(<b>p</b>), is given as a linear combination of the transformed basis vectors &tau;(<b>i</b>) ,&tau;(<b>j</b>), &tau;(<b>k</b>), and the offset <b>b</b>.</p>
+
+<p class="tx">The same idea applies to scaling or skew transformations. Consider the linear transformation &tau; that warps a square into a parallelogram as shown in Figure <a href="ch03.html#fig3.8">3.8</a>. The warped point is simply the linear combination of the warped basis vectors.</p>
+
+
+<p class="caption"><img src="images/Fig3-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.8"><b><i>Figure 3.8.</i></b>&nbsp;&nbsp;For a linear transformation that warps a square into a parallelogram, the transformed point &tau;(<b>p</b>)  = (<i>x</i>, <i>y</i>) is given as a linear combination of the transformed basis vectors &tau;(<b>i</b>), &tau;(<b>j</b>).<a id="page72"/></p>
+
+<p class="h1" id="c3.3"><a href="toc.html#toc-3.3"><b>3.3 COMPOSITION OF TRANSFORMATIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Suppose <b>S</b> is a scaling matrix, <b>R</b> is a rotation matrix, and <b>T</b> is a translation matrix. Assume we have a cube made up of eight vertices <b>v</b><i><sub>i</sub></i> for <i>i</i> = 0, 1, &hellip;, 7, and we wish to apply these three transformations to each vertex successively. The obvious way to do this is step-by-step:</p>
+<p class="eq"><img src="images/eq106-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">However, because matrix multiplication is associative, we can instead write this equivalently as:</p>
+<p class="eq"><img src="images/eq106-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We can think of the matrix <b>C</b> = <b>SRT</b> as a matrix that encapsulates all three transformations into one net transformation matrix. In other words, matrix-matrix multiplication allows us to concatenate transforms. </p>
+<p class="tx">This has performance implications. To see this, assume that a 3D object is composed of 20,000 points and that we want to apply these three successive geometric transformations to the object. Using the step-by-step approach, we would require 20,000 &times; 3 vector-matrix multiplications. On the other hand, using the combined matrix approach requires 20,000 vector-matrix multiplications and 2 matrix-matrix multiplications. Clearly, two extra matrix-matrix multiplications is a cheap price to pay for the large savings in vector-matrix multiplications. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Again we point out that matrix multiplication is not commutative. This is even seen geometrically. For example, a rotation followed by a translation, which we can describe by the matrix product </i><b>RT</b><i>, does not result in the same transformation as the same translation followed by the same rotation, that is, </i><b>TR</b><i>. Figure <a href="ch03.html#fig3.9">3.9</a> demonstrates this.</i></p>
+
+
+<p class="caption"><img src="images/Fig3-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.9"><b><i>Figure 3.9.</i></b>&nbsp;&nbsp;(a) Rotating first and then translating. (b) Translating first and then rotating.<a id="page73"/></p>
+
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c3.4"><a href="toc.html#toc-3.4"><b>3.4 CHANGE OF COORDINATE TRANSFORMATIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The scalar 100&deg;C represents the temperature of boiling water relative to the Celsius scale. How do we describe the <i>same</i> temperature of boiling water relative to the Fahrenheit scale? In other words, what is the scalar, relative to the Fahrenheit scale, that represents the temperature of boiling water? To make this conversion (or change of frame), we need to know how the Celsius and Fahrenheit scales relate. They are related as follows: <img src="images/eq107-03.jpg" alt="image" width="100" height="40" style="margin-bottom:-0.5em;"/>. Therefore, the temperature of boiling water relative to the Fahrenheit scale is given by <img src="images/eq107-04.jpg" alt="image" width="200" height="40" style="margin-bottom:-0.5em;"/>.</p>
+<p class="tx">This example illustrates that we can convert a scalar <i>k</i> that describes some quantity relative to a frame <i>A</i> into a new scalar <i>k</i>&prime; that describes the <i>same</i> quantity relative to a different frame <i>B</i>, provided that we knew how frame <i>A</i> and <i>B</i> were related. In the following subsections, we look at a similar problem, but instead of scalars, we are interested in how to convert the coordinates of a point/vector relative to one frame into coordinates relative to a different frame (see Figure <a href="ch03.html#fig3.10">3.10</a>). We call the transformation that converts coordinates from one frame into coordinates of another frame a <i>change of coordinate transformation</i>. </p>
+
+
+<p class="caption"><img src="images/Fig3-10.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.10"><b><i>Figure 3.10.</i></b>&nbsp;&nbsp;The <i>same</i> vector <b>v</b> has different coordinates when described relative to different frames. It has coordinates (<i>x</i>, <i>y</i>) relative to frame <i>A</i> and coordinates (<i>x</i>&prime;, <i>y</i>&prime;) relative to frame <i>B</i>.</p>
+
+<p class="tx">It is worth emphasizing that in a change of coordinate transformation, we do not think of the geometry as changing; rather, we are changing the frame of reference, which thus changes the coordinate representation of the geometry. This is in contrast to how we usually think about rotations, translations, and scaling, where we think of actually physically moving or deforming the geometry.</p>
+<p class="tx">In 3D computer graphics, we employ multiple coordinate systems, so we need to know how to convert from one to another. Because location is a property of points, but not of vectors, <a id="page74"/>the change of coordinate transformation is different for points and vectors.</p>
+<p class="h2" id="c3.4.1"><a href="toc.html#toc-3.4.1"><b>3.4.1 Vectors</b></a></p>
+<p class="tx1">Consider Figure <a href="ch03.html#fig3.11">3.11</a>, in which we have two frames <i>A</i> and <i>B</i> and a vector <b>p</b>. Suppose we are given the coordinates <b>p</b><sub>A</sub> = (<i>x</i>, <i>y</i>) of <b>p</b> relative to frame <i>A</i>, and we wish to find the coordinates <b>p</b><i><sub>B</sub></i> = (<i>x</i>&prime;, <i>y</i>&prime;) of <b>p</b> relative to frame <i>B</i>. In other words, given the coordinates identifying a vector relative to one frame, how do we find the coordinates that identify the same vector relative to a different frame?</p>
+
+
+<p class="caption"><img src="images/Fig3-11.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.11"><b><i>Figure 3.11.</i></b>&nbsp;&nbsp;The geometry of finding the coordinates of <b>p</b> relative to frame <i>B</i>.</p>
+
+       
+<p class="tx">From Figure <a href="ch03.html#fig3.11">3.11</a>, it is clear that</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;p </b>= <i>x</i><b>u + </b><i>y</i><b>v</b></p>
+<p class="tx1">where <b>u</b> and <b>v</b> are unit vectors which aim, respectively, along the <i>x</i>- and <i>y</i>-axes of frame <i>A</i>. Expressing each vector in the above equation in frame <i>B</i> coordinates we get:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp; p</b><sub>B</sub><b> = </b><i>x</i><b>u</b><sub>B</sub><b> + </b><i>y</i><b>v</b><sub>B</sub></p>
+<p class="tx1">Thus, if we are given <b>p</b><i><sub>A</sub></i> = (<i>x</i>, <i>y</i>) and we know the coordinates of the vectors <b>u</b> and <b>v</b> relative to frame <i>B</i>, that is if we know <b>u</b><i><sub>B</sub></i> = (<i>u<sub>x</sub></i>, <i>u<sub>y</sub></i>) and <b>v</b><i><sub>B</sub></i> = (<i>v<sub>x</sub></i>, <i>v<sub>y</sub></i>), then we can always find p<i><sub>B</sub></i> = (<i>x</i>&prime;, <i>y</i>&prime;).</p>
+<p class="tx">Generalizing to 3D, if <b>p</b><i><sub>A</sub></i> = (<i>x</i>, <i>y, z</i>), then</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp; p</b><sub>B</sub><b> = </b><i>x</i><b>u</b><sub>B</sub><b> + </b><i>y</i><b>v</b><sub>B</sub><b> + </b><i>z</i><b>w</b><sub>B</sub></p>
+<p class="tx1">where <b>u</b>, <b>v</b>, and <b>w</b> are unit vectors which aim, respectively, along the <i>x</i>-, <i>y</i>- and <i>z</i>-axes of frame <i>A</i>.</p>
+<p class="h2" id="c3.4.2"><a href="toc.html#toc-3.4.2"><b>3.4.2 Points</b></a></p>
+<p class="tx1">The change of coordinate transformation for points is slightly different than it is for vectors; this is because location is important for points, so we cannot translate points as we translated the vectors in Figure <a href="ch03.html#fig3.11">3.11</a>.</p>
+
+
+<p class="caption"><img src="images/Fig3-12.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.12"><b><i>Figure 3.12.</i></b>&nbsp;&nbsp;The geometry of finding the coordinates of <b>p</b> relative to frame <i>B</i>.</p>
+
+<p class="tx">Figure <a href="ch03.html#fig3.12">3.12</a> shows the situation, and we <a id="page75"/>see that the point <b>p</b> can be expressed by the equation:</p>
+
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;p = </b><i>x</i><b>u + </b><i>y</i><b>v + Q</b></p>
+<p class="tx1">where <b>u</b> and <b>v</b> are unit vectors which aim, respectively, along the <i>x</i>- and <i>y</i>-axes of frame <i>A</i>, and <b>Q</b> is the origin of frame <i>A</i>. Expressing each vector/point in the above equation in frame <i>B</i> coordinates we get:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;p</b><sub>B</sub><b> = </b><i>x</i><b>u</b><sub>B</sub><b> + </b><i>y</i><b>v</b><sub>B</sub><b> + Q</b><sub>B</sub></p>
+<p class="tx1">Thus, if we are given <b>p</b><i><sub>A</sub></i> = (<i>x</i>, <i>y</i>) and we know the coordinates of the vectors <b>u</b> and <b>v</b>, and origin <b>Q</b> relative to frame <i>B</i>, that is if we know <b>u</b><i><sub>B</sub></i> = (<i>u<sub>x</sub></i>, <i>u<sub>y</sub></i>), <b>v</b><i><sub>B</sub></i> = (<i>v<sub>x</sub></i>, <i>v<sub>y</sub></i>), and <b>Q</b><i><sub>B</sub></i> = (<i>Q<sub>x</sub></i>, <i>Q<sub>y</sub></i>), then we can always find <b>p</b><i><sub>B</sub></i> = (<i>x</i>&prime;, <i>y</i>&prime;).</p>
+<p class="tx">Generalizing to 3D, if <b>p</b><i><sub>A</sub></i> = (<i>x</i>, <i>y</i>,<i><sub> </sub>z</i>), then</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;p</b><sub>B</sub><b> = </b><i>x</i><b>u</b><sub>B</sub><b> + </b><i>y</i><b>v</b><sub>B</sub><b>  + </b><i>z</i><b>w</b><sub>B</sub><b> + Q</b><sub>B</sub></p>
+<p class="tx1">where <b>u</b>, <b>v</b>, and <b>w</b> are unit vectors which aim, respectively, along the <i>x</i>-, <i>y</i>- and <i>z</i>-axes of frame <i>A</i>, and <b>Q</b> is the origin of frame <i>A</i>. </p>
+<p class="h2" id="c3.4.3"><a href="toc.html#toc-3.4.3"><b>3.4.3 Matrix Representation</b></a></p>
+<p class="tx1">To review so far, the vector and point change of coordinate transformations are:</p>
+<p class="tx">(<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;) = <i>x</i><b>u</b><i><sub>B</sub></i> + <i>y</i><b>v</b><i><sub>B</sub></i> + <i>z</i><b>w</b><i><sub>B</sub></i>&nbsp;&nbsp;&nbsp;for vectors</p>
+<p class="tx">(<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;) = <i>x</i><b>u</b><i><sub>B</sub></i> + <i>y</i><b>v</b><i><sub>B</sub></i> + <i>z</i><b>w</b><i><sub>B</sub></i> + <b>Q</b><i><sub>B</sub></i>&nbsp;&nbsp;&nbsp;for points</p>
+<p class="tx1">If we use homogeneous coordinates, then we can handle vectors and points by one equation:</p>
+<p class="eq" id="eq3.8"><b>&nbsp;&nbsp;&nbsp;</b>(<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;, <i>w</i>) = <i>x</i><b>u</b><i><sub>B</sub></i> + <i>y</i><b>v</b><i><sub>B</sub></i> + <i>z</i><b>w</b><i><sub>B</sub></i> + <i>w</i><b>Q</b><i><sub>B</sub></i><b>&nbsp;&nbsp;&nbsp;(eq. 3.8)</b></p>
+<p class="tx1">If <i>w</i> = 0, then this equation reduces to the change of coordinate transformation for vectors; if <i>w</i> = 1, then this equation reduces to the change of coordinate transformation for points. The advantage of Equation <a href="ch03.html#eq3.8">3.8</a> is that it works for both vectors and points, provided <a id="page76"/>we set the <i>w</i>-coordinates correctly; we no longer need two equations (one for vectors and one for points). Equation <a href="ch02.html#eq2.3">2.3</a> says that we can write Equation <a href="ch03.html#eq3.8">3.8</a> in the language of matrices:</p>
+
+<p class="eq" id="eq3.9"><img src="images/eq110-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <b>Q</b><i><sub>B</sub></i> = (<i>Q<sub>x</sub></i>, <i>Q<sub>y</sub></i>, <i>Q<sub>z</sub></i>, 1), <b>u</b><i><sub>B</sub></i> = (<i>u<sub>x</sub></i>, <i>u<sub>y</sub></i>, <i>u<sub>z</sub></i>, 0), <b>v</b><i><sub>B</sub></i> = (<i>v<sub>x</sub></i>, <i>v<sub>y</sub></i>, <i>v<sub>z</sub></i>, 0), and <b>w</b><i><sub>B</sub></i> = (<i>w<sub>x</sub></i>, <i>w<sub>y</sub></i>, <i>w<sub>z</sub></i>, 0) describe the origin and axes of frame<i> A</i> with homogeneous coordinates relative to frame <i>B</i>. We call the 4 &times; 4 matrix in Equation <a href="ch03.html#eq3.9">3.9</a> a <i>change of coordinate matrix</i> or <i>change of frame matrix</i>, and we say it converts (or maps) frame <i>A</i> coordinates into frame <i>B</i> coordinates.</p>
+<p class="h2" id="c3.4.4"><a href="toc.html#toc-3.4.4"><b>3.4.4 Associativity and Change of Coordinate Matrices</b></a></p>
+<p class="tx1">Suppose now that we have three frames <i>F</i>, <i>G</i>, and <i>H</i>. Moreover, let <b>A</b> be the change of frame matrix from <i>F</i> to <i>G</i>, and let <b>B</b> be the change of frame matrix from <i>G</i> to <i>H</i>. Suppose we have the coordinates <b>p</b><i><sub>F</sub></i> of a vector relative to frame <i>F</i> and we want the coordinates of the same vector relative to frame <i>H</i>, that is, we want <b>p</b><i><sub>H</sub></i>. One way to do this is step-by-step:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;(p</b><sub>F</sub><b>A)B = p</b><sub>H</sub></p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;  (p</b><sub>G</sub><b>)B = p</b><sub>H</sub></p>
+<p class="tx1">However, because matrix multiplication is associative, we can instead rewrite (<b>p</b><i><sub>F</sub></i><b>A</b>)<b>B</b> = <b>p</b><sub>H</sub> as:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;p</b><sub>F</sub><b>(AB) </b>=<b> p</b><sub>H</sub> </p>
+<p class="tx">In this sense, the matrix product <b>C</b> = <b>AB</b> can be thought of as the change of frame matrix from <i>F</i> directly to <i>H</i>; it combines the affects of <b>A</b> and <b>B</b> into a net matrix. (The idea is like composition of functions.)</p>
+<p class="tx">This has performance implications. To see this, assume that a 3D object is composed of 20,000 points and that we want to apply two successive change of frame transformation to the object. Using the step-by-step approach, we would require 20,000 &times; 2 vector-matrix multiplications. <a id="page77"/>On the other hand, using the combined matrix approach requires 20,000 vector-matrix multiplications and 1 matrix-matrix multiplication to combine the two change of frame matrices. Clearly, one extra matrix-matrix multiplication is a cheap price to pay for the large savings in vector-matrix multiplications. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Again, matrix multiplication is not commutative, so we expect that </i><b>AB</b><i> and </i><b>BA</b><i> do not represent the same composite transformation. More specifically, the order in which you multiply the matrices is the order in which the transformations are applied, and in general, it is not a commutative process.  </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c3.4.5"><a href="toc.html#toc-3.4.5"><b>3.4.5 Inverses and Change of Coordinate Matrices</b></a></p>
+<p class="tx1">Suppose that we are given <b>p</b><i><sub>B</sub></i> (the coordinates of a vector <b>p</b> relative to frame <i>B</i>), and we are given the change of coordinate matrix <b>M</b> from frame <i>A</i> to frame <i>B</i>; that is, <b>p</b><i><sub>B</sub></i> = <b>p</b><i><sub>A</sub></i><b>M</b>. We want to solve for <b>p</b><i><sub>A</sub></i>. In other words, instead of mapping from frame <i>A</i> into frame <i>B</i>, we want the change of coordinate matrix that maps us from <i>B</i> into <i>A</i>. To find this matrix, suppose that <b>M</b> is invertible (i.e., <b>M</b><sup>&minus;1</sup> exists). We can solve for <b>p</b><i><sub>A</sub></i> like so:</p>
+<p class="tx"><img src="images/eq111-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus the matrix <b>M</b><sup>&minus;1</sup> is the change of coordinate matrix from <i>B</i> into <i>A</i>.</p>
+<p class="tx">Figure <a href="ch03.html#fig3.13">3.13</a> illustrates the relationship between a change of coordinate matrix and its inverse. Also note that all of the change of frame mappings that we do in this book will be invertible, so we won&rsquo;t have to worry about whether the inverse exists. </p>
+
+<p class="caption"><img src="images/Fig3-13.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.13"><b><i>Figure 3.13.</i></b>&nbsp;&nbsp;<b>M</b> maps <i>A</i> into <i>B</i> and <b>M</b><sup>&minus;1</sup> maps from <i>B</i> into <i>A</i>.</p>
+
+<p class="tx">Figure <a href="ch03.html#fig3.14">3.14</a> shows how the matrix inverse <a id="page78"/>property (<b>AB</b>)<sup>&minus;1</sup> = <b>B</b><sup>&minus;1</sup><b>A</b><sup>&minus;1</sup> can be interpreted in terms of change of coordinate matrices.</p>
+
+<p class="caption"><img src="images/Fig3-14.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.14"><b><i>Figure 3.14.</i></b>&nbsp;&nbsp;<b>A</b> maps from <i>F</i> into <i>G</i>, <b>B</b> maps from <i>G</i> into <i>H</i>, and <b>AB</b> maps from F directly into <i>H</i>. <b>B</b><sup>&minus;1</sup> maps from <i>H</i> into <i>G</i>, <b>A</b><sup>&minus;1</sup> maps from <i>G</i> into <i>F</i> and <b>B</b><sup>&minus;1</sup><b>A</b><sup>&minus;1</sup> maps from <i>H</i> directly into <i>F</i>.</p>
+
+
+<p class="h1" id="c3.5"><a href="toc.html#toc-3.5"><b>3.5 TRANSFORMATION MATRIX VERSUS CHANGE OF COORDINATE MATRIX</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">So far we have distinguished between &ldquo;active&rdquo; transformations (scaling, rotation, translation) and change of coordinate transformations. We will see in this section that mathematically, the two are equivalent, and an active transformation can be interpreted as a change of coordinate transformation, and conversely.</p>
+<p class="tx">Figure <a href="ch03.html#fig3.15">3.15</a> shows the geometric resemblance between the rows in Equation <a href="ch03.html#eq3.7">3.7</a> (rotation followed by translation affine transformation matrix) and the rows in Equation <a href="ch03.html#eq3.9">3.9</a> (change of coordinate matrix). </p>
+
+
+
+
+<p class="caption"><img src="images/Fig3-15a.jpg" alt="image" width="40%"/> <img src="images/Fig3-15b.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig3.15"><b><i>Figure 3.15.</i></b>&nbsp;&nbsp;We see that <b>b</b> = <b>Q</b>, &tau;(<b>i</b>) = <b>u</b>, &tau;(<b>j</b>) = <b>v</b>, and &tau;(<b>k</b>) = <b>w</b>. (a) We work with one coordinate system, call it frame B, and we apply an affine transformation to the cube to change its position and orientation relative to frame <i>B</i>: &alpha;(<i>x</i>, <i>y</i>, <i>z</i>, <i>w</i>) = <i>x</i>&tau;(<b>i</b>) + <i>y</i>&tau;(<b>j</b>) + <i>z</i>&tau;(<b>k</b>) + <i>w</i><b>b</b>. (b) We have two coordinate systems called frame A and frame B. The points of the cube relative to frame <i>A</i> can be converted to frame <i>B</i> coordinates by the formula <b>p</b><i><sub>B</sub></i> = <i>x</i><b>u</b><i><sub>B</sub></i> + y<b>v</b><i><sub>B</sub></i> + z<b>w</b><i><sub>B</sub></i> + <i>w</i><b>Q</b><i><sub>B</sub></i>, where <b>p</b><i><sub>A</sub></i> =(<i>x</i>,<i> y</i>, <i>z</i>, <i>w</i>). In both cases, we have &alpha;(<b>p</b>) = (<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;, <i>w</i>) = <b>p</b><i><sub>B</sub></i> with coordinates relative to frame <i>B</i>.</p>
+
+<p class="tx"><a id="page79"/>If we think about this, it makes sense. For with a change of coordinate transformation, the frames differ in position and orientation. Therefore, the mathematical conversion formula to go from one frame to the other would require rotating and translating the coordinates, and so we end up with the same mathematical form. In either case, we end up with the same numbers; the difference is the way we interpret the transformation. For some situations, it is more intuitive to work with multiple coordinate systems and convert between the systems where the object remains unchanged, but its coordinate representation changes since it is being described relative to a different frame of reference (this situation corresponds with Figure <a href="ch03.html#fig3.15">3.15</a><i>b</i>). Other times, we want to transform an object inside a coordinate system without changing our frame of reference (this situation corresponds with Figure <a href="ch03.html#fig3.15">3.15</a><i>a</i>). </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In particular, this discussion shows that we can interpret a composition of active transformations (scaling, rotation, translation) as a change of coordinate transformation. This is important because we will often define our world space (Chapter <a href="ch05.html#chap05">5</a>) change of coordinate matrix as a composition of scaling, rotation, and translation transformations.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c3.6"><a href="toc.html#toc-3.6"><b>3.6 DIRECTX MATH TRANSFORMATION FUNCTIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We summarize the DirectX Math related transformation functions for reference.</p>
+<p class="code"><i><span class="code">// Constructs a scaling matrix:</span></i></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixScaling(</span></p>
+<p class="code"><span class="code">float ScaleX,&nbsp;</span></p>
+<p class="code"><span class="code">float ScaleY,&nbsp;</span></p>
+<p class="code"><span class="code">float ScaleZ);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Scaling factors</p>
+
+<p class="code"><i><span class="code">// Constructs a scaling matrix from components in vector:</span></i></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixScalingFromVector(</span></p>
+<p class="code"><span class="code">FXMVECTOR Scale);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Scaling factors (<i>s<sub>x</sub></i>, <i>s<sub>y</sub></i>, <i>s<sub>z</sub></i>)</p>
+
+<p class="code"><span class="code">// <i>Constr</i>u<i>cts a x-axis rotation matrix </i><b>R<sub>x</sub></b><i>:</i></span></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixRotationX(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float Angle);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Clockwise angle &theta; to rotate</p>
+
+<p class="code"><span class="code"><i>// Constructs a y-axis rotation matrix </i><b>R<sub>y</sub></b><i>:</i></span></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixRotationY(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float Angle);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Clockwise angle &theta; to rotate</p>
+
+<p class="code"><span class="code"><i>// Constructs a z-axis rotation matrix </i><b>R<sub>z</sub></b><i>:</i></span></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixRotationZ(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float Angle);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Clockwise angle &theta; to rotate</p>
+
+<p class="code"><i>// Constructs an arbitrary axis rotation matrix </i><b>R<sub>n</sub></b><i>:</i></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixRotationAxis(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;FXMVECTOR Axis, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Axis <b>n</b> to rotate about    </p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float Angle);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Clockwise angle &theta; to rotate</p>
+
+<p class="code"><i>Constructs a translation matrix:</i></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixTranslation(</span></p>
+<p class="code"><span class="code">float OffsetX,&nbsp;</span></p>
+<p class="code"><span class="code">float OffsetY,&nbsp;</span></p>
+<p class="code"><span class="code">float OffsetZ);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Translation factors</p>
+
+<p class="code"><i>Constructs a translation matrix from components in a vector:</i></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixTranslationFromVector(</span></p>
+<p class="code"><span class="code">FXMVECTOR Offset);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Translation factors (<i>t<sub>x</sub></i>, <i>t<sub>y</sub></i>, <i>t<sub>z</sub></i>)</p>
+
+<p class="code"><i>// Computes the vector-matrix product </i><b>vM</b><i> where v</i><sub>w</sub> = 1<i> for transforming points:</i></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3TransformCoord(</span></p>
+<p class="code"><span class="code">FXMVECTOR V, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input <b>v</b></p>
+<p class="code"><span class="code">CXMMATRIX M);&nbsp;</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Input <b>M</b></p>
+
+<p class="code"><i>// Computes the vector-matrix product </i><b>vM</b><i> where v</i><sub>w</sub> = 0<i> for transforming<sub> </sub>vectors:</i></p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMVector3TransformNormal(</span></p>
+<p class="code"><span class="code">FXMVECTOR V,&nbsp;</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Input <b>v</b> </p>
+<p class="code"><span class="code">CXMMATRIX M); &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input<span class="code">&nbsp;<b>M</b></span></p>
+<p class="tx"><a id="page80"/>For the last two functions <span class="code">XMVector3TransformCoord</span> and <span class="code">XMVector3TransformNormal</span>, you do not need to explicitly set the <i>w</i> coordinate. The functions will always use <i>v</i><sub>w</sub> = 1 and <i>v</i><sub>w</sub> = 0 for <span class="code">XMVector3TransformCoord</span> and <span class="code">XMVector3TransformNormal,&nbsp;</span>respectively.</p>
+<p class="h1" id="c3.7"><a href="toc.html#toc-3.7"><b>3.7 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The fundamental transformation matrices&mdash;scaling, rotation, and translation&mdash;are given by:<br/>
+<p class="eq"><img src="images/eq114-01.jpg" alt="image" width="100%"/></p>
+</li>
+<li><a id="page81"/>We use 4 &times; 4 matrices to represent transformations and 1 &times; 4 homogeneous coordinates to describe points and vectors, where we denote a point by setting the fourth component to <i>w</i> = 1 and a vector by setting <i>w</i> = 0. In this way, translations are applied to points but not to vectors. </li>
+<li>A matrix is orthogonal if all of its row vectors are of unit length and mutually orthogonal. An orthogonal matrix has the special property that its inverse is equal to its transpose, thereby making the inverse easy and efficient to compute. All the rotation matrices are orthogonal.</li>
+<li>From the associative property of matrix multiplication, we can combine several transformation matrices into one transformation matrix, which represents the net effect of applying the individual matrices sequentially. </li>
+<li>Let <b>Q</b><i><sub>B</sub></i>, <b>u</b><i><sub>B</sub></i>, <b>v</b><i><sub>B</sub></i>, and <b>W</b><i><sub>B</sub></i> describe the origin, <i>x</i>-, <i>y</i>-, and <i>z</i>-axes of frame <i>A</i> with coordinates relative to frame <i>B</i>, respectively. If a vector/point <b>p</b> has coordinates <b>p</b><i><sub>A</sub></i> = (<i>x</i>, <i>y</i>, <i>z</i>) relative to frame <i>A</i>, then the same vector/point relative to frame <i>B </i>has coordinates:
+<ol class="lc-alpha">
+<li><b>p</b><i><sub>B</sub></i> = (<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;) = <i>x</i><b>u</b><i><sub>B</sub></i> + <i>y</i><b>v</b><i><sub>B</sub></i> + <i>z</i><b>w</b><i><sub>B</sub></i>&nbsp;&nbsp;&nbsp;For vectors (direction and magnitude)</li>
+<li><b>p</b><i><sub>B</sub></i> = (<i>x</i>&prime;, <i>y</i>&prime;, <i>z</i>&prime;) = <b>Q</b><i><sub>B</sub></i> + <i>x</i><b>u</b><i><sub>B</sub></i> + <i>y</i><b>v</b><i><sub>B</sub></i> + <i>z</i><b>w</b><i><sub>B</sub></i>&nbsp;&nbsp;&nbsp;For position vectors (points)<br/>
+These change of coordinate transformations can be written in terms of matrices using homogeneous coordinates.</li></ol></li>
+<li>Suppose we have three frames, <i>F</i>, <i>G</i>, and <i>H</i>, and let <b>A</b> be the change of frame matrix from <i>F</i> to <i>G</i>, and let <b>B</b> be the change of frame matrix from <i>G</i> to <i>H</i>. Using matrix-matrix multiplication, the matrix <b>C</b> = <b>AB</b> can be thought of as the change of frame matrix <i>F</i> directly to <i>H</i>; that is, matrix-matrix multiplication combines the effects of <b>A</b> and <b>B</b> into one net matrix, and so we can write: <b>p</b><i><sub>F</sub></i>(<b>AB</b>) = <b>p</b><i><sub>H</sub></i>.</li>
+<li>If the matrix <b>M</b> maps frame <i>A</i> coordinates into frame <i>B</i> coordinates, then the matrix <b>M</b><sup>&minus;1</sup> maps frame <i>B</i> coordinates into frame <i>A</i> coordinates.</li>
+<li>An active transformation can be interpreted as a change of coordinate transformation, and conversely. For some situations, it is more intuitive to work with multiple coordinate systems and convert between the systems where the object remains unchanged, but its coordinate representation changes since it is being described relative to a different frame of reference. Other times, we want to transform an object inside a coordinate system without changing our frame of reference of reference. <a id="page82"/></li></ol>
+<p class="h1" id="c3.8"><a href="toc.html#toc-3.8"><b>3.8 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Let &tau;: <b>R</b><sup>3</sup> &rarr; <b>R</b><sup>3</sup> be defined by &tau;(<i>x</i>, <i>y</i>, <i>z</i>) = (<i>x</i> + <i>y</i>, <i>x</i> &ndash; 3, <i>z</i>). Is &tau; a linear transformation? If it is, find its standard matrix representation.</li>
+<li>Let &tau;: <b>R</b><sup>3</sup> &rarr; <b>R</b><sup>3</sup> be defined by &tau;(<i>x</i>, <i>y</i>, <i>z</i>) = (3<i>x</i> + 4<i>z</i>, 2<i>x</i> &ndash; <i>z</i>, <i>x</i> + <i>y</i> + <i>z</i>). Is &tau; a linear transformation? If it is, find its standard matrix representation.</li>
+<li>Assume that &tau;: <b>R</b><sup>3</sup> &rarr; <b>R</b><sup>3</sup> is a linear transformation. Further suppose that &tau;(1, 0, 0) = (3, 1, 2), &tau;(0, 1, 0) = (2, -1, 3), and &tau;(0, 0, 1) = (4, 0, 2). Find &tau;(1, 1, 1).</li>
+<li>Build a scaling matrix that scales 2 units on the <i>x</i>-axis, &minus;3 units on the <i>y</i>-axis, and keeps the <i>z</i>-dimension unchanged. </li>
+<li>Build a rotation matrix that rotates 30&deg; along the axis (1, 1, 1).</li>
+<li>Build a translation matrix that translates 4 units on the <i>x</i>-axis, no units on the <i>y</i>-axis, and -9 units on the <i>z</i>-axis.</li>
+<li>Build a single transformation matrix that first scales 2 units on the <i>x</i>-axis, &minus;3 units on the <i>y</i>-axis, and keeps the <i>z</i>-dimension unchanged, and then translates 4 units on the <i>x</i>-axis, no units on the <i>y</i>-axis, and -9 units on the <i>z</i>-axis.</li>
+<li>Build a single transformation matrix that first rotates 45&deg; about the <i>y</i>-axis and then translates &minus;2 units on the <i>x</i>-axis, 5 units on the <i>y</i>-axis, and 1 unit on the <i>z</i>-axis.</li>
+<li>Redo Example 3.2, but this time scale the square 1.5 units on the <i>x</i>-axis, 0.75 units on the <i>y</i>-axis, and leave the <i>z</i>-axis unchanged. Graph the geometry before and after the transformation to confirm your work.</li>
+<li>Redo Example 3.3, but this time rotate the square &minus;45&deg; clockwise about the <i>y</i>-axis (i.e., 45&deg; counterclockwise). Graph the geometry before and after the transformation to confirm your work.</li>
+<li>Redo Example 3.4, but this time translate the square &minus;5 units on the <i>x</i>-axis, -3.0 units on the <i>y</i>-axis, and 4.0 units on the <i>z</i>-axis. Graph the geometry before and after the transformation to confirm your work.</li>
+<li>Show that <i>R</i><b><sub>n</sub></b>(<b>v</b>) = cos&theta;<b>v</b> + (1 &minus; cos&theta;) (<b>n</b>&#x00B7;<b>v</b>)<b>n</b> + sin&theta;(<b>n</b> &times; <b>v</b>) is a linear transformation and find its standard matrix representation.</li>
+<li>Prove that the rows of <b>R<sub>y</sub></b> are orthonormal. For a more computational intensive exercise, the reader can do this for the general rotation matrix (rotation matrix about an arbitrary axis), too.</li>
+<li>Prove the matrix <b>M</b> is orthogonal if and only if <b>M</b><i><sup>T</sup></i> = <b>M</b><sup>&minus;1</sup>.</li>
+<li>Compute:<br/>
+<img src="images/eq117-01.jpg" alt="image" width="100%"/>
+<br/>Does the translation translate<a id="page83"/> points? Does the translation translate vectors? Why does it not make sense to translate the coordinates of a vector in standard position?  </li>
+<li>Verify that the given scaling matrix inverse is indeed the inverse of the scaling matrix; that is, show, by directly doing the matrix multiplication, <b>SS</b><sup>&minus;1</sup> = <b>S</b><sup>&minus;1</sup><b>S </b>= <b>I</b>. Similarly, verify that the given translation matrix inverse is indeed the inverse of the translation matrix; that is, show that <b>TT</b><sup>&minus;1</sup> = <b>T</b><sup>&minus;1</sup><b>T</b> = <b>I</b> </li>
+<li>Suppose that we have frames <i>A</i> and <i>B</i>. Let <b>p</b><sub>A</sub> = (1, &minus;2, 0) and <b>q</b><sub>A</sub> = (1, 2, 0) represent a point and force, respectively, relative to frame <i>A</i>. Moreover, let<br/> <img src="images/eq117-04.jpg" alt="image" width="100%"/><br/> describe frame <i>A</i> with coordinates relative to frame <i>B</i>. Build the change of coordinate matrix that maps frame <i>A</i> coordinates into frame <i>B</i> coordinates, and find <b>p</b><i><sub>B</sub></i> = (<i>x</i>, <i>y</i>, <i>z</i>) and <b>q</b><i><sub>B</sub></i> = (<i>x</i>, <i>y</i>, <i>z</i>). Draw a picture on graph paper to verify that your answer is reasonable.</li>
+<li>The analog for points to a linear combination of vectors is an <i>affine combination</i>: <b>p</b> = <i>a</i><sub>1</sub><b>p</b><sub>1</sub> + &hellip; + <i>a</i><sub>n</sub><b>p</b><sub>n</sub> where <i>a</i><sub>1</sub> + &hellip; + <i>a</i><sub>n</sub> = 1and <b>p</b><sub>1</sub>, &hellip;, <b>p</b><i><sub>n</sub></i> are points. The scalar coefficient <i>a</i><sub>k</sub> can be thought of as a &ldquo;point&rdquo; weight that describe how much influence the point <b>p</b><i><sub>k</sub></i> has in determining <b>p</b>; loosely speaking, the closer <i>a</i><sub>k</sub> is to 1, the closer <b>p</b> will be to <b>p</b><i><sub>k</sub></i>, and a negative <i>a</i><sub>k</sub> &ldquo;repels&rdquo; <b>p</b> from <b>p</b><i><sub>k</sub></i>. (The next exercise will help you develop some intuition on this.) The weights are also known as <i>barycentric coordinates</i>. Show that an affine combination can be written as a point plus a vector:
+<p class="eq"><b><img src="images/eq117-05.jpg" alt="image" width="100%"/></b></p></li>
+<li>Consider the triangle defined by the points <b>p</b><sub>1</sub> = (0, 0, 0), <b>p</b><sub>2</sub> = (0, 1, 0), and <b>p</b><sub>3</sub> = (2, 0, 0). Graph the following points: 
+<ol class="lc-alpha"><li>&nbsp;&nbsp;&nbsp;<img src="images/eq117-06.jpg" alt="image" width="25%"/></li>
+<li>&nbsp;&nbsp;&nbsp;0.7<b>p</b><sub>1</sub> + 0.2<b>p</b><sub>2</sub> + 0.1<b>p</b><sub>3</sub></li>
+<li>&nbsp;&nbsp;&nbsp;0.0<b>p</b><sub>1</sub> + 0.5<b>p</b><sub>2</sub> + 0.5<b>p</b><sub>3</sub></li>
+<li>&nbsp;&nbsp;&nbsp;&minus;0.2<b>p</b><sub>1</sub> + 0.6<b>p</b><sub>2</sub> + 0.6<b>p</b><sub>3</sub></li>
+<li>&nbsp;&nbsp;&nbsp;0.6<b>p</b><sub>1</sub> + 0.5<b>p</b><sub>2</sub> &minus; 0.1<b>p</b><sub>3</sub></li>
+<li>&nbsp;&nbsp;&nbsp;0.8<b>p</b><sub>1</sub> &minus; 0.3<b>p</b><sub>2</sub> + 0.5<b>p</b><sub>3</sub>
+<br/>What is special about<a id="page84"/> the point in part (a)? What would be the barycentric coordinates of <b>p</b><sub>2</sub> and the point (1, 0, 0) in terms of <b>p</b><sub>1</sub>, <b>p</b><sub>2</sub>, <b>p</b><sub>3</sub>? Can you make a conjecturer about where the point <b>p</b> will be located relative to the triangle if one of the barycentric coordinates is negative?</li></ol></li>
+<li>One of the defining factors of an affine transformation is that it preserves affine combinations. Prove that the affine transformation &alpha;(<b>u</b>) preserves affine transformations; that is, <img src="images/eq118-02.jpg" alt="image" width="300" height="25" style="margin-bottom:-0.5em;"/> where <i>a</i><sub>1</sub> + &hellip; + <i>a<sub>n</sub></i> = 1.</li>
+<li>Consider Figure <a href="ch03.html#fig3.16">3.16</a>. A common change of coordinate transformation in computer graphics is to map coordinates from frame <i>A</i> (the square [&minus;1, 1]<sup>2</sup>) to frame <i>B</i> (the square [0, 1]<sup>2</sup> where the <i>y</i>-axes aims opposite to the one in Frame <i>A</i>). Prove that the change of coordinate transformation from Frame <i>A</i> to Frame <i>B</i> is given by:<br/>
+<img src="images/eq118-01.jpg" alt="image" width="100%"/>
+<p class="caption"><img src="images/Fig3-16.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.16"><b><i>Figure 3.16.</i></b>&nbsp;&nbsp;Change of coordinates from frame <i>A</i> (the square [&minus;1, 1]<sup>2</sup>) to frame <i>B</i> (the square [0, 1]<sup>2 </sup>where the y-axes aims opposite to the one in Frame <i>A</i>) </p>
+</li>
+<li>It was mentioned in the last chapter<a id="page85"/> that the determinant was related to the change in volume of a box under a linear transformation. Find the determinant of the scaling matrix and interpret the result in terms of volume. </li>
+<li>Consider the transformation &tau; that warps a square into a parallelogram given by:
+<p class="eq"><img src="images/eq119-01.jpg" alt="image" width="100%"/></p>
+Find the standard matrix representation of this transformation, and show that the determinant of the transformation matrix is equal to the area of the parallelogram spanned by &tau;(<b>i</b>) and &tau;(<b>j</b>).
+<p class="caption"><img src="images/Fig3-17.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig3.17"><b><i>Figure 3.17.</i></b>&nbsp;&nbsp;Transformation that maps square into parallelogram.</p>
+</li>
+<li>Show that the determinant of the <i>y</i>-axis rotation matrix is 1. Based on the above exercise, explain why it makes sense that it is 1. For a more computational intensive exercise, the reader can show the determinant of the general rotation matrix (rotation matrix about an arbitrary axis) is 1.</li>
+<li>A rotation matrix can be characterized algebraically as an orthogonal matrix with determinant equal to 1. If we reexamine Figure <a href="ch03.html#fig3.7">3.7</a> along with Exercise 24 this makes sense; the rotated basis vectors &tau;(<b>i</b>) , &tau;(<b>j</b>), and &tau;(<b>k</b>) are unit length and mutually orthogonal; moreover, rotation does not change the size of the object, so the determinant should be 1. Show that the product of two rotation matrices <b>R</b><sub>1</sub><b>R</b><sub>2</sub> = <b>R</b> is a rotation matrix. That is, show <b>RR</b><i><sup>T</sup></i> = <b>R</b><i><sup>T</sup></i><b>R</b> = <b>I</b> (to show <b>R </b>is orthogonal), and show det <b>R</b> = 1.</li>
+<li>Show that the following properties hold for a rotation matrix <b>R</b>:
+<p class="eq"><img src="images/eq119-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Explain why all these properties make sense for a rotation transformation.</p></li>
+<li>Find a scaling, rotation, and<a id="page86"/> translation matrix whose product transforms the line segment with start point <b>p</b> = (0, 0, 0) and endpoint <b>q</b> = (0, 0, 1) into the line segment with length 2, parallel to the vector (1, 1, 1), with start point  (3, 1, 2).</li>
+<li>Suppose we have a box positioned at (<i>x</i>, <i>y</i>, <i>z</i>). The scaling transform we have defined uses the origin as a reference point for the scaling, so scaling this box (not centered about the origin) has the side effect of translating the box (Figure <a href="ch03.html#fig3.18">3.18</a>); this can be undesirable in some situations. Find a transformation that scales the box relative to its center point. </li></ol>
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Change coordinates to the box coordinate system with origin at the center of the box, scale the box, then transform back to the original coordinate system.</i></p></td></tr>
+</tbody>
+</table>
+
+<p class="caption"><img src="images/Fig3-18.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig3.18"><b><i>Figure 3.18.</i></b>&nbsp;&nbsp;(a) Scaling 2-units on the x-axis relative to the origin results in a translation of the rectangle. (b) Scaling 2-units on the x-axis relative to the center of the rectangle does not result in a translation (the rectangle maintains its original center point).</p>
+</body>
+</html>

@@ -1,0 +1,780 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page675"/><a href="toc.html#toc-21" id="chap21">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">21</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-21"><b>A</b><span class="sc">MBIENT</span><br/><br/><b>O</b><span class="sc">CCLUSION</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/></p>
+
+
+
+<p class="tx1">Due to performance constraints, it is common for real-time lighting models not to take indirect light (i.e., light that has bounced off other objects in the scene) into consideration. However, much light we see in the real world is indirect. In Chapter <a href="ch08.html#chap08">8</a> we introduced the ambient term to the lighting equation:</p>
+
+<p class="eq"><img src="images/eq709-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The color <b>A</b><i><sub>L </sub></i>specifies the total amount of indirect (ambient) light a surface receives from a light source, and the diffuse albedo <b>m</b><i><sub>d</sub></i> specifies the amount of incoming light that the surface reflects due to diffuse reflectance. All the ambient term does is uniformly brighten up the object a bit so that it does not go completely black in shadow&mdash;there is no real physics calculation at all. The idea is that the indirect light has scattered and bounced around the scene so many times that it strikes the object equally in every direction. Figure <a href="ch21.html#fig21.1">21.1</a> shows that if we draw a model using only the ambient term, it is rendered out as a constant color.</p>
+
+<p class="caption"><img src="images/Fig21-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.1"><b><i>Figure 21.1.</i></b>&nbsp;&nbsp;A mesh rendered with only the ambient term appears as a solid color.</p>
+
+
+
+<p class="tx">Figure <a href="ch21.html#fig21.1">21.1</a> makes it clear that our ambient term could use some improvement. In this chapter, we discuss the popular technique of ambient occlusion to improve our ambient term. </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To understand the basic idea behind ambient occlusion and how to implement ambient occlusion via ray casting.</li>
+<li>To learn how to implement a real-time approximation of ambient occlusion in screen space called screen space ambient occlusion.</li></ol>
+<p class="h1" id="c21.1"><a href="toc.html#toc-21.1"><b>21.1 AMBIENT OCCLUSION VIA RAY CASTING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The idea of ambient occlusion is that the amount<a id="page676"/> of indirect light a point <b>p</b> on a surface receives is proportional to how occluded it is to incoming light over the hemisphere about <b>p</b>&mdash;see Figure <a href="ch21.html#fig21.2">21.2</a>. </p>
+
+<p class="caption"><img src="images/Fig21-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig21.2"><b><i>Figure 21.2.</i></b>&nbsp;&nbsp;(a) A point <b>p</b> is completely unoccluded and all incoming light over the hemisphere about <b>p</b> reaches <b>p</b>. (b) Geometry partially occludes <b>p</b> and blocks incoming light rays over the hemisphere about <b>p</b>.</p>
+
+
+
+<p class="tx">One way to estimate the occlusion of a point <b>p</b> is via ray casting. We randomly cast rays over the hemisphere about <b>p</b>, and check for intersections against the mesh (Figure <a href="ch21.html#fig21.3">21.3</a>). If we cast <i>N</i><sub> </sub>rays, and <i>h</i> of them intersect the mesh, then the point has the occlusion value:</p>
+
+<p class="eq"><img src="images/eq710-01.jpg" alt="image" width="100%"/></p>
+<p class="tx">Only rays with an intersection point<a id="page677"/> <b>q</b> whose distance from <b>p</b> is less than some threshold value <i>d</i> should contribute to the occlusion estimate; this is because an intersection point <b>q</b> far away from<b> p</b> is too far to occlude it. </p>
+
+<p class="caption"><img src="images/Fig21-3.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig21.3"><b><i>Figure 21.3.</i></b>&nbsp;&nbsp;Estimating ambient occlusion via ray casting.</p>
+
+
+
+<p class="tx">The occlusion factor measures how occluded the point is (i.e., how much light it does not receive). For the purposes of calculations, we like to work with the inverse of this. That is, we want to know how much light the point does receive&mdash;this is called <i>accessibility</i> (or we call it ambient-access) and is derived from occlusion as:</p>
+
+<p class="eq"><img src="images/eq711-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The following code performs the ray cast per triangle, and then averages the occlusion results with the vertices that share the triangle. The ray origin is the triangle&rsquo;s centroid, and we generate a random ray direction over the hemisphere of the triangle. </p>
+<p class="code"><span class="code">void AmbientOcclusionApp::BuildVertexAmbientOcclusion(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;Vertex::AmbientOcclusion&gt;&amp; vertices,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;UINT&gt;&amp; indices)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT vcount = vertices.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT tcount = indices.size()/3;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;XMFLOAT3&gt; positions(vcount);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; vcount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;positions[i] = vertices[i].Pos;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Octree octree;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;octree.Build(positions, indices);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each vertex, count how many triangles contain the vertex.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;int&gt; vertexSharedCount(vcount);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Cast rays for each triangle, and average triangle occlusion</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// with the vertices that share this triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; tcount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i0 = indices[i*3+0];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i1 = indices[i*3+1];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i2 = indices[i*3+2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v0 = XMLoadFloat3(&amp;vertices[i0].Pos);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v1 = XMLoadFloat3(&amp;vertices[i1].Pos);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v2 = XMLoadFloat3(&amp;vertices[i2].Pos);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR edge0 = v1 - v0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR edge1 = v2 - v0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR normal = XMVector3Normalize(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVector3Cross(edge0, edge1));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR centroid = (v0 + v1 + v2)/3.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Offset to avoid self intersection<a id="page678"/>.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;centroid += 0.001f*normal;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;const int NumSampleRays = 32;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float numUnoccluded = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(int j = 0; j &lt; NumSampleRays; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR randomDir = MathHelper::RandHemisphereUnitVec3(normal);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Test if the random ray intersects the scene mesh.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// TODO: Technically we should not count intersections&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// that are far away as occluding the triangle, but&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// this is OK for demo.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if( !octree.RayOctreeIntersect(centroid, randomDir) )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;numUnoccluded++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float ambientAccess = numUnoccluded / NumSampleRays;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Average with vertices that share this face.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i0].AmbientAccess += ambientAccess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i1].AmbientAccess += ambientAccess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i2].AmbientAccess += ambientAccess;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertexSharedCount[i0]++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertexSharedCount[i1]++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertexSharedCount[i2]++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Finish average by dividing by the number of samples we added,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// and store in the vertex attribute.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; vcount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].AmbientAccess /= vertexSharedCount[i];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+
+<p class="caption"><img src="images/Fig21-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.4"><b><i>Figure 21.4.</i></b>&nbsp;&nbsp;The mesh is rendered only with ambient occlusion&mdash;there are no scene lights. Notice how the crevices are darker; this is because when we cast rays out they are more likely to intersect geometry and contribute to occlusion. On the other hand, the skull cap is white (unoccluded) because when we cast rays out over the hemisphere for points on the skull cap, they will not intersect any geometry of the skull.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The demo uses an octree to speed up the ray/triangle intersection tests. For a mesh with thousands of triangles, it would be very slow to test each random ray with every mesh triangle. An octree sorts the triangles spatially, so we can quickly find only the triangles that have a good chance of intersecting the ray; this reduces the number of ray/triangle intersection tests substantially. An octree is a classic spatial data structure, and Exercise 1 asks you to research them further.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Figure <a href="ch21.html#fig21.4">21.4</a> shows a screenshot of a model rendered only with ambient<a id="page679"/> occlusion generated by the previous algorithm (there are no light sources in the scene). The ambient occlusion is generated as a precomputation step during initialization and stored as vertex attributes. As we can see, it is a huge improvement over Figure <a href="ch21.html#fig21.1">21.1</a>&mdash;the model actually looks 3D now. </p>
+
+
+<p class="tx">Precomputing ambient occlusion works well for static models; there are even tools (<i><a href="http://www.xnormal.net">http://www.xnormal.net</a></i>) that generate <i>ambient occlusion maps</i>&mdash;textures that store ambient occlusion data. However, for animated models these static approaches break down. If you load and run the &ldquo;Ambient Occlusion&rdquo; demo, you will notice that it takes a few seconds to precompute the ambient occlusion for just one model. Hence, casting rays at runtime to implement dynamic ambient occlusion is not feasible. In the next section, we examine a popular technique for computing ambient occlusion in real-time using screen space information. </p>
+<p class="h1" id="c21.2"><a href="toc.html#toc-21.2"><b>21.2 SCREEN SPACE AMBIENT OCCLUSION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The strategy of <i>screen space ambient occlusion</i> (SSAO) is, for every frame, render the scene view space normals to a full screen<a id="page680"/> render target and the scene depth to the usual depth/stencil buffer, and then estimate the ambient occlusion at each pixel using only the view space normal render target and the depth/stencil buffer as input. Once we have a texture that represents the ambient occlusion at each pixel, we render the scene as usual to the back buffer, but apply the SSAO information to scale the ambient term at each pixel. </p>
+<p class="h2" id="c21.2.1"><a href="toc.html#toc-21.2.1"><b>21.2.1 Render Normals and Depth Pass</b></a></p>
+<p class="tx1">First we render the view space normal vectors of the scene objects to a screen sized <span class="code">DXGI_FORMAT_R16G16B16A16_FLOAT</span> texture map, while the usual depth/stencil buffer is bound to lay down the scene depth. The vertex/pixel shaders used for this pass are as follows:</p>
+<p class="code"><span class="code">// Include common HLSL code.</span></p>
+<p class="code"><span class="code">#include &ldquo;Common.hlsl&rdquo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 TangentU : TANGENT;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp; : SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 TangentW : TANGENT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp; : TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fetch the material data<a id="page681"/>.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to use&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// inverse-transpose of world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TangentW = mul(vin.TangentU, (float3x3)gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, matData.MatTransform).xy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = matData.DiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint diffuseMapIndex = matData.DiffuseMapIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint normalMapIndex = matData.NormalMapIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Dynamically look up the texture in the array.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;diffuseAlbedo *= gTextureMaps[diffuseMapIndex].Sample(gsamAnisotropicWrap, pin.TexC);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifdef ALPHA_TEST</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Discard pixel if texture alpha &lt; 0.1. We do this test as soon&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// as possible in the shader so that we can potentially exit the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// shader early, thereby skipping the rest of the shader code.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;clip(diffuseAlbedo.a - 0.1f);</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolating normal can unnormalize it, so renormalize it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.NormalW = normalize(pin.NormalW);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NOTE: We use interpolated vertex normal for SSAO.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Write normal in view space coordinates</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 normalV = mul(pin.NormalW, (float3x3)gView);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return float4(normalV, 0.0f);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">As the code shows, the pixel shader outputs the normal vector in view space. Observe that we are writing to a floating-point render target, so there is no problem writing out arbitrary floating-point data.  </p>
+<p class="h2" id="c21.2.2"><a href="toc.html#toc-21.2.2"><b>21.2.2 Ambient Occlusion Pass</b></a></p>
+<p class="tx1">After we have laid down the view space normals and scene depth, we disable the depth buffer (we do not need it for generating the ambient occlusion texture), and draw a full screen quad to invoke the SSAO pixel shader at each pixel. The pixel shader will then use the normal texture and depth buffer to generate an ambient accessibility value at each pixel. We call the generated texture map in this pass the <i>SSAO map</i>. Although we render the normal/depth map at full screen resolution (i.e., the resolution of our back buffer), we render to the SSAO map at half the width and height of the back buffer for performance reasons. Rendering at half the dimensions does not affect<a id="page682"/> quality too much, as ambient occlusion is a low frequency effect. Refer to Figure <a href="ch21.html#fig21.5">21.5</a> throughout the following subsections.</p>
+
+<p class="caption"><img src="images/Fig21-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig21.5"><b><i>Figure 21.5.</i></b>&nbsp;&nbsp;The points involved in SSAO. The point <b>p</b> corresponds to the current pixel we are processing, and it is reconstructed from the depth value stored in the depth buffer and the vector <b>v </b>that passes through the near plane at this pixel. The point <b>q</b> is a random point in the hemisphere of <b>p</b>. The point <b>r</b> corresponds to the nearest visible point along the ray from the eye to <b>q</b>. The point <b>r </b>contributes to the occlusion of <b>p</b> if |<i>p<sub>z</sub></i> &minus; <i>r<sub>z</sub></i>| is sufficiently small and the angle between <b>r</b> &minus; <b>p</b> and <b>n</b> is less than 90&deg;. In the demo, we take 14 random sample points and average the occlusion from each to estimate the ambient occlusion in screen space.</p>
+
+
+<p class="h3" id="c21.2.2.1"><a href="toc.html#toc-21.2.2.1"><b>21.2.2.1 Reconstruct View Space Position</b></a></p>
+<p class="tx1">When we draw the full screen quad to invoke the SSAO pixel shader at each pixel of the SSAO map, we can use the inverse of the projection matrix to transform the quad corner points in NDC space to points on the near projection plane window:</p>
+<p class="code"><span class="code">static const float2 gTexCoords[6] =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 1.0f)</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Draw call with 6 vertices</span></p>
+<p class="code"><span class="code">VertexOut VS(uint vid : SV_VertexID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = gTexCoords[vid];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Quad covering screen in NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform quad corners to view space near plane.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ph = mul(vout.PosH, gInvProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosV = ph.xyz / ph.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">These to-near-plane vectors are interpolated across the quad and give<a id="page683"/> us a vector<span class="code">&nbsp;</span><b>v</b> (Figure <a href="ch21.html#fig21.5">21.5</a>) from the eye to the near plane for each pixel. Now, for each pixel, we sample the depth buffer so that we have the <i>z</i>-coordinate <i>p</i><sub>z</sub> of the nearest visible point to the eye in NDC coordinates. The goal is to reconstruct the view space position <b>p</b> = (<i>p</i><sub>x</sub>, <i>p</i><sub>y</sub>, <i>p</i><sub>z</sub>) from the sampled NDC <i>z</i>-coordinate <i>p</i><sub>z</sub> and the interpolated to-near-plane vector <b>v</b>. This reconstruction is done as follows. Since the ray of <b>v</b> passes through <b>p</b>, there exists a <i>t</i> such that <b>p</b> = <i>t</i><b>v</b>. In particular,  <i>p</i><sub>z</sub> = <i>tv</i><sub>z</sub> so that <i>t</i> = <i>p</i><sub>z</sub>/<i>v</i><sub>z</sub>. Thus <img src="images/eq717-01.jpg" alt="image" width="60" height="30" style="margin-bottom:-0.5em;"/>. The reconstruction code in the pixel shader is as follows:</p>
+<p class="code"><span class="code">float NdcDepthToViewDepth(float z_ndc)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We can invert the calculation from NDC space to view space for the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// z-coordinate. We have that</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// z_ndc = A + B/viewZ, where gProj[2,2]=A and gProj[3,2]=B.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Therefore&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float viewZ = gProj[3][2] / (z_ndc - gProj[2][2]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return viewZ;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Get z-coord of this pixel in NDC space from depth map.&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float pz = gDepthMap.SampleLevel(gsamDepthMap, pin.TexC, 0.0f).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform depth to view space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pz = NdcDepthToViewDepth(pz);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reconstruct the view space position of the point with depth pz.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 p = (pz/pin.PosV.z)*pin.PosV;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h3" id="c21.2.2.2"><a href="toc.html#toc-21.2.2.2"><b>21.2.2.2 Generate Random Samples</b></a></p>
+<p class="tx1">This step is analogous to the random ray cast over the hemisphere. We randomly sample <i>N</i> points <b>q</b> about <b>p</b> that are also in front of <b>p</b> and within a specified occlusion radius. The occlusion radius is an artistic parameter to control how far away from <b>p</b> we want to take the random sample points. Choosing to only sample points in front of <b>p</b> is analogous to only casting rays over the hemisphere instead of the whole sphere when doing ray casted ambient occlusion. </p>
+<p class="tx">The next question is how to generate the random samples. We can generate random vectors and store them in a texture map, and then sample this texture map at <i>N</i> different positions to get<a id="page684"/> <i>N</i> random vectors. However, since they are random we have no guarantee that the vectors we sample will be uniformly distributed&mdash;they may all clump together in roughly the same direction, which would give a bad occlusion estimate. To overcome this, we do the following trick. In our implementation, we use <i>N</i> = 14 samples, and we generate fourteen equally distributed vectors in the C++ code:</p>
+<p class="code"><span class="code">void Ssao::BuildOffsetVectors()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Start with 14 uniformly distributed vectors. We choose the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// 8 corners of the cube and the 6 center points along each&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// cube face. We always alternate the points on opposite sides</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// of the cubes. This way we still get the vectors spread out&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// even if we choose to use less than 14 samples.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// 8 cube corners</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[0] = XMFLOAT4(+1.0f, +1.0f, +1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[1] = XMFLOAT4(-1.0f, -1.0f, -1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[2] = XMFLOAT4(-1.0f, +1.0f, +1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[3] = XMFLOAT4(+1.0f, -1.0f, -1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[4] = XMFLOAT4(+1.0f, +1.0f, -1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[5] = XMFLOAT4(-1.0f, -1.0f, +1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[6] = XMFLOAT4(-1.0f, +1.0f, -1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[7] = XMFLOAT4(+1.0f, -1.0f, +1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// 6 centers of cube faces</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[8] = XMFLOAT4(-1.0f, 0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[9] = XMFLOAT4(+1.0f, 0.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[10] = XMFLOAT4(0.0f, -1.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[11] = XMFLOAT4(0.0f, +1.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[12] = XMFLOAT4(0.0f, 0.0f, -1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mOffsets[13] = XMFLOAT4(0.0f, 0.0f, +1.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 14; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Create random lengths in [0.25, 1.0].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float s = MathHelper::RandF(0.25f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v = s * XMVector4Normalize(XMLoadFloat4(&amp;mOffsets[i]));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4(&amp;mOffsets[i], v);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We use 4D homogeneous vectors just so we do not have to worry about any alignment issues when setting the array of offset vectors to the effect. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Now, in the pixel shader we just sample the random<a id="page685"/> vector texture map once, and use it to reflect our fourteen equally distributed vectors. This results in 14 <i>equally distributed random vectors</i>. </p>
+<p class="h3" id="c21.2.2.3"><a href="toc.html#toc-21.2.2.3"><b>21.2.2.3 Generate the Potential Occluding Points</b></a></p>
+<p class="tx1">We now have random sample points <b>q</b> surrounding <b>p</b>. However, we know nothing about them&mdash;whether they occupy empty space or a solid object; therefore, we cannot use them to test if they occlude <b>p</b>. To find potential occluding points, we need depth information from the depth buffer. So what we do is generate projective texture coordinates for each <b>q</b> with respect to the camera, and use these to sample the depth buffer to get the depth in NDC space, and then transform to view space to obtain the depth <i>r</i><sub>z</sub> of the nearest visible pixel along the ray from the eye to <b>q</b>.<sub> </sub>With the <sub>z</sub>-coordinates <sub>rz</sub> known, we can reconstruct the full 3D view space position <b>r</b> in an analogous way we did in &#x00A7;21.2.2.1. Because the vector from the eye to <b>q</b> passes through <b>r</b> there exists a <i>t</i> such that <b>r</b> = <i>t</i><b>q</b>. In particular, <i>r<sub>z</sub></i> = <i>tq<sub>z</sub></i> so <i>t = r<sub>z</sub>/q<sub>z</sub></i>. Therefore, <img src="images/eq719-03.jpg" alt="image" width="50" height="30" style="margin-bottom:-0.5em;"/>. The points <b>r</b>, one generated for each random sample point <b>q</b>, are our potential occluding points.</p>
+<p class="h3" id="c21.2.2.4"><a href="toc.html#toc-21.2.2.4"><b>21.2.2.4 Perform the Occlusion Test</b></a></p>
+<p class="tx1">Now that we have our potential occluding points <b>r</b>, we can perform our occlusion test to estimate if they occlude <b>p</b>. The test relies on two quantities:</p>
+<ol><li>The view space depth distance |<i>p</i><sub>z</sub> &minus; <i>r</i><sub>z</sub>|. We linearly scale down the occlusion as the distance increases since points farther away from have less of an occluding effect. If the distance is beyond some specified maximum distance, then no occlusion occurs. Also, if the distance is very small, then we assume <b>p</b> and <b>q</b> are on the same plane so <b>q</b> cannot occlude <b>p</b>. </li>
+<li>The angle between <b>n</b> and <b>r</b> &minus; <b>p</b> measured by <img src="images/eq719-02.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/>. This is to prevent self-intersection (see Figure <a href="ch21.html#fig21.6">21.6</a>). </li></ol>
+
+<p class="caption"><img src="images/Fig21-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig21.6"><b><i>Figure 21.6.</i></b>&nbsp;&nbsp;If <b>r</b> lies on the same plane as <b>p</b>, it can pass the first condition that the distance  |<i>p<sub>z</sub></i> &minus; <i>r<sub>z</sub></i>| is small enough that <b>r</b> occludes <b>p</b>. However, the figure shows this is incorrect as <b>r</b> does not occlude <b>p</b> since they lie on the same plane. Scaling the occlusion by <img src="images/eq719-02.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/> prevents this situation.</p>
+
+<p class="tx1">&nbsp;</p>
+
+<p class="h3" id="c21.2.2.5"><a href="toc.html#toc-21.2.2.5"><b>21.2.2.5 Finishing the Calculation</b></a></p>
+<p class="tx1">After we have summed the occlusion from each sample<a id="page686"/>, we compute the average occlusion by dividing by the sample count. Then we compute the ambient-access, and finally raise the ambient-access to a power to increase the contrast. You may also wish to increase the brightness of the ambient map by adding some number to increase the intensity. You can experiment with different contrast/brightness values. </p>
+<p class="code"><span class="code">occlusionSum /= gSampleCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">float access = 1.0f - occlusionSum;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Sharpen the contrast of the SSAO map to make the SSAO affect more dramatic.</span></p>
+<p class="code"><span class="code">return saturate(pow(access, 4.0f));</span></p>
+<p class="h3" id="c21.2.2.6"><a href="toc.html#toc-21.2.2.6"><b>21.2.2.6 Implementation</b></a></p>
+<p class="tx1">The previous section outlined the key ingredients for generating the SSAO map. Below are the HLSL programs:</p>
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code"><span class="code">// Ssao.hlsl by Frank Luna (C) 2015 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbSsao : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProjTex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;gOffsetVectors[14];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For SsaoBlur.hlsl</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gBlurWeights[3];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Coordinates given in view space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gOcclusionRadius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gOcclusionFadeStart;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gOcclusionFadeEnd;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gSurfaceEpsilon;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbRootConstants : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;bool gHorizontalBlur;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">// Nonnumeric values cannot be added to a cbuffer.</span></p>
+<p class="code"><span class="code">Texture2D gNormalMap&nbsp;&nbsp;: register(t0);</span></p>
+<p class="code"><span class="code">Texture2D gDepthMap&nbsp;&nbsp; : register(t1);</span></p>
+<p class="code"><span class="code">Texture2D gRandomVecMap : register(t2);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointClamp : register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp : register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamDepthMap : register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap : register(s3);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">static const int gSampleCount = 14;</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">static const float2 gTexCoords[6] =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 1.0f)</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH : SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosV : POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC : TEXCOORD0;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(uint vid : SV_VertexID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = gTexCoords[vid];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Quad covering screen in<a id="page687"/> NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform quad corners to view space near plane.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ph = mul(vout.PosH, gInvProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosV = ph.xyz / ph.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Determines how much the sample point q occludes the point p as a function</span></p>
+<p class="code"><span class="code">// of distZ.</span></p>
+<p class="code"><span class="code">float OcclusionFunction(float distZ)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// If depth(q) is &ldquo;behind&rdquo; depth(p), then q cannot occlude p. Moreover, if&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// depth(q) and depth(p) are sufficiently close, then we also assume q cannot</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// occlude p because q needs to be in front of p by Epsilon to occlude p.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We use the following function to determine the occlusion.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;1.0&nbsp;&nbsp; -------------\</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| \</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;\</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp; \&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;\</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp; \</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// ------|------|-----------|-------------|---------|--&gt; zv</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;&nbsp;&nbsp;0&nbsp;&nbsp; Eps&nbsp;&nbsp;&nbsp;&nbsp; z0&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;z1&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float occlusion = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(distZ &gt; gSurfaceEpsilon)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float fadeLength = gOcclusionFadeEnd - gOcclusionFadeStart;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Linearly decrease occlusion from<a id="page688"/> 1 to 0 as distZ goes&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// from gOcclusionFadeStart to gOcclusionFadeEnd.&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;occlusion = saturate( (gOcclusionFadeEnd-distZ)/fadeLength );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return occlusion;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float NdcDepthToViewDepth(float z_ndc)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// z_ndc = A + B/viewZ, where gProj[2,2]=A and gProj[3,2]=B.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float viewZ = gProj[3][2] / (z_ndc - gProj[2][2]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return viewZ;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// p -- the point we are computing the ambient occlusion for.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// n -- normal vector at p.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// q -- a random offset from p.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// r -- a potential occluder that might occlude p.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Get viewspace normal and z-coord of this pixel.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 n = gNormalMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).xyz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float pz = gDepthMap.SampleLevel(gsamDepthMap, pin.TexC, 0.0f).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pz = NdcDepthToViewDepth(pz);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reconstruct full view space position (x,y,z).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Find t such that p = t*pin.PosV.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// p.z = t*pin.PosV.z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// t = p.z / pin.PosV.z</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 p = (pz/pin.PosV.z)*pin.PosV;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Extract random vector and map from [0,1] --&gt; [-1, +1].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 randVec = 2.0f*gRandomVecMap.SampleLevel(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gsamLinearWrap, 4.0f*pin.TexC, 0.0f).rgb - 1.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float occlusionSum = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sample neighboring points about p in<a id="page689"/> the hemisphere oriented by n.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; gSampleCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Are offset vectors are fixed and uniformly distributed (so that</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// our offset vectors do not clump in the same direction). If we&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// reflect them about a random vector then we get a random uniform&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// distribution of offset vectors.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float3 offset = reflect(gOffsetVectors[i].xyz, randVec);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Flip offset vector if it is behind the plane defined by (p, n).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float flip = sign( dot(offset, n) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Sample a point near p within the occlusion radius.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float3 q = p + flip * gOcclusionRadius * offset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Project q and generate projective tex-coords.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float4 projQ = mul(float4(q, 1.0f), gProjTex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;projQ /= projQ.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Find the nearest depth value along the ray from the eye to q&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// (this is not the depth of q, as q is just an arbitrary point&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// near p and might occupy empty space). To find the nearest depth&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// we look it up in the depthmap.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float rz = gDepthMap.SampleLevel(gsamDepthMap, projQ.xy, 0.0f).r;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rz = NdcDepthToViewDepth(rz);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Reconstruct full view space position r = (rx,ry,rz). We know r</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// lies on the ray of q, so there exists a t such that r = t*q.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// r.z = t*q.z ==&gt; t = r.z / q.z</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float3 r = (rz / q.z) * q;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Test whether r occludes p.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;* The product dot(n, normalize(r - p)) measures how much in&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// front of the plane(p,n) the occluder point r is. The more in&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// front it is, the more occlusion weight we give it. This also&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// prevents self shadowing where a point r on an angled plane (p,n)&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// could give a false occlusion since they have different depth&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// values with respect to the eye.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;* The weight of the occlusion is scaled based on how far the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// occluder is from the point we are computing the occlusion of. If&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// the occluder r is far away from p, then it does not occlude it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float distZ = p.z - r.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float dp = max(dot(n, normalize(r - p)), 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float occlusion = dp * OcclusionFunction(distZ);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;occlusionSum += occlusion;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;occlusionSum /= gSampleCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float access = 1.0f - occlusionSum;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Sharpen the contrast of the<a id="page690"/> SSAO map to make the SSAO affect more</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// dramatic.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return saturate(pow(access, 2.0f));</span></p>
+<p class="code"><span class="code">}</span></p>
+
+<p class="caption"><img src="images/Fig21-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.7"><b><i>Figure 21.7.</i></b>&nbsp;&nbsp;SSAO appears noisy due to the fact that we have only taken a few random samples.</p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>For scenes with large viewing distances, rendering errors can result due to the limited accuracy of the depth buffer. A simple solution is to fade out the affect of SSAO with distance.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c21.2.3"><a href="toc.html#toc-21.2.3"><b>21.2.3 Blur Pass</b></a></p>
+<p class="tx1">Figure <a href="ch21.html#fig21.7">21.7</a> shows what our ambient occlusion map currently looks like. The noise is due to the fact that we have only taken a few random samples. Taking enough samples to hide the noise is impractical for real-time. The common solution is to apply an edge preserving blur (i.e., bilateral blur) to the SSAO map to smooth it out. If we used a non-edge preserving blur, then we lose definition in the scene as sharp discontinuities become smoothed out. The edge preserving blur is similar to the blur we implemented in Chapter <a href="ch13.html#chap13">13</a>, except we add a conditional statement so that we do not blur across edges (edges are detected from the normal/depth map):</p>
+
+
+
+<p class="code"><span class="code">//====================================================================</span></p>
+<p class="code"><span class="code">// SsaoBlur.hlsl by Frank Luna (C) 2015 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Performs a bilateral edge preserving blur of the ambient map. We use&nbsp;</span></p>
+<p class="code"><span class="code">// a pixel shader instead of compute shader to avoid the switch from&nbsp;</span></p>
+<p class="code"><span class="code">// compute mode to rendering mode. The texture cache makes up for some&nbsp;</span></p>
+<p class="code"><span class="code">// of the loss of not having shared memory. The ambient map uses 16-bit&nbsp;</span></p>
+<p class="code"><span class="code">// texture format, which is small, so we should be able to fit a lot of&nbsp;</span></p>
+<p class="code"><span class="code">// texels in the cache.</span></p>
+<p class="code"><span class="code">//=====================================================================</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbSsao : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProjTex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;gOffsetVectors[14];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For SsaoBlur.hlsl</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gBlurWeights[3];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Coordinates given in view space<a id="page691"/>.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gOcclusionRadius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gOcclusionFadeStart;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gOcclusionFadeEnd;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gSurfaceEpsilon;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbRootConstants : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;bool gHorizontalBlur;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Nonnumeric values cannot be added to a cbuffer.</span></p>
+<p class="code"><span class="code">Texture2D gNormalMap : register(t0);</span></p>
+<p class="code"><span class="code">Texture2D gDepthMap : register(t1);</span></p>
+<p class="code"><span class="code">Texture2D gInputMap : register(t2);</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp : register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp : register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamDepthMap : register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap : register(s3);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">static const int gBlurRadius = 5;</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">static const float2 gTexCoords[6] =</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(0.0f, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 0.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2(1.0f, 1.0f)</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH : SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC : TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(uint vid : SV_VertexID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = gTexCoords[vid];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Quad covering screen in<a id="page692"/> NDC space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = float4(2.0f*vout.TexC.x - 1.0f, 1.0f - 2.0f*vout.TexC.y, 0.0f, 1.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float NdcDepthToViewDepth(float z_ndc)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// z_ndc = A + B/viewZ, where gProj[2,2]=A and gProj[3,2]=B.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float viewZ = gProj[3][2] / (z_ndc - gProj[2][2]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return viewZ;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// unpack into float array.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float blurWeights[12] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gBlurWeights[0].x, gBlurWeights[0].y, gBlurWeights[0].z, gBlurWeights[0].w,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gBlurWeights[1].x, gBlurWeights[1].y, gBlurWeights[1].z, gBlurWeights[1].w,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gBlurWeights[2].x, gBlurWeights[2].y, gBlurWeights[2].z, gBlurWeights[2].w,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float2 texOffset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;if(gHorizontalBlur)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;texOffset = float2(gInvRenderTargetSize.x, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;texOffset = float2(0.0f, gInvRenderTargetSize.y);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// The center value always contributes to the sum.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float4 color&nbsp;&nbsp; = blurWeights[gBlurRadius] * gInputMap.SampleLevel(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gsamPointClamp, pin.TexC, 0.0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float totalWeight = blurWeights[gBlurRadius];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 centerNormal = gNormalMap.SampleLevel(gsamPointClamp, pin.TexC, 0.0f).xyz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float centerDepth = NdcDepthToViewDepth(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;gDepthMap.SampleLevel(gsamDepthMap, pin.TexC, 0.0f).r);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(float i = -gBlurRadius; i &lt;=gBlurRadius; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// We already added in the center weight.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if( i == 0 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;continue;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float2 tex = pin.TexC + i*texOffset;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float3 neighborNormal = gNormalMap.SampleLevel(gsamPointClamp, tex, 0.0f).xyz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float neighborDepth = NdcDepthToViewDepth(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gDepthMap.SampleLevel(gsamDepthMap, tex, 0.0f).r);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// If the center value and neighbor values<a id="page693"/> differ too much&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// (either in normal or depth), then we assume we are</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// sampling across a discontinuity. We discard such</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// samples from the blur.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if( dot(neighborNormal, centerNormal) &gt;= 0.8f &amp;&amp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;abs(neighborDepth - centerDepth) &lt;= 0.2f )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float weight = blurWeights[i + gBlurRadius];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Add neighbor pixel to blur.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;color += weight*gInputMap.SampleLevel(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;gsamPointClamp, tex, 0.0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;totalWeight += weight;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compensate for discarded samples by making total weights sum to 1.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return color / totalWeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Figure <a href="ch21.html#fig21.8">21.8</a> shows the ambient map after an edge preserving blur. </p>
+
+<p class="caption"><img src="images/Fig21-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.8"><b><i>Figure 21.8.</i></b>&nbsp;&nbsp;An edge preserving blur smoothes out the noise. In our demo, we blur the image four times.</p>
+
+
+<p class="h2" id="c21.2.4"><a href="toc.html#toc-21.2.4"><b>21.2.4 Using the Ambient Occlusion Map</b></a></p>
+<p class="tx1">Thus far we have constructed the ambient occlusion<a id="page694"/> map. The final step is to apply it to the scene. One might think to use alpha blending and modulate the ambient map with the back buffer. However, if we do this, then the ambient map modifies not just the ambient term, but also the diffuse and specular term of the lighting equation, which is incorrect. Instead, when we render the scene to the back buffer, we bind the ambient map as a shader input. We then generate projective texture coordinates (with respect to the camera), sample the SSAO map, and apply it only to the ambient term of the lighting equation:</p>
+<p class="code"><span class="code">// In Vertex shader, generate projective tex-coords</span></p>
+<p class="code"><span class="code">// to project SSAO map onto scene.</span></p>
+<p class="code"><span class="code">vout.SsaoPosH = mul(posW, gViewProjTex);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// In pixel shader, finish texture projection and sample SSAO map.</span></p>
+<p class="code"><span class="code">pin.SsaoPosH /= pin.SsaoPosH.w;</span></p>
+<p class="code"><span class="code">float ambientAccess = gSsaoMap.Sample(gsamLinearClamp, pin.SsaoPosH.xy, 0.0f).r;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Scale ambient term of lighting equation.</span></p>
+<p class="code"><span class="code">float4 ambient = ambientAccess*gAmbientLight*diffuseAlbedo;</span></p>
+<p class="tx1">Figure <a href="ch21.html#fig21.9">21.9</a> shows the scene with the SSAO map applied. The SSAO can be subtle, and your scene has to reflect enough ambient light so that scaling it by the ambient-access makes enough of a noticeable difference. The advantage of SSAO is most apparent when objects are in shadow. For when objects are in shadow, the diffuse and specular terms are killed; thus only the ambient term shows up. Without SSAO, objects in shadow will appear flatly lit by a constant ambient term, but with SSAO they will keep their 3D definition.</p>
+
+<p class="caption"><img src="images/Fig21-9.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.9"><b><i>Figure 21.9.</i></b>&nbsp;&nbsp;Screenshot of the demo. The affects are subtle as they only affect the ambient term, but you can see darkening at the base of the columns and box, under the spheres, and around the skull.</p>
+
+
+
+<p class="tx">When we render the scene view space normals, we also build the depth buffer for the scene. Consequently, when we render the scene the second time with the SSAO map, we modify the depth comparison test to<a id="page695"/> &ldquo;EQUALS.&rdquo; This prevents any overdraw in the second rendering pass, as only the nearest visible pixels will pass this depth comparison test. Moreover, the second rendering pass does not need to write to the depth buffer because we already wrote the scene to the depth buffer in the normal render target pass. </p>
+<p class="code"><span class="code">opaquePsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;</span></p>
+<p class="code"><span class="code">opaquePsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;</span></p>
+<p class="code"><span class="code">ThrowIfFailed(md3dDevice-&gt;CreateGraphicsPipelineState(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;opaquePsoDesc, IID_PPV_ARGS(&amp;mPSOs[&ldquo;opaque&rdquo;])));</span></p>
+<p class="h1" id="c21.3"><a href="toc.html#toc-21.3"><b>21.3 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The ambient term of the lighting equation models indirect light. In our lighting model, the ambient term is simply a constant value. Therefore, when an object is in shadow and only ambient light is applied to the surface, the model appears very flat with no solid definition. The goal of ambient occlusion is to find a better estimate for the ambient term so that the object still looks 3D even with just the ambient term applied. </li>
+<li>The idea of ambient occlusion is that the amount of indirect light a point <b>p</b> on a su<b>r</b>face receives is proportional to how occluded it is to incoming light over the hemisphere about <b>p</b>. One way to estimate the occlusion of a point <b>p</b> is via ray casting. We randomly cast rays over the hemisphere about <b>p</b>, and check for intersections against the mesh. If the rays do not intersect any geometry, then the point is completely unoccluded; however, the more intersections there are, the more occluded <b>p</b> must be. </li>
+<li>Ray casted ambient occlusion is too expensive to do in real-time for dynamic objects. Screen space ambient occlusion (SSAO) is a real-time approximation that is based on the view space normal/depth values. You can definitely find flaws and situations where it gives wrong results, but the results are very good in practice with the limited information it has to work with. </li></ol>
+<p class="h1" id="c21.4"><a href="toc.html#toc-21.4"><b>21.4 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Research on the web: KD-Trees, quadtrees, and octrees.</li>
+<li>Modify the &ldquo;Ssao&rdquo; demo to do a Gaussian blur instead of an edge preserving blur. Which one do you like better?</li>
+<li>Can SSAO be<a id="page696"/> implemented on the compute shader? If yes, sketch out an implementation.</li>
+<li>Figure <a href="ch21.html#fig21.10">21.10</a> shows what happens to the SSAO map if we do not include a check for self-intersection (&#x00A7;21.2.2.4). Modify the &ldquo;Ssao&rdquo; demo to remove the self-intersection check and reproduce the results in Figure <a href="ch21.html#fig21.10">21.10</a>.</li></ol>
+
+<p class="caption"><img src="images/Fig21-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig21.10"><b><i>Figure 21.10.</i></b>&nbsp;&nbsp;False occlusions everywhere.</p>
+</body>
+</html>

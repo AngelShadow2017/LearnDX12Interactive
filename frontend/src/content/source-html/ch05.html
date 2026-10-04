@@ -1,0 +1,650 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page159"/><a href="toc.html#toc-05" id="chap05">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">5</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><br/><br/><a href="toc.html#toc-05"><b>T</b><span class="sc">HE</span><br/><br/><b>R</b><span class="sc">ENDERING</span><br/><br/><b>P</b><span class="sc">IPELINE</span></a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+<p class="tx1">The primary theme of this chapter is the rendering pipeline. Given a geometric description of a 3D scene with a positioned and oriented virtual camera, the <i>rendering pipeline </i>refers to the entire sequence of steps necessary to generate a 2D image based on what the virtual camera sees (Figure <a href="ch05.html#fig5.1">5.1</a>). This chapter is mostly theoretical&mdash;the next chapter puts the theory into practice as we learn to draw with Direct3D. Before we begin coverage of the rendering pipeline, we have two short stops: First, we discuss some elements of the 3D illusion (i.e., the illusion that we are looking into a 3D world through a flat 2D monitor screen); and second, we explain how colors will be represented and worked with mathematically and in Direct3D code.</p>
+
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To discover several key signals used to convey a realistic sense of volume and spatial depth in a 2D image.</li>
+<li>To find out how we represent 3D objects in Direct3D.</li>
+<li>To learn how we model the virtual camera.</li>
+<li>To understand the rendering pipeline&mdash;the process of taking a geometric description of a 3D scene and generating a 2D image from it.</li></ol>
+<p class="caption"><img src="images/Fig5-1.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.1"><b><i>Figure 5.1.</i></b>&nbsp;&nbsp;The left image shows a side view of some objects setup in the 3D world with a camera positioned and aimed; the middle image shows the same scene, but from a top-down view. The &ldquo;pyramid&rdquo; volume specifies the volume of space that the viewer can see; objects (and parts of objects) outside this volume are not seen. The image on the right shows the 2D image created based on what the camera &ldquo;sees.&rdquo;<a id="page160"/></p>
+
+<p class="h1" id="c5.1"><a href="toc.html#toc-5.1"><b>5.1 THE 3D ILLUSION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Before we embark on our journey of 3D computer graphics, a simple question remains outstanding: How do we display a 3D world with depth and volume on a flat 2D monitor screen? Fortunately for us, this problem has been well studied, as artists have been painting 3D scenes on 2D canvases for centuries. In this section, we outline several key techniques that make an image look 3D, even though it is actually drawn on a 2D plane. </p>
+<p class="tx">Suppose that you have encountered a railroad track that doesn&rsquo;t curve, but goes along a straight line for a long distance. Now the railroad rails remain parallel to each other for all time, but if you stand on the railroad and look down its path, you will observe that the two railroad rails get closer and closer together as their distance from you increases, and eventually they converge at an infinite distance. This is one observation that characterizes our human viewing system: parallel lines of vision converge to a <i>vanishing point</i>; see Figure <a href="ch05.html#fig5.2">5.2</a>.</p>
+
+<p class="caption"><img src="images/Fig5-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.2"><b><i>Figure 5.2.</i></b>&nbsp;&nbsp;Parallel lines of vision converge to a vanishing point. Artists sometimes call this <i>linear perspective</i>.</p>
+
+<p class="tx">Another simple observation<a id="page161"/> of how humans see things is that the size of an object appears to diminish with depth; that is, objects near us look bigger than objects far away. For example, a house far away on a hill will look very small, while a tree near us will look very large in comparison. Figure <a href="ch05.html#fig5.3">5.3</a> shows a simple scene where parallel rows of columns are placed behind each other, one after another. The columns are actually all the same size, but as their depths increase from the viewer, they get smaller and smaller. Also notice how the columns are converging to the vanishing point at the horizon.</p>
+
+
+<p class="caption"><img src="images/Fig5-3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.3"><b><i>Figure 5.3.</i></b>&nbsp;&nbsp;Here, all the columns are of the same size, but a viewer observes a diminishing in size with respect to depth phenomenon.</p>
+
+<p class="tx">We all experience <i>object overlap</i> (Figure <a href="ch05.html#fig5.4">5.4</a>), which refers to the fact that opaque objects obscure parts (or all) of the objects behind them. This is an important perception, as it conveys the depth ordering relationship of the objects in the scene. We already discussed (Chapter <a href="ch04.html#chap04">4</a>) how Direct3D uses a depth buffer to figure out which pixels are being obscured and thus should not be drawn. </p>
+
+<p class="caption"><img src="images/Fig5-4.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.4"><b><i>Figure 5.4.</i></b>&nbsp;&nbsp;A group of objects that partially obscure each other because one is in front of the other, etc. (they overlap).</p>
+
+<p class="tx">Consider Figure <a href="ch05.html#fig5.5">5.5</a>. On the left we have an unlit sphere, and on the right, we have a lit sphere. As you can see, the sphere on the left looks rather flat&mdash;maybe it is not even a sphere at all<a id="page162"/>, but just a textured 2D circle! Thus, lighting and shading play a very important role in depicting the solid form and volume of 3D objects.</p>
+
+
+<p class="caption"><img src="images/Fig5-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.5"><b><i>Figure 5.5.</i></b>&nbsp;&nbsp;(a) An unlit sphere that looks 2D. (b) A lit sphere that looks 3D.</p>
+
+<p class="tx">Finally, Figure <a href="ch05.html#fig5.6">5.6</a> shows a spaceship and its shadow. The shadow serves two key purposes. First, it tells us the origin of the light source in the scene. And secondly, it provides us with a rough idea of how high off the ground the spaceship is.</p>
+
+<p class="caption"><img src="images/Fig5-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.6"><b><i>Figure 5.6.</i></b>&nbsp;&nbsp;A spaceship and its shadow. The shadow implies the location of the light source in the scene and also gives an idea of how high off the ground the spaceship is.</p>
+
+<p class="tx">The observations just discussed, no doubt, are intuitively obvious from our day-to-day experiences. Nonetheless, it is helpful to explicitly state what we know and to keep these observations in mind as we study and work on 3D computer graphics.</p>
+<p class="h1" id="c5.2"><a href="toc.html#toc-5.2"><b>5.2 MODEL REPRESENTATION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A solid 3D <i>object</i> is represented by a <i>triangle mesh</i> approximation, and consequently, triangles form the basic building blocks of the objects we model. As Figure <a href="ch05.html#fig5.7">5.7</a> implies, we can approximate any real-world 3D object by a triangle mesh. In general, the more triangles you use to approximate an object, the better the approximation, as you can model finer details. Of course, the more triangles we use, the more processing power is required, and so a balance must be made based on the hardware power of the application&rsquo;s target audience. In addition to triangles, it is sometimes useful to draw lines or points. For example, a curve could be graphically drawn by a sequence of short line segments a pixel thick. </p>
+
+<p class="caption"><img src="images/Fig5-7.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.7"><b><i>Figure 5.7.</i></b>&nbsp;&nbsp;(Left) A car approximated by a triangle mesh. (Right) A skull approximated by a triangle mesh.</p>
+
+
+<p class="tx">The large number of triangles used in Figure <a href="ch05.html#fig5.7">5.7</a> makes one thing clear: It would be extremely cumbersome to manually list the triangles of a 3D model. For all but the simplest models, special 3D applications called <i>3D modelers</i> are used to generate and manipulate 3D objects. These modelers allow the user to build complex and realistic meshes in a visual and interactive environment with a rich tool set, thereby making the entire modeling process much easier. Examples of popular modelers used for game development are 3D Studio Max (<i><a href="http://usa.autodesk.com/3ds-max/">http://usa.autodesk.com/3ds-max/</a></i>), LightWave 3D (<i><a href="https://www.lightwave3d.com/">https://www.lightwave3d.com/</a></i>), Maya (<i><a href="http://usa.autodesk.com/maya/">http://usa.autodesk.com/maya/</a></i>), Softimage|XSI (<a href="http://www.softimage.com">www.softimage.com</a>), and Blender (<i><a href="http://www.blender.org/">www.blender.org/</a></i>). (Blender has the advantage for hobbyists of being open source and free.) Nevertheless, for the first part <a id="page163"/>of this book, we will generate our 3D models manually by hand, or via a mathematical formula (the triangle list for cylinders and spheres, for example, can easily be generated with parametric formulas). In the third part of this book, we show how to load and display 3D models exported from 3D modeling programs.</p>
+<p class="h1" id="c5.3"><a href="toc.html#toc-5.3"><b>5.3 BASIC COMPUTER COLOR</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Computer monitors emit a mixture of red, green, and blue light through each pixel. When the light mixture enters the eye and strikes an area of the retina, cone receptor cells are stimulated and neural impulses are sent down the optic nerve toward the brain. The brain interprets the signal and generates a color. As the light mixture varies, the cells are stimulated differently, which in turn generates a different color in the mind. Figure <a href="ch05.html#fig5.8">5.8</a> shows some examples of mixing red, green, and blue to get different colors; it also shows different intensities of red. By using different intensities for each color component and mixing them together, we can describe all the colors we need to display realistic images. </p>
+
+<p class="tx">The best way to get comfortable with describing colors by RGB (red, green, blue) values is to use a paint program like Adobe Photoshop, or even the Win32 <span class="code">ChooseColor</span> dialog box (Figure <a href="ch05.html#fig5.9">5.9</a>), and experiment with different RGB combinations to see the colors they produce. </p>
+<p class="caption"><img src="images/Fig5-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.8"><b><i>Figure 5.8.</i></b>&nbsp;&nbsp;(Top) The mixing of pure red, green, and blue colors to get new colors. (Bottom) Different shades of red found by controlling the intensity of red light.</p>
+
+<p class="caption"><img src="images/Fig5-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.9"><b><i>Figure 5.9.</i></b>&nbsp;&nbsp;The <span class="code">ChooseColor</span> dialog box.</p>
+
+<p class="tx">A monitor has a maximum<a id="page164"/> intensity of red, green, and blue light it can emit. To describe the intensities of light, it is useful to use a normalized range from 0 to 1. 0 denotes no intensity and 1 denotes the full intensity. Intermediate values denote intermediate intensities. For example, the values (0.25, 0.67, 1.0) mean the light mixture consists of 25% intensity of red light, 67% intensity of green light, and 100% intensity of blue light. As the example just stated implies, we can represent a color by a 3D color vector (<i>r</i>, <i>g</i>, <i>b</i>), where 0 &#x2264; <i>r</i>, <i>g</i>, <i>b</i> &#x2264; 1, and each color component describes the intensity of red, green, and blue light in the mixture. </p>
+<p class="h2" id="c5.3.1"><a href="toc.html#toc-5.3.1"><b>5.3.1 Color Operations</b></a></p>
+<p class="tx1">Some vector operations also apply to color vectors. For example, we can add color vectors to get new colors:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>(0.0, 0.5, 0) + (0, 0.0, 0.25) = (0.0, 0.5, 0.25)</p>
+<p class="tx1">By combining a medium intensity green color with a low intensity blue color, we get a dark-green color.</p>
+<p class="tx">Colors can also be subtracted to get new colors:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>(1, 1, 1) &ndash; (1, 1, 0) = (0, 0, 1)</p>
+<p class="tx1">That is, we start with white and subtract out the red and green parts, and we end up with blue.</p>
+<p class="tx">Scalar multiplication also makes sense. Consider the following:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>0.5(1, 1, 1) = (0.5, 0.5, 0.5)</p>
+<p class="tx1">That is, we start with white and multiply by 0.5, and we end up with a medium shade of gray. On the other hand, the operation 2(0.25, 0, 0) = (0.5, 0, 0) doubles the intensity of the red component.</p>
+<p class="tx">Obviously expressions like the dot product and cross product do not make sense for color vectors. However, color vectors do get their own special color operation called <i>modulation</i> or <i>componentwise</i> multiplication. It is defined as:</p>
+<p class="eq"><img src="images/eq198-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This operation is mainly used in lighting equations. For example, suppose we have an incoming ray of light with color (<i>r</i>, <i>g</i>, <i>b</i>) and it strikes a surface which reflects 50% red light, 75% green light, and 25% blue light, and absorbs the rest. Then the color of the reflected light ray is given by:</p>
+
+<p class="eq"><img src="images/eq198-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">So we can see that the light ray lost some intensity when it struck the surface, since the surface absorbed some of the light. </p>
+<p class="tx">When doing color operation<a id="page165"/>, it is possible that your color components go outside the [0, 1] interval; consider the equation, (1, 0.1, 0.6) + (0, 0.3, 0.5) = (1, 0.4, 1.1), for example. Since 1.0 represents the maximum intensity of a color component, you cannot become more intense than it. Thus 1.1 is just as intense as 1.0. So what we do is clamp 1.1 &rarr; 1.0. Likewise, a monitor cannot emit negative light, so any negative color component (which could result from a subtraction operation) should be clamped to 0.0.</p>
+<p class="h2" id="c5.3.2"><a href="toc.html#toc-5.3.2"><b>5.3.2 128-Bit Color</b></a></p>
+<p class="tx1">It is common to incorporate an additional color component, called the <i>alpha component</i>. The alpha component is often used to denote the opacity of a color, which is useful in blending (Chapter <a href="ch10.html#chap10">10</a>). (Since we are not using blending yet, just set the alpha component to 1 for now.) Including the alpha component, means we can represent a color by a 4D color vector (<i>r</i>, <i>g</i>, <i>b</i>, <i>a</i>) where 0 &#x2264; <i>r</i>, <i>g</i>, <i>b</i>, <i>a</i> &#x2264; 1. To represent a color with 128-bits, we use a floating-point value for each component. Because mathematically a color is just a 4D vector, we can use the <span class="code">XMVECTOR</span> type to represent a color in code, and we gain the benefit of SIMD operations whenever we use the DirectXMath vector functions to do color operations (e.g., color addition, subtraction, scalar multiplication). For componentwise multiplication, the DirectX Math library provides the following function:</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV XMColorModulate(&nbsp;&nbsp;&nbsp;//</span> Returns <b>c</b><sub>1</sub> &#x2297;<sub> </sub><b>c</b><sub>2</sub> </p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR C1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR C2);</span></p>
+<p class="h2" id="c5.3.3"><a href="toc.html#toc-5.3.3"><b>5.3.3 32-Bit Color</b></a></p>
+<p class="tx1">To represent a color with 32-bits, a byte is given to each component. Since each color is given an 8-bit byte, we can represent 256 different shades for each color component&mdash;0 being no intensity, 255 being full intensity, and intermediate values being intermediate intensities. A byte per color component may seem small, but when we look at all the combinations (256 &times; 256 &times; 256 = 16, 777, 216), we see millions of distinct colors can be represented. The DirectX Math library (<i>#include &lt;DirectXPackedVector.h&gt;</i>) provides the following structure, in the <span class="code">DirectX::PackedVector</span> namespace, for storing a 32-bit color:</p>
+<p class="code"><span class="code">namespace DirectX</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">namespace PackedVector</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">// ARGB Color; 8-8-8-8 bit unsigned normalized integer components packed&nbsp;</span></p>
+<p class="code"><span class="code">// into a 32 bit integer. The normalized color is packed into 32 bits&nbsp;</span></p>
+<p class="code"><span class="code">// using 8 bit unsigned, normalized integers for the alpha, red, green,&nbsp;</span></p>
+<p class="code"><span class="code">// and blue components.</span></p>
+<p class="code"><span class="code">// The alpha component is stored in the most significant bits and the&nbsp;</span></p>
+<p class="code"><span class="code">// blue component in the least significant bits (A8R8G8B8):</span></p>
+<p class="code"><span class="code">// [32] aaaaaaaa rrrrrrrr gggggggg bbbbbbbb [0]</span></p>
+<p class="code"><span class="code">struct XMCOLOR</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;union</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;struct</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t b; // Blue:&nbsp;&nbsp;0/255 to 255/255</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t g; // Green:&nbsp;&nbsp;0/255 to 255/255</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t r; // Red:&nbsp;&nbsp; 0/255 to 255/255</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint8_t a; // Alpha:&nbsp;&nbsp;0/255 to 255/255</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;uint32_t c;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR() {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR(uint32_t Color) : c(Color) {}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR(float _r, float _g, float _b, float _a);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;explicit XMCOLOR(_In_reads_(4) const float *pArray);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;operator uint32_t () const { return c; }</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR&amp; operator= (const XMCOLOR&amp; Color) { c = Color.c; return *this; }</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR&amp; operator= (const uint32_t Color) { c = Color; return *this; }</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">} // end PackedVector namespace</span></p>
+<p class="code"><span class="code">} // end DirectX namespace</span></p>
+<p class="tx1">A 32-bit color can be converted<a id="page166"/> to a 128-bit color by mapping the integer range  [0, 255] onto the real-valued interval [0, 1]. This is done by dividing by 255. That is, if 0 &#x2264; <i>n</i> &#x2264; 255 is an integer, then <img src="images/eq200-01.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/> gives the intensity in the normalized range from 0 to 1. For example, the 32-bit color (80, 140, 200, 255) becomes:</p>
+
+<p class="eq"><img src="images/eq200-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">On the other hand, a 128-bit color can be converted to a 32-bit color by multiplying each component by 255 and rounding to the nearest integer. For example:</p>
+
+<p class="eq"><img src="images/eq200-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Additional bit operations must usually be done when converting a 32-bit color to a 128-bit color and conversely because the 8-bit color components are usually packed into a 32-bit integer value (e.g., an <span class="code">unsigned int</span>), as it is in <span class="code">XMCOLOR</span>. The DirectXMath library defines <a id="page167"/>the following function which takes a <span class="code">XMCOLOR</span> and returns an <span class="code">XMVECTOR</span> from it:</p>
+<p class="code"><span class="code">XMVECTOR XM_CALLCONV PackedVector::XMLoadColor(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const XMCOLOR* pSource);</span></p>
+
+<p class="caption"><img src="images/Fig5-10.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.10"><b><i>Figure 5.10.</i></b>&nbsp;&nbsp;A 32-bit color, where a byte is allocated for each color component alpha, red, green, and blue. </p>
+
+<p class="tx1">Figure <a href="ch05.html#fig5.10">5.10</a> shows how the 8-bit color components are packed into a <span class="code">UINT</span>. Note that this is just one way to pack the color components. Another format might be ABGR or RGBA, instead of ARGB; however, the <span class="code">XMCOLOR</span> class uses the ARGB layout. The DirectX Math library also provides a function to convert an <span class="code">XMVECTOR</span> color to a <span class="code">XMCOLOR</span>:</p>
+
+<p class="code"><span class="code">void XM_CALLCONV PackedVector::XMStoreColor(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMCOLOR* pDestination,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V);</span></p>
+<p class="tx1">Typically, 128-bit colors values are used where high precision color operations are needed (e.g., in a pixel shader); in this way, we have many bits of accuracy for the calculations so arithmetic error does not accumulate too much. The final pixel color, however, is usually stored in a 32-bit color value in the back buffer; current physical display devices cannot take advantage of the higher resolution color [Verth04].</p>
+<p class="h1" id="c5.4"><a href="toc.html#toc-5.4"><b>5.4 OVERVIEW OF THE RENDERING PIPELINE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Given a geometric description of a 3D scene with a positioned and oriented virtual camera, the <i>rendering pipeline</i> refers to the entire sequence of steps necessary to generate a 2D image based on what the virtual camera sees. Figure <a href="ch05.html#fig5.11">5.11</a> shows a diagram of the stages that make up the rendering pipeline, as well as GPU memory resources off to the side. An arrow going from the resource memory pool to a stage means the stage can access the resources as input; for example, the pixel shader stage may need to read data from a texture resource stored in memory in order to do its work. An arrow going from a stage to memory means the stage writes to GPU resources; for example, the output merger stage writes data to textures such as the back buffer and depth/stencil buffer. Observe that the arrow for the output merger stage is bidirectional (it reads and writes to GPU resources). As we can see, most stages do not write to GPU resources. Instead, their output is just fed in as input to the next stage of the pipeline; for example, the Vertex Shader stage inputs data from the<a id="page168"/> Input Assembler stage, does its own work, and then outputs its results to the Geometry Shader stage. The subsequent sections give an overview of each stage of the rendering pipeline.</p>
+
+
+<p class="caption"><img src="images/Fig5-11.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.11"><b><i>Figure 5.11.</i></b>&nbsp;&nbsp;The stages of the rendering pipeline.</p>
+
+
+<p class="h1" id="c5.5"><a href="toc.html#toc-5.5"><b>5.5 THE INPUT ASSEMBLER STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The <i>input assembler</i> (IA) stage reads geometric data (vertices and indices) from memory and uses it to assemble geometric primitives (e.g., triangles, lines). (Indices are covered in a later subsection, but briefly, they define how the vertices should be put together to form the primitives.)</p>
+<p class="h2" id="c5.5.1"><a href="toc.html#toc-5.5.1"><b>5.5.1 Vertices</b></a></p>
+<p class="tx1">Mathematically, the vertices of a triangle are where two edges meet; the vertices of a line are the endpoints; for a single point, the point itself is the vertex. Figure <a href="ch05.html#fig5.12">5.12</a> illustrates vertices pictorially. </p>
+
+
+<p class="caption"><img src="images/Fig5-12.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.12"><b><i>Figure 5.12.</i></b>&nbsp;&nbsp;A triangle defined by the three vertices <b>v</b><sub>0, </sub><b>v</b><sub>1, </sub><b>v</b><sub>2</sub>; a line defined by the two vertices <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>; a point defined by the vertex <b>Q</b>.</p>
+
+<p class="tx">From Figure <a href="ch05.html#fig5.12">5.12</a>, it seems that a vertex is just a special<a id="page169"/> point in a geometric primitive. However, in Direct3D, vertices are much more general than that. Essentially, a vertex in Direct3D can consist of additional data besides spatial location, which allows us to perform more sophisticated rendering effects. For example, in Chapter <a href="ch08.html#chap08">8</a>, we will add normal vectors to our vertices to implement lighting, and in Chapter <a href="ch09.html#chap09">9</a>, we will add texture coordinates to our vertices to implement texturing. Direct3D gives us the flexibility to define our own vertex formats (i.e., it allows us to define the components of a vertex), and we will see the code used to do this in the next chapter. In this book, we will define several different vertex formats based on the rendering effect we are doing.</p>
+<p class="h2" id="c5.5.2"><a href="toc.html#toc-5.5.2"><b>5.5.2 Primitive Topology</b></a></p>
+<p class="tx1">Vertices are bound to the rendering pipeline in a special Direct3D data structure called a <i>vertex buffer</i>. A vertex buffer just stores a list of vertices in contiguous memory. However, it does not say how these vertices should be put together to form geometric primitives. For example, should every two vertices in the vertex buffer be interpreted as a line or should every three vertices in the vertex buffer be interpreted as a triangle? We tell Direct3D how to form geometric primitives from the vertex data by specifying the <i>primitive topology</i>:</p>
+<p class="code"><span class="code">void ID3D12GraphicsCommandList::IASetPrimitiveTopology(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY Topology);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">typedef enum D3D_PRIMITIVE_TOPOLOGY</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_UNDEFINED = 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_POINTLIST = 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_LINELIST = 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_LINESTRIP = 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP = 5,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ = 10,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ = 11,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ = 12,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ = 13,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST = 33,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST = 34,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST = 64,</span></p>
+<p class="code"><span class="code">} D3D_PRIMITIVE_TOPOLOGY;</span></p>
+<p class="tx">All subsequent drawing<a id="page170"/> calls will use the currently set primitive topology until the topology is changed via the command list. The following code illustrates:</p>
+<p class="code"><span class="code">mCommandList-&gt;IASetPrimitiveTopology(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_LINELIST);</span></p>
+<p class="code"><span class="code">/* &hellip;draw objects using line list&hellip; */</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;IASetPrimitiveTopology(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);</span></p>
+<p class="code"><span class="code">/* &hellip;draw objects using triangle list&hellip; */</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">mCommandList-&gt;IASetPrimitiveTopology(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);</span></p>
+<p class="code"><span class="code">/* &hellip;draw objects using triangle strip&hellip; */</span></p>
+<p class="tx1">The following subsections elaborate on the different primitive topologies. In this book, we mainly use triangle lists exclusively with few exceptions.</p>
+<p class="h3" id="c5.5.2.1"><a href="toc.html#toc-5.5.2.1"><b>5.5.2.1 Point List</b></a></p>
+<p class="tx1">A point list is specified by <span class="code">D3D_PRIMITIVE_TOPOLOGY_POINTLIST</span>. With a point list, every vertex in the draw call is drawn as an individual point, as shown in Figure <a href="ch05.html#fig5.13">5.13</a><i>a</i>.</p>
+<p class="h3" id="c5.5.2.2"><a href="toc.html#toc-5.5.2.2"><b>5.5.2.2 Line Strip</b></a></p>
+<p class="tx1">A line strip is specified by <span class="code">D3D_PRIMITIVE_TOPOLOGY_LINESTRIP</span>. With a line strip, the vertices in the draw call are connected to form lines (see Figure <a href="ch05.html#fig5.13">5.13</a><i>b</i>); so  <i>n</i> + 1 vertices induce <i>n</i> lines.</p>
+<p class="h3" id="c5.5.2.3"><a href="toc.html#toc-5.5.2.3"><b>5.5.2.3 Line List</b></a></p>
+<p class="tx1">A line list is specified by <span class="code">D3D_PRIMITIVE_TOPOLOGY_LINELIST</span>. With a line list, every two vertices in the draw call forms an individual line (see Figure <a href="ch05.html#fig5.13">5.13</a><i>c</i>); so 2<i>n</i> vertices induce <i>n</i> lines. The difference between a line list and strip is that the lines in the line list may be disconnected, whereas a line strip automatically assumes they are connected; by assuming connectivity, fewer vertices can be used since each interior vertex is shared by two lines. </p>
+<p class="h3" id="c5.5.2.4"><a href="toc.html#toc-5.5.2.4"><b>5.5.2.4 Triangle Strip</b></a></p>
+<p class="tx1">A triangle strip is specified by <span class="code">D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP</span>. With a triangle strip, it is assumed the triangles are connected as shown in Figure <a href="ch05.html#fig5.13">5.13</a><i>d</i> to form a strip. By assuming connectivity, we see that vertices are shared between adjacent triangles, and <i>n</i> vertices induce <i>n</i> &minus; 2 triangles. </p>
+<p class="tx">Observe that the winding<a id="page171"/> order for even triangles in a triangle strip differs from the odd triangles, thereby causing culling issues (see &#x00A7;5.10.2). To fix this problem, the GPU internally swaps the order of the first two vertices of even triangles, so that they are consistently ordered like the odd triangles.</p>
+
+<p class="caption"><img src="images/Fig5-13.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.13"><b><i>Figure 5.13.</i></b>&nbsp;&nbsp;(a) A point list; (b) a line strip; (c) a line list; (d) a triangle strip.</p>
+
+
+<p class="h3" id="c5.5.2.5"><a href="toc.html#toc-5.5.2.5"><b>5.5.2.5 Triangle List</b></a></p>
+<p class="tx1">A triangle list is specified by <span class="code">D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST</span>. With a triangle list, every three vertices in the draw call forms an individual triangle (see Figure <a href="ch05.html#fig5.14">5.14</a><i>a</i>); so 3<i>n</i> vertices induce  <i>n</i> triangles. The difference between a triangle list and strip is that the triangles in the triangle list may be disconnected, whereas a triangle strip assumes they are connected.</p>
+
+
+
+<p class="caption"><img src="images/Fig5-14.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.14"><b><i>Figure 5.14.</i></b>&nbsp;&nbsp;(a) A triangle list; (b) A triangle list with adjacency&mdash;observe that each triangle requires 6 vertices to describe it and its adjacent triangles. Thus 6<i>n</i> vertices induce <i>n</i> triangles with adjacency info.</p>
+
+
+<p class="h3" id="c5.5.2.6"><a href="toc.html#toc-5.5.2.6"><b>5.5.2.6 Primitives with Adjacency</b></a></p>
+<p class="tx1">A triangle list with adjacency is where, for each triangle, you also include its three neighboring triangles called <i>adjacent triangles</i>; see Figure <a href="ch05.html#fig5.14">5.14</a><i>b</i> to observe how these triangles are defined. This is used for the geometry shader, where certain geometry shading algorithms need access to the adjacent triangles. In order for the geometry shader to get those adjacent triangles, the adjacent triangles need to be submitted to the pipeline<a id="page172"/> in the vertex/index buffers along with the triangle itself, and the <span class="code">D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ</span> topology must be specified so that the pipeline knows how construct the triangle and its adjacent triangles from the vertex buffer. Note that the vertices of adjacent primitives are only used as input into the geometry shader&mdash;they are not drawn. If there is no geometry shader, the adjacent primitives are still not drawn.</p>
+<p class="tx">It is also possible to have a line list with adjacency, line strip with adjacency, and triangle with strip adjacency primitives; see the SDK documentation for details.</p>
+<p class="h3" id="c5.5.2.7"><a href="toc.html#toc-5.5.2.7"><b>5.5.2.7 Control Point Patch List</b></a></p>
+<p class="tx1">The <span class="code">D3D_PRIMITIVE_TOPOLOGY_</span><i>N</i><span class="code">_CONTROL_POINT_PATCHLIST</span> topology type indicates that the vertex data should be interpreted as a patch lists with <i>N</i> control points. These are used in the (optional) tessellation stage of the rendering pipeline, and therefore, we will postpone a discussion of them until Chapter <a href="ch14.html#chap14">14</a>.</p>
+<p class="h2" id="c5.5.3"><a href="toc.html#toc-5.5.3"><b>5.5.3 Indices</b></a></p>
+<p class="tx1">As already mentioned, triangles are the basic building blocks for solid 3D objects. The following code shows the vertex arrays used to construct a quad and octagon using triangle lists (i.e., every three vertices form a triangle). </p>
+<p class="code"><span class="code">Vertex quad[6] = {</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v1, v2, // Triangle 0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v2, v3, // Triangle 1&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Vertex octagon[24] = {</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v1, v2, // Triangle 0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v2, v3, // Triangle 1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v3, v4, // Triangle 2</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v4, v5, // Triangle 3</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v5, v6, // Triangle 4</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v6, v7, // Triangle 5</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v7, v8, // Triangle 6</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;v0, v8, v1 // Triangle 7</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The order in which you specify<a id="page173"/> the vertices of a triangle is important and is called the <i>winding order</i>; see &#x00A7;5.10.2 for details.</p>
+<p class="tx">As Figure <a href="ch05.html#fig5.15">5.15</a> illustrates, the triangles that form a 3D object share many of the same vertices. More specifically, each triangle of the quad in Figure <a href="ch05.html#fig5.15">5.15</a><i>a</i> shares the vertices <b>v</b><sub>0</sub> and <b>v</b><sub>2</sub>. While duplicating two vertices is not too bad, the duplication is worse in the octagon example (Figure <a href="ch05.html#fig5.15">5.15</a><i>b</i>), as every triangle duplicates the center vertex <b>v</b><sub>0</sub>, and each vertex on the perimeter of the octagon is shared by two triangles. In general, the number of duplicate vertices increases as the detail and complexity of the model increases. </p>
+
+<p class="caption"><img src="images/Fig5-15.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.15"><b><i>Figure 5.15.</i></b>&nbsp;&nbsp;(a) A quad built from two triangles. (b) An octagon built from eight triangles.
+&nbsp;&nbsp;</p>
+
+<p class="tx">There are two reasons why we do not want to duplicate vertices:</p>
+<ol><li>Increased memory requirements. (Why store the same vertex data more than once?)</li>
+<li>Increased processing by the graphics hardware. (Why process the same vertex data more than once?)</li></ol>
+<p class="tx1">Triangle strips can help the duplicate vertex problem in some situations, provided the geometry can be organized in a strip like fashion. However, triangle lists are more flexible (the triangles need not be connected)<a id="page174"/>, and so it is worth devising a method to remove duplicate vertices for triangle lists. The solution is to use <i>indices</i>. It works like this: We create a vertex list and an index list. The vertex list consists of all the <i>unique</i> vertices and the index list contains values that index into the vertex list to define how the vertices are to be put together to form triangles. Returning to the shapes in Figure <a href="ch05.html#fig5.15">5.15</a>, the vertex list of the quad would be constructed as follows:</p>
+<p class="code"><span class="code">Vertex v[4] = {v0, v1, v2, v3};</span></p>
+<p class="tx1">Then the index list needs to define how the vertices in the vertex list are to be put together to form the two triangles.</p>
+<p class="code"><span class="code">UINT indexList[6] = {0, 1, 2, // Triangle 0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 0, 2, 3}; // Triangle 1</span></p>
+<p class="tx1">In the index list, every three elements define a triangle. So the above index list says, &ldquo;form triangle 0 by using the vertices <span class="code">v[0]</span>, <span class="code">v[1]</span>, and <span class="code">v[2]</span>, and form triangle 1 by using the vertices <span class="code">v[0]</span>, <span class="code">v[2]</span>, and <span class="code">v[3]</span>.&rdquo;</p>
+<p class="tx">Similarly, the vertex list for the circle would be constructed as follows:</p>
+<p class="code"><span class="code">Vertex v [9] = {v0, v1, v2, v3, v4, v5, v6, v7, v8};</span></p>
+<p class="tx1">and the index list would be:</p>
+<p class="code"><span class="code">UINT indexList[24] = {</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 1, 2, // Triangle 0</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 2, 3, // Triangle 1</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 3, 4, // Triangle 2</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 4, 5, // Triangle 3</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 5, 6, // Triangle 4</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 6, 7, // Triangle 5</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 7, 8, // Triangle 6</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;0, 8, 1&nbsp;&nbsp;// Triangle 7</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">After the unique vertices in the vertex list are processed, the graphics card can use the index list to put the vertices together to form the triangles. Observe that we have moved the &ldquo;duplication&rdquo; over to the index list, but this is not bad since:</p>
+<ol><li>Indices are simply integers and do not take up as much memory as a full vertex structure (and vertex structures can get big as we add more components to them).</li>
+<li>With good vertex cache ordering, the graphics hardware won&rsquo;t have to process duplicate vertices (too often). <a id="page175"/></li></ol>
+<p class="h1" id="c5.6"><a href="toc.html#toc-5.6"><b>5.6 THE VERTEX SHADER STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">After the primitives have been assembled, the vertices are fed into the vertex shader stage. The vertex shader can be thought of as a function that inputs a vertex and outputs a vertex. Every vertex drawn will be pumped through the vertex shader; in fact, we can conceptually think of the following happening on the hardware:</p>
+<p class="code"><span class="code">for(UINT i = 0; i &lt; numVertices; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;outputVertex[i] = VertexShader( inputVertex[i] );</span></p>
+<p class="tx1">The vertex shader function is something we implement, but it is executed by the GPU for each vertex, so it is very fast.  </p>
+<p class="tx">Many special effects can be done in the vertex shader such as transformations, lighting, and displacement mapping. Remember that not only do we have access to the input vertex data, but we also can access textures and other data stored in GPU memory such as transformation matrices, and scene lights. </p>
+<p class="tx">We will see many examples of different vertex shaders throughout this book; so by the end, you should have a good idea of what can be done with them. For our first code example, however, we will just use the vertex shader to transform vertices. The following subsections explain the kind of transformations that generally need to be done.</p>
+<p class="h2" id="c5.6.1"><a href="toc.html#toc-5.6.1"><b>5.6.1 Local Space and World Space</b></a></p>
+<p class="tx1">Suppose for a moment that you are working on a film and your team has to construct a miniature version of a train scene for some special effect shots. In particular, suppose that you are tasked with making a small bridge. Now, you would not construct the bridge in the middle of the scene, where you would likely have to work from a difficult angle and be careful not to mess up the other miniatures that compose the scene. Instead, you would work on the bridge at your workbench away from the scene. Then when it is all done, you would place the bridge at its correct position and angle in the scene. </p>
+<p class="tx">3D artists do something similar when constructing 3D objects. Instead of building an object&rsquo;s geometry with coordinates relative to a global scene coordinate system (<i>world space</i>), they specify them relative to a local coordinate system (<i>local space</i>); the local coordinate system will usually be some convenient coordinate system located near the object and axis-aligned with the object. Once the vertices of the 3D model have been defined in local space, it is placed in the global scene. In order to do this, we must define how the local space and world space are related; this is done by specifying where we want the origin and axes of the local space coordinate system relative to the global scene coordinate system, and executing a change of coordinate transformation (see Figure <a href="ch05.html#fig5.16">5.16</a> and recall &#x00A7;3.4). The process of changing<a id="page176"/> coordinates relative to a local coordinate system into the global scene coordinate system is called the <i>world transform</i>, and the corresponding matrix is called the <i>world matrix</i>. Each object in the scene has its own world matrix. After each object has been transformed from its local space to the world space, then all the coordinates of all the objects are relative to the same coordinate system (the world space). If you want to define an object directly in the world space, then you can supply an identity world matrix.</p>
+
+<p class="caption"><img src="images/Fig5-16.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.16"><b><i>Figure 5.16.</i></b>&nbsp;&nbsp;(a) The vertices of each object are defined with coordinates relative to their own local coordinate system. In addition, we define the position and orientation of each local coordinate system relative to the world space coordinate system based on where we want the object in the scene. Then we execute a change of coordinate transformation to make all coordinates relative to the world space system. (b) After the world transform, the objects&rsquo; vertices have coordinates all relative to the same world system.</p>
+
+<p class="caption"><img src="images/Fig5-17.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.17"><b><i>Figure 5.17.</i></b>&nbsp;&nbsp;The vertices of a cube are easily specified when the cube is centered at the origin and axis-aligned with the coordinate system. It is not so easy to specify the coordinates when the cube is at an arbitrary position and orientation with respect to the coordinate system. Therefore, when we construct the geometry of an object, we usually always choose a convenient coordinate system near the object and aligned with the object, from which to build the object around.</p>
+
+
+<p class="tx">Defining each model relative to its own local coordinate system has several advantages:</p>
+<ol><li>It is easier. For instance, usually in local space the object will be centered at the origin and symmetrical with respect to one of the major axes. As another example, the vertices of a cube are much easier to specify if we choose a local coordinate system with origin centered at the cube and with axes orthogonal to the cube faces; see Figure <a href="ch05.html#fig5.17">5.17</a>.</li>
+<li>The object may be reused across multiple scenes, in which case it makes no sense to hardcode the object&rsquo;s coordinates relative to a particular scene. Instead, it is better to store its coordinates relative to a local coordinate system and then define, via a change of coordinate matrix, how the local coordinate system and world coordinate system are related for each scene.</li>
+	<li>Finally, sometimes we draw the same object more than once in a scene, but in different positions, orientations, and scales (e.g., a tree object may be reused several times to build a forest). It would be wasteful to duplicate the object&rsquo;s vertex and index data for each instance. Instead, we store a single copy of the geometry (i.e., vertex and index lists) relative to its local space. Then we draw the object several times, but each time with a different world matrix to specify the position, orientation, and<a id="page177"/> scale of the instance in the world space. This is called <i>instancing</i>.</li></ol>
+<p class="tx1">As &#x00A7;3.4.3 shows, the world matrix for an object is given by describing its local space with coordinates relative to the world space, and placing these coordinates in the rows of a matrix. If <b>Q</b><sub>w</sub> = (<i>Q</i><sub>x</sub>, <i>Q</i><sub>y</sub>, <i>Q</i><sub>z</sub>, 1), <b>u</b><sub>w</sub> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>, 0), <b>v</b><sub>w</sub> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>, 0), and <b>w</b><sub>w</sub> = (<i>w</i><sub>x</sub>, <i>w</i><sub>y</sub>, <i>w</i><sub>z</sub>, 0) describe, respectively, the origin, <i>x</i>-, <i>y-</i>, and <i>z</i>-axes of a local space with homogeneous coordinates relative to world space, then we know from &#x00A7;3.4.3 that the change of coordinate matrix from local space to world space is:</p>
+
+<p class="eq"><img src="images/eq211-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We see that to construct a world matrix, we must directly figure out the coordinates of the local space origin and axes relative to the world space. This is sometimes not that easy or intuitive. A more common approach is to define <b>W</b> as a sequence of transformations, say <b>W</b> = <b>SRT</b>, the product of a scaling matrix  <b>S</b> to scale the object into the world, followed by a rotation matrix <b>R</b> to define the orientation of the local space relative to the world space, followed by a translation matrix <b>T</b> to define the origin of the local space relative to the world space. From &#x00A7;3.5, we know that this sequence of transformations may be interpreted as a change of coordinate transformation, and that the row vectors of <b>W</b> = <b>SRT</b> store the homogeneous coordinates of the <i>x</i>-axis, <i>y-</i>axis, <i>z</i>-axis and origin of the local space relative to the world space. <a id="page178"/></p>
+<p class="example"><img src="images/hand.jpg" alt="image" width="25" height="20"/><b>&nbsp;&nbsp;&nbsp;Example</b></p>
+<p class="tx1">Suppose we have a unit square defined relative to some local space with minimum and maximum points (&minus;0.5, 0, &minus;0.5) and (0.5, 0, 0.5), respectively. Find the world matrix such that the square has a length of 2 in world space, the square is rotated 45&deg; clockwise in the <i>xz</i>-plane of the world space, and the square is positioned at (10, 0, 10) in world space. We construct <b>S</b>, <b>R</b>, <b>T</b>, and <b>W</b> as follows:</p>
+
+<p class="eq"><img src="images/eq212-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Now from &#x00A7;3.5, the rows in <b>W</b> describe the local coordinate system relative to the world space; that is, <img src="images/eq212-02.jpg" alt="image" width="300" height="25" style="margin-bottom:-0.5em;"/>, and <b>Q</b><sub>W </sub>= (10, 0, 10, 1). When we change coordinates from the local space to the world space with <b>W</b>, the square end up in the desired place in world space (see Figure <a href="ch05.html#fig5.18">5.18</a>). </p>
+
+<p class="eq"><img src="images/eq212-03.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The point of this example is that instead of figuring out <b>Q</b><sub>W</sub>, <b>u</b><sub>W</sub>, <b>v</b><sub>W</sub>, and <b>w</b><sub>W</sub> directly to form the world matrix, we were able to construct the world matrix by compositing a sequence of simple transforms. This is often much easier than figuring out <b>Q</b><sub>W</sub>, <b>u</b><sub>W</sub>, <b>v</b><sub>W</sub>, and <b>w</b><sub>W</sub> directly, as we need only ask: what size do we want the object in world space, at what orientation do we want the object in world space, and at what position do we want the object in world space.</p>
+<p class="caption"><img src="images/Fig5-18.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.18"><b><i>Figure 5.18.</i></b>&nbsp;&nbsp;The row vectors of the world matrix describe the local coordinate system with coordinates relative to the world coordinate system.</p>
+
+
+<p class="tx1">Another way to consider the<a id="page179"/> world transform is to just take the local space coordinates and treat them as world space coordinates (this is equivalent to using an identity matrix as the world transform). Thus if the object is modeled at the center of its local space, the object is just at the center of the world space. In general, the center of the world is probably not where we want to position all of our objects. So now, for each object, just apply a sequence of transformations to scale, rotation, and position the object where you want in the world space. Mathematically, this will give the same world transform as building the change of coordinate matrix from local space to world space.</p>
+<p class="h2" id="c5.6.2"><a href="toc.html#toc-5.6.2"><b>5.6.2 View Space</b></a></p>
+<p class="tx1">In order to form a 2D image of the scene, we must place a virtual camera in the scene. The camera specifies what volume of the world the viewer can see and thus what volume of the world we need to generate a 2D image of. Let us attach a local coordinate system (called <i>view space</i>, <i>eye space</i>, or <i>camera space</i>) to the camera as shown in Figure <a href="ch05.html#fig5.19">5.19</a>; that is, the camera sits at the origin looking down the positive <i>z</i>-axis, the <i>x</i>-axis aims to the right of the camera,<a id="page180"/> and the <i>y</i>-axis aims above the camera. Instead of describing our scene vertices relative to the world space, it is convenient for later stages of the rendering pipeline to describe them relative to the camera coordinate system. The change of coordinate transformation from world space to view space is called the <i>view transform</i>, and the corresponding matrix is called the <i>view matrix</i>. </p>
+
+
+<p class="caption"><img src="images/Fig5-19.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.19"><b><i>Figure 5.19.</i></b>&nbsp;&nbsp;Convert the coordinates of vertices relative to the world space to make them relative to the camera space.</p>
+
+
+<p class="tx">If <b>Q</b><sub>W</sub> = (<i>Q</i><sub>x</sub>, <i>Q</i><sub>y</sub>, <i>Q</i><sub>z</sub>, 1), <b>u</b><sub>W</sub> = (<i>u</i><sub>x</sub>, <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>, 0), <b>v</b><sub>W</sub> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>, 0), and <b>w</b><sub>W</sub> = (<i>w</i><sub>x</sub>, <i>w</i><sub>y</sub>, <i>w</i><sub>z</sub>, 0) describe, respectively, the origin, <i>x</i>-, <i>y-</i>, and <i>z</i>-axes of view space with homogeneous coordinates relative to world space, then we know from &#x00A7;3.4.3 that the change of coordinate matrix from view space to world space is:</p>
+
+<p class="eq"><img src="images/eq214-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">However, this is not the transformation we want. We want the reverse transformation from world space to view space. But recall from &#x00A7;3.4.5 that reverse transformation is just given by the inverse. Thus <b>W</b><sup>&minus;1</sup> transforms from world space to view space.</p>
+<p class="tx">The world coordinate system and view coordinate system generally differ by position and orientation only, so it makes intuitive sense that <b>W</b> = <b>RT</b> (i.e., the world matrix can be decomposed into a rotation followed by a translation). This form makes the inverse easier to compute:</p>
+
+<p class="eq"><img src="images/eq214-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">So the view matrix has the form:</p>
+
+<p class="eq"><img src="images/eq214-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We now show an intuitive way<a id="page181"/> to construct the vectors needed to build the view matrix. Let <b>Q</b> be the position of the camera and let <b>T</b> be the target point the camera is aimed at. Furthermore, let <b>j</b> be the unit vector that describes the &ldquo;up&rdquo; direction of the world space. (In this book, we use the world <i>xz</i>-plane as our world &ldquo;ground plane&rdquo; and the world <i>y</i>-axis describes the &ldquo;up&rdquo; direction; therefore, <b>j</b> = (0, 1, 0) is just a unit vector parallel to the world <i>y-</i>axis. However, this is just a convention, and some applications might choose the <i>xy</i>-plane as the ground plane, and the <i>z</i>-axis as the &ldquo;up&rdquo; direction.) Referring to Figure <a href="ch05.html#fig5.20">5.20</a>, the direction the camera is looking is given by:</p>
+
+<p class="eq"><img src="images/eq215-01.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig5-20.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.20"><b><i>Figure 5.20.</i></b>&nbsp;&nbsp;Constructing the camera coordinate system given the camera position, a target point, and a world &ldquo;up&rdquo; vector.</p>
+
+<p class="tx1">This vector describes the local <i>z</i>-axis of the camera. A unit vector that aims to the &ldquo;right&rdquo; of <b>w</b> is given by:</p>
+
+<p class="eq"><img src="images/eq215-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This vector describes the local <i>x</i>-axis of the camera. Finally, a vector that describes the local <i>y</i>-axis of the camera is given by:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;v </b>=<b> w </b>&times;<b> u</b></p>
+<p class="tx1">Since <b>w</b> and <b>u</b> are orthogonal unit vectors, <b>w</b> &times; <b>u</b> is necessarily a unit vector, and so it does not need to be normalized.</p>
+<p class="tx">Thus, given the position of the camera, the target point, and the world &ldquo;up&rdquo; direction, we were able to derive the local coordinate system of the camera, which can be used to form the view matrix. </p>
+<p class="tx">The DirectXMath library provides the following function for computing the view matrix based on the just described process:</p>
+     <p class="tx"><span class="code">XMMATRIX XM_CALLCONV XMMatrixLookAtLH(&nbsp;&nbsp;&nbsp;</span>// Outputs view matrix<span class="code">&nbsp;</span><b>V</b></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;FXMVECTOR EyePosition, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input camera position <b>Q</b></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;FXMVECTOR FocusPosition, &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input target point<span class="code">&nbsp;</span><b>T</b></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;FXMVECTOR UpDirection);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>// Input world up direction <b>j</b></p>
+<p class="tx1">Usually the world&rsquo;s <i>y</i>-axis corresponds to the &ldquo;up&rdquo; direction, so the &ldquo;up&rdquo; vector is usually always <b>j</b> = (0, 1, 0). As an example, suppose we want to position the camera at the point (5, 3, &minus;10) relative to the world space, and have the camera look at the origin of the world (0, 0, 0). We can build the view matrix by writing:<a id="page182"/></p>
+<p class="code"><span class="code">XMVECTOR pos&nbsp;&nbsp;= XMVectorSet(5, 3, -10, 1.0f);</span></p>
+<p class="code"><span class="code">XMVECTOR target = XMVectorZero();</span></p>
+<p class="code"><span class="code">XMVECTOR up&nbsp;&nbsp; = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMMATRIX V = XMMatrixLookAtLH(pos, target, up);</span></p>
+<p class="h2" id="c5.6.3"><a href="toc.html#toc-5.6.3"><b>5.6.3 Projection and Homogeneous Clip Space</b></a></p>
+<p class="tx1">So far we have described the position and orientation of the camera in the world, but there is another component to a camera, which is the volume of space the camera sees. This volume is described by a frustum (Figure <a href="ch05.html#fig5.21">5.21</a>). </p>
+
+<p class="caption"><img src="images/Fig5-21.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.21"><b><i>Figure 5.21.</i></b>&nbsp;&nbsp;A frustum defines the volume of space that the camera &ldquo;sees.&rdquo;</p>
+
+<p class="tx">Our next task is to project the 3D geometry inside the frustum onto a 2D projection window. The projection must be done in such a way that parallel lines converge to a vanishing point, and as the 3D depth of an object increases, the size of its projection diminishes; a perspective projection does this, and is illustrated in Figure <a href="ch05.html#fig5.22">5.22</a>. We call the line from a vertex to the eye point the <i>vertex&rsquo;s line of projection</i>. Then we define the <i>perspective projection transformation</i> as the transformation that transforms a 3D vertex <b>v</b> to the point <b>v</b>&prime; where its line of projection intersects the 2D projection plane; we say that <b>v</b>&prime; is the projection of <b>v</b>. The projection of a 3D object refers to the projection of all the vertices that make up the object. </p>
+
+<p class="caption"><img src="images/Fig5-22.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.22"><b><i>Figure 5.22.</i></b>&nbsp;&nbsp;Both cylinders in 3D space are the same size but are placed at different depths. The projection of the cylinder closer to the eye is bigger than the projection of the farther cylinder. Geometry inside the frustum is projected onto a projection window; geometry outside the frustum, gets projected onto the projection plane, but will lie outside the projection window.<a id="page183"/></p>
+
+<p class="h3" id="c5.6.3.1"><a href="toc.html#toc-5.6.3.1"><b>5.6.3.1 Defining a Frustum</b></a></p>
+<p class="tx1">We can define a frustum in view space, with center of projection at the origin and looking down the positive <i>z</i>-axis, by the following four quantities: a near plane <i>n</i>, far plane <i>f</i>, vertical field of view angle &alpha;, and aspect ratio <i>r</i>. Note that in view space, the near plane and far plane are parallel to the <i>xy</i>-plane; thus we simply specify their distance from the origin along the <i>z</i>-axis. The aspect ratio is defined by <i>r</i> = <i>w</i>/<i>h</i> where <i>w</i> is the width of the projection window and <i>h</i> is the height of the projection window (units in view space). The projection window is essentially the 2D image of the scene in view space. The image here will eventually be mapped to the back buffer; therefore, we like the ratio of the projection window dimensions to be the same as the ratio of the back buffer dimensions. So the ratio of the back buffer dimensions is usually specified as the aspect ratio (it is a ratio so it has no units). For example, if the back buffer dimensions are 800 &times; 600, then we specify <img src="images/eq217-01.jpg" alt="image" width="80" height="30" style="margin-bottom:-0.5em;"/>. If the aspect ratio of the projection window and the back buffer were not the same, then a non-uniform scaling would be necessary to map the projection window to the back buffer, which would cause distortion (e.g., a circle on the projection window might get stretched into an ellipse when mapped to the back buffer).</p>
+<p class="tx">We label the horizontal field of view angle &beta;, and it is determined by the vertical field of view angle &alpha; and aspect ratio <i>r</i>. To see how <i>r</i> helps us find &beta;, consider Figure <a href="ch05.html#fig5.23">5.23</a>. Note that the actual dimensions of the projection window are not important, just the aspect ratio needs to be maintained. Therefore, we will choose the convenient height of 2, and thus the width must be:</p>
+
+<p class="eq"><img src="images/eq217-02.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig5-23.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.23"><b><i>Figure 5.23.</i></b>&nbsp;&nbsp;Deriving the horizontal field of view angle &beta; given the vertical field of view angle &alpha; and the aspect ratio <i>r</i>.</p>
+
+<p class="tx1">In order to have the specified<a id="page184"/> vertical field of view &alpha;, the projection window must be placed a distance <i>d</i> from the origin:</p>
+
+<p class="eq"><img src="images/eq218-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We have now fixed the distance <i>d</i> of the projection window along the <i>z</i>-axis to have a vertical field of view &alpha; when the height of the projection window is 2. Now we can solve for &beta;. Looking at the <i>xz</i>-plane in Figure <a href="ch05.html#fig5.23">5.23</a>, we now see that:</p>
+
+<p class="eq"><img src="images/eq218-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">So given the vertical field of view angle &alpha; and the aspect ratio <i>r</i>, we can always get the horizontal field of view angle &beta;:</p>
+
+<p class="eq"><img src="images/eq218-03.jpg" alt="image" width="100%"/></p>
+
+
+<p class="caption"><img src="images/Fig5-24.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.24"><b><i>Figure 5.24.</i></b>&nbsp;&nbsp;Similar triangles.</p>
+
+
+<p class="h3" id="c5.6.3.2"><a href="toc.html#toc-5.6.3.2"><b>5.6.3.2 Projecting Vertices</b></a></p>
+<p class="tx1">Refer to Figure <a href="ch05.html#fig5.24">5.24</a>. Given a point (<i>x</i>, <i>y</i>, <i>z</i>), we wish to find its projection (<i>x</i>&prime;, <i>y</i>&prime;, <i>d</i>), on the projection plane <i>z</i> = <i>d</i>. By considering the <i>x</i>- and <i>y</i>-coordinates separately and using similar triangles, we find:</p>
+<p class="eq"><img src="images/eq219-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Observe that a point (<i>x</i>, <i>y</i>, <i>z</i>) is inside the frustum if and only if </p>
+<p class="eq"><img src="images/eq219-02.jpg" alt="image" width="100%"/><a id="page185"/></p>
+
+<p class="h3" id="c5.6.3.3"><a href="toc.html#toc-5.6.3.3"><b>5.6.3.3 Normalized Device Coordinates (NDC)</b></a></p>
+<p class="tx1">The coordinates of the projected points in the preceding section are computed in view space. In view space, the projection window has a height of 2 and a width of 2<i>r</i>, where <i>r</i> is the aspect ratio. The problem with this is that the dimensions depend on the aspect ratio. This means we would need to tell the hardware the aspect ratio, since the hardware will later need to do some operations that involve the dimensions of the projection window (such as map it to the back buffer). It would be more convenient if we could remove this dependency on the aspect ratio. The solution is to scale the projected <i>x</i>-coordinate from the interval [&minus;<i>r</i>, <i>r</i>] to [&minus;1, 1] like so:</p>
+
+<p class="eq"><img src="images/eq219-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">After this mapping, the <a id="page186"/><i>x</i>- and <i>y-</i>coordinates are said to be <i>normalized device coordinates</i> (NDC) (the <i>z</i>-coordinate has not yet been normalized), and a point (<i>x</i>, <i>y</i>, <i>z</i>) is inside the frustum if and only if </p>
+
+<p class="eq"><img src="images/eq220-03.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The transformation from view space to NDC space can be viewed as a unit conversion. We have the relationship that one NDC unit equals <i>r</i> units in view space (i.e., 1ndc = <i>r</i> vs) on the <i>x</i>-axis. So given <i>x</i> view space units, we can use this relationship to convert units:</p>
+
+<p class="eq"><img src="images/eq220-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We can modify our projection formulas to give us the projected <i>x</i>- and <i>y</i>-coordinates directly in NDC coordinates:</p>
+
+<p class="eq" id="eq5.1"><img src="images/eq220-02.jpg" alt="image" width="80%"/></p>
+
+<p class="tx1">Note that in NDC coordinates, the projection window has a height of 2 and a width of 2. So now the dimensions are fixed, and the hardware need not know the aspect ratio, but it is our responsibility to always supply the projected coordinates in NDC space (the graphics hardware assumes we will).</p>
+<p class="h3" id="c5.6.3.4"><a href="toc.html#toc-5.6.3.4"><b>5.6.3.4 Writing the Projection Equations with a Matrix</b></a></p>
+<p class="tx1">For uniformity, we would like to express the projection transformation by a matrix. However, Equation <a href="ch05.html#eq5.1">5.1</a> is nonlinear, so it does not have a matrix representation. The &ldquo;trick&rdquo; is to separate it into two parts: a linear part and a nonlinear part. The nonlinear part is the divide by <i>z</i>. As will be discussed in the next section, we are going to normalize the <i>z</i>-coordinate; this means we will not have the original <i>z</i>-coordinate around for the divide. Therefore, we must save the input <i>z</i>-coordinate before it is transformed; to do this, we take advantage of homogeneous coordinates and copy the input <i>z</i>-coordinate to the output <i>w</i>-coordinate. In terms of matrix multiplication, this is done by setting entry [2][3] = 1 and entry [3][3] = 0 (zero-based indices). Our projection matrix looks like this:</p>
+
+<p class="eq"><img src="images/eq221-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Note that we have placed constants<a id="page187"/> (to be determined in the next section) <i>A</i> and <i>B</i> into the matrix; these constants will be used to transform the input <i>z</i>-coordinate into the normalized range. Multiplying an arbitrary point (<i>x</i>, <i>y</i>, <i>z</i>, 1) by this matrix gives:</p>
+
+<p class="eq" id="eq5.2"><img src="images/eq221-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">After multiplying by the projection matrix (the linear part), we complete the transformation by dividing each coordinate by <i>w</i> = <i>z</i> (the nonlinear part):</p>
+
+<p class="eq" id="eq5.3"><img src="images/eq221-03.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Incidentally, you may wonder about a possible divide by zero; however, the near plane should be greater than zero, so such a point would be clipped (&#x00A7;5.9). The divide by <i>w</i> is sometimes called the <i>perspective divide</i> or <i>homogeneous divide</i>. We see that the projected <i>x</i>- and <i>y</i>-coordinates agree with Equation <a href="ch05.html#eq5.1">5.1</a>. </p>
+<p class="h3" id="c5.6.3.5"><a href="toc.html#toc-5.6.3.5"><b>5.6.3.5 Normalized Depth Value</b></a></p>
+<p class="tx1">It may seem like after projection, we can discard the original 3D <i>z</i>-coordinate, as all the projected points now lay on the 2D projection window, which forms the 2D image seen by the eye. However, we still need 3D depth information around for the depth buffering algorithm. Just like Direct3D wants the projected <i>x</i>- and <i>y</i>-coordinates in a normalized range<a id="page188"/>, Direct3D wants the depth coordinates in the normalized range [0, 1]. Therefore, we must construct an order preserving function <i>g</i>(<i>z</i>) that maps the interval [<i>n</i>, <i>f</i>] onto [0, 1]. Because the function is order preserving, if <i>z</i><sub>1</sub>, <i>z</i><sub>2</sub> &#x2208; [<i>n</i>, <i>f</i>] and <i>z</i><sub>1</sub> &lt; <i>z</i><sub>2</sub>, then <i>g</i>(<i>z</i><sub>1</sub>) &lt; <i>g</i>(<i>z</i><sub>2</sub>); so even though the depth values have been transformed, the relative depth relationships remain intact, so we can still correctly compare depths in the normalized interval, which is all we need for the depth buffering algorithm. </p>
+<p class="tx">Mapping [<i>n</i>, <i>f</i>] onto [0, 1] can be done with a scaling and translation. However, this approach will not integrate into our current projection strategy. We see from Equation <a href="ch05.html#eq5.3">5.3</a>, that the <i>z</i>-coordinate undergoes the transformation:</p>
+
+<p class="eq"><img src="images/eq222-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We now need to choose <i>A</i> and <i>B</i> subject to the constraints:</p>
+<p class="tx">Condition 1: <i>g</i>(<i>n</i>) = <i>A</i> + <i>B</i>/<i>n</i> = 0 (the near plane gets mapped to zero)</p>
+<p class="tx">Condition 2: <i>g</i>(<i>f</i>) = <i>A</i> + <i>B</i>/<i>f</i> = 1 (the far plane gets mapped to one)</p>
+<p class="tx1">Solving condition 1 for <i>B</i> yields: <i>B</i> = &minus;<i>An</i>. Substituting this into condition 2 and solving for <i>A</i> gives:</p>
+
+<p class="eq"><img src="images/eq222-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">A graph of <i>g</i> (Figure <a href="ch05.html#fig5.25">5.25</a>) shows it is strictly increasing (order preserving) and nonlinear. It also shows that most of the range is &ldquo;used up&rdquo; by depth values close to the near plane. Consequently, the majority of the depth values get mapped to a small subset of the range. This can lead to depth buffer precision problems (the computer can no longer distinguish between slightly different transformed depth values due to finite numerical representation). The general advice is to make the near and far planes as close as possible to minimize depth precision problems. </p>
+<p class="caption"><img src="images/Fig5-25.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.25"><b><i>Figure 5.25.</i></b>&nbsp;&nbsp;Graph of <i>g</i>(<i>z</i>) for different near planes.</p>
+
+
+<p class="tx">Now that we have solved for<a id="page189"/> <i>A</i> and <i>B</i>, we can state the full <i>perspective projection matrix</i>:</p>
+
+<p class="eq"><img src="images/eq223-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">After multiplying by the projection matrix, but before the perspective divide, geometry is said to be in <i>homogeneous clip space</i> or <i>projection space</i>. After the perspective divide, the geometry is said to be in normalized device coordinates (NDC). </p>
+<p class="h3" id="c5.6.3.6"><a href="toc.html#toc-5.6.3.6"><b>5.6.3.6 XMMatrixPerspectiveFovLH</b></a></p>
+<p class="tx1">A perspective projection matrix can be built with the following DirectX Math function:</p>
+<p class="code"><span class="code">// Returns the projection matrix</span></p>
+<p class="code"><span class="code">XMMATRIX XM_CALLCONV XMMatrixPerspectiveFovLH(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float FovAngleY, &nbsp;&nbsp;&nbsp;// vertical field of view angle in radians</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float Aspect,&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;// aspect ratio = width / height</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float NearZ,&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;// distance to near plane</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float FarZ);&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;// distance to far plane</span></p>
+<p class="tx1">The following code snippet <a id="page190"/>illustrates how to use <span class="code">XMMatrixPerspectiveFovLH</span>. Here, we specify a 45&deg; vertical field of view, a near plane at <i>z</i> = 1 and a far plane at <i>z</i> = 1000 (these lengths are in view space). </p>
+<p class="code"><span class="code">XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f*XM_PI,&nbsp;</span></p>
+<p class="code"><span class="code">AspectRatio(), 1.0f, 1000.0f);</span></p>
+<p class="tx1">The aspect ratio is taken to match our window aspect ratio:</p>
+<p class="code"><span class="code">float D3DApp::AspectRatio()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return static_cast&lt;float&gt;(mClientWidth) / mClientHeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c5.7"><a href="toc.html#toc-5.7"><b>5.7 THE TESSELLATION STAGES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Tessellation refers to subdividing the triangles of a mesh to add new triangles. These new triangles can then be offset into new positions to create finer mesh detail (see Figure <a href="ch05.html#fig5.26">5.26</a>).</p>
+
+
+<p class="caption"><img src="images/Fig5-26.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.26"><b><i>Figure 5.26.</i></b>&nbsp;&nbsp;The left image shows the original mesh. The right image shows the mesh after tessellation.</p>
+
+<p class="tx">There are a number of benefits to tessellations:</p>
+<ol><li>We can implement a level-of-detail (LOD) mechanism, where triangles near the camera are tessellated to add more detail, and triangles far away from the camera are not tessellated. In this way, we only use more triangles where the extra detail will be noticed.</li>
+<li>We keep a simpler <i>low-poly</i> mesh (low-poly means low triangle count) in memory, and add the extra triangles on the fly, thus saving memory.</li>
+<li>We do operations like animation and physics on a simpler low-poly mesh, and only use the tessellated high-poly mesh for rendering. </li></ol>
+<p class="tx1">The tessellation stages are new to Direct3D 11, and they provide a way to tessellate geometry on the GPU. Before Direct3D 11, if you wanted to implement a form of tessellation, it would have to be done on the CPU, and then the new tessellated geometry would have to <a id="page191"/>be uploaded back to the GPU for rendering. However, uploading new geometry from CPU memory to GPU memory is slow, and it also burdens the CPU with computing the tessellation. For this reason, tessellation methods have not been very popular for real-time graphics prior to Direct3D 11. Direct3D 11 provides an API to do tessellation completely in hardware with a Direct3D 11 capable video card. This makes tessellation a much more attractive technique. The tessellation stages are optional (you only need to use it if you want tessellation). We defer our coverage of tessellation until Chapter <a href="ch14.html#chap14">14</a>. </p>
+<p class="h1" id="c5.8"><a href="toc.html#toc-5.8"><b>5.8 THE GEOMETRY SHADER STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The geometry shader stage is optional, and we do not use it until Chapter <a href="ch12.html#chap12">12</a>, so we will be brief here. The geometry shader inputs entire primitives. For example, if we were drawing triangle lists, then the input to the geometry shader would be the three vertices defining the triangle. (Note that the three vertices will have already passed through the vertex shader.) The main advantage of the geometry shader is that it can create or destroy geometry. For example, the input primitive can be expanded into one or more other primitives, or the geometry shader can choose not to output a primitive based on some condition. This is in contrast to a vertex shader, which cannot create vertices: it inputs one vertex and outputs one vertex. A common example of the geometry shader is to expand a point into a quad or to expand a line into a quad.</p>
+<p class="tx">We also notice the &ldquo;stream-out&rdquo; arrow from Figure <a href="ch05.html#fig5.11">5.11</a>. That is, the geometry shader can stream-out vertex data into a buffer in memory, which can later be drawn. This is an advanced technique, and will be discussed in a later chapter.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Vertex positions leaving the geometry shader must be transformed to homogeneous clip space.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c5.9"><a href="toc.html#toc-5.9"><b>5.9 CLIPPING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Geometry completely outside the viewing frustum needs to be discarded, and geometry that intersects the boundary of the frustum must be clipped, so that only the interior part remains; see Figure <a href="ch05.html#fig5.27">5.27</a> for the idea illustrated in 2D.</p>
+
+<p class="caption"><img src="images/Fig5-27.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.27"><b><i>Figure 5.27.</i></b>&nbsp;&nbsp;(a) Before clipping. (b) After clipping.</p>
+
+<p class="tx">We can think of the frustum as being the region bounded by six planes: the top, bottom, left, right, near, and far planes. To clip a polygon against the frustum, we clip it against each frustum plane one-by-one. When clipping a polygon against a plane (Figure <a href="ch05.html#fig5.28">5.28</a>), the part in the positive half-space of the plane is kept, and the part in the negative half<a id="page192"/> space is discarded. Clipping a convex polygon against a plane will always result in a convex polygon. Because the hardware does clipping for us, we will not cover the details here; instead, we refer the reader to the popular Sutherland-Hodgeman clipping algorithm [Sutherland74]. It basically amounts to finding the intersection points between the plane and polygon edges, and then ordering the vertices to form the new clipped polygon.</p>
+
+<p class="caption"><img src="images/Fig5-28.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.28"><b><i>Figure 5.28.</i></b>&nbsp;&nbsp;(a) Clipping a triangle against a plane. (b) The clipped triangle. Note that the clipped triangle is not a triangle, but a quad. Thus the hardware will need to triangulate the resulting quad, which is straightforward to do for convex polygons.</p>
+
+<p class="tx">[Blinn78] describes how clipping can be done in 4D homogeneous space. After the perspective divide, points <img src="images/eq226-01.jpg" alt="image" width="80" height="30" style="margin-bottom:-0.5em;"/> inside the view frustum are in normalized device coordinates and bounded as follows:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>&minus;1 &#x2264; <i>x</i><b>/</b><i>w</i> &#x2264; 1</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>&minus;1 &#x2264; <i>y</i><b>/</b><i>w</i> &#x2264; 1</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>0 &#x2264; <i>z</i><b>/</b><i>w</i> &#x2264; 1</p>
+<p class="tx">So in homogeneous clip space<a id="page193"/>, before the divide, 4D points (<i>x</i>, <i>y</i>, <i>z</i>, <i>w</i>) inside the frustum are bounded as follows:</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>&minus;<i>w</i> &#x2264; <i>x</i> &#x2264; w</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>&minus;<i>w</i> &#x2264; <i>y</i> &#x2264; w</p>
+<p class="eq"><b>&nbsp;&nbsp;&nbsp;</b>0 &#x2264; <i>z</i> &#x2264; w</p>
+<p class="tx1">That is, the points are bounded by the simple 4D planes: </p>
+<p class="eq">Left: <i>w</i> = &minus;<i>x</i></p>
+<p class="eq">Right: <i>w</i> = <i>x</i></p>
+<p class="eq">Bottom: <i>w</i> = &minus;<i>y</i></p>
+<p class="eq">Top: <i>w</i> = <i>y</i></p>
+<p class="eq">Near: <i>z</i> = 0</p>
+<p class="eq">Far: <i>z</i> = <i>w</i></p>
+<p class="tx1">Once we know the frustum plane equations in homogeneous space, we can apply a clipping algorithm (such as Sutherland-Hodgeman). Note that the mathematics of the segment/plane intersection test generalizes to <b>R</b><sup>4</sup>, so we can do the test with 4D points and the 4D planes in homogeneous clip space.</p>
+
+<p class="caption"><img src="images/Fig5-29.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.29"><b><i>Figure 5.29.</i></b>&nbsp;&nbsp;The frustum boundaries in the <i>xw</i>-plane in homogeneous clip space.</p>
+
+
+<p class="h1" id="c5.10"><a href="toc.html#toc-5.10"><b>5.10 THE RASTERIZATION STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The main job of the rasterization stage is to compute pixel colors from the projected 3D triangles.</p>
+<p class="h2" id="c5.10.1"><a href="toc.html#toc-5.10.1"><b>5.10.1 Viewport Transform</b></a></p>
+<p class="tx1">After clipping, the hardware can do the perspective divide to transform from homogeneous clip space to normalized device coordinates (NDC). Once vertices are in NDC space, the 2D <i>x</i>- and <i>y</i>- coordinates forming the 2D image are transformed to a rectangle on the back buffer called the viewport (recall &#x00A7;4.3.9). After this transform, the <i>x</i>- and <i>y</i>-coordinates are in units of pixels. Usually the viewport transformation does<a id="page194"/> not modify the <i>z</i>-coordinate, as it is used for depth buffering, but it can by modifying the <span class="code">MinDepth</span> and <span class="code">MaxDepth</span> values of the <span class="code">D3D12_VIEWPORT</span> structure. The <span class="code">MinDepth</span> and <span class="code">MaxDepth</span> values must be between 0 and 1.</p>
+<p class="h2" id="c5.10.2"><a href="toc.html#toc-5.10.2"><b>5.10.2 Backface Culling</b></a></p>
+<p class="tx1">A triangle has two sides. To distinguish between the two sides we use the following convention. If the triangle vertices are ordered <b>v</b><sub>0</sub>, <b>v</b><sub>1</sub>, <b>v</b><sub>2</sub> then we compute the triangle normal <b>n</b> like so:</p>
+
+<p class="eq"><img src="images/eq228-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The side the normal vector emanates from is the <i>front side</i> and the other side is the <i>back side</i>. Figure <a href="ch05.html#fig5.30">5.30</a> illustrates this. </p>
+
+<p class="caption"><img src="images/Fig5-30.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.30"><b><i>Figure 5.30.</i></b>&nbsp;&nbsp;The left triangle is front-facing from our viewpoint, and the right triangle is back-facing from our viewpoint.</p>
+
+
+<p class="tx">We say that a triangle is <i>front-facing</i> if the viewer sees the front side of a triangle, and we say a triangle is <i>back-facing</i> if the viewer sees the back side of a triangle. From our perspective of Figure <a href="ch05.html#fig5.30">5.30</a>, the left triangle is front-facing while the right triangle is back-facing. Moreover, from our perspective, the left triangle is ordered clockwise while the right triangle is ordered counterclockwise. This is no coincidence: with the convention we have chosen (i.e., the way we compute the triangle normal), a triangle ordered clockwise (with respect to that viewer) is front-facing, and a triangle ordered counterclockwise (with respect to that viewer) is back-facing.</p>
+<p class="tx">Now, most objects in 3D worlds are enclosed solid objects. Suppose we agree to construct the triangles for each object in such a way that the normals are always aimed outward. Then, the camera does not see the back-facing triangles of a solid object because the front-facing triangles occlude the back-facing triangles; Figure <a href="ch05.html#fig5.31">5.31</a> illustrates this in 2D and 5.32 in 3D. Because the front-facing triangles occlude the back-facing triangles, it makes no sense to draw them. <i>Backface culling</i> refers to the process of discarding<a id="page195"/> back-facing triangles from the pipeline. This can potentially reduce the amount of triangles that need to be processed by half.</p>
+
+<p class="caption"><img src="images/Fig5-31.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.31"><b><i>Figure 5.31.</i></b>&nbsp;&nbsp;(a) A solid object with front-facing and back-facing triangles. (b) The scene after culling the back-facing triangles. Note that backface culling does not affect the final image since the back-facing triangles are occluded by the front-facing ones.</p>
+
+<p class="caption"><img src="images/Fig5-32.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.32"><b><i>Figure 5.32.</i></b>&nbsp;&nbsp;(Left) We draw the cubes with transparency so that you can see all six sides. (Right) We draw the cubes as solid blocks. Note that we do not see the three back-facing sides since the three front-facing sides occlude them&mdash;thus the back-facing triangles can actually be discarded from further processing and no one will notice.</p>
+
+<p class="tx">By default, Direct3D treats triangles with a clockwise winding order (with respect to the viewer) as front-facing, and triangles with a counterclockwise winding order (with respect to the viewer) as back-facing. However, this convention can be reversed with a Direct3D render state setting. </p>
+<p class="h2" id="c5.10.3"><a href="toc.html#toc-5.10.3"><b>5.10.3 Vertex Attribute Interpolation</b></a></p>
+<p class="tx1">Recall that we define a triangle by specifying its vertices. In addition to position, we can attach attributes to vertices such as colors, normal vectors, and texture coordinates. After the viewport transform, these attributes need to be interpolated for each pixel covering the triangle. In addition to vertex attributes, vertex depth values need to get interpolated so that each pixel has a depth value for the depth buffering algorithm. The vertex attributes are interpolated in screen space in such a way that the attributes are interpolated linearly across the triangle in 3D space (Figure <a href="ch05.html#fig5.33">5.33</a>); this requires the so-called <i>perspective correct interpolation</i>. Essentially, interpolation allows us to use the vertex values to compute values for the interior pixels. </p>
+
+
+<p class="caption"><img src="images/Fig5-33.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.33"><b><i>Figure 5.33.</i></b>&nbsp;&nbsp;An attribute value <b>p</b>(<i>s</i>, <i>t</i>) on a triangle can be obtained by linearly interpolating between the attribute values at the vertices of the triangle.</p>
+
+<p class="tx">The mathematical details of<a id="page196"/> perspective correct attribute interpolation are not something we need to worry about since the hardware does it; the interested reader may find the mathematical derivation in [Eberly01]. However, Figure <a href="ch05.html#fig5.34">5.34</a> gives the basic idea of what is going on.</p>
+
+<p class="caption"><img src="images/Fig5-34.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.34"><b><i>Figure 5.34.</i></b>&nbsp;&nbsp;A 3D line is being projected onto the projection window (the projection is a 2D line in screen space). We see that taking uniform step sizes along the 3D line corresponds to taking non-uniform step sizes in 2D screen space. Therefore to do linear interpolation in 3D space, we need to do nonlinear interpolation in screen space.</p>
+
+<p class="h1" id="c5.11"><a href="toc.html#toc-5.11"><b>5.11 THE PIXEL SHADER STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Pixel shaders are programs we write that are executed on the GPU. A pixel shader is executed for each pixel fragment and uses the interpolated vertex attributes as input to compute a color. A pixel shader can be as simple as returning a constant color, to doing more complicated things like per-pixel lighting, reflections and shadowing effects. <a id="page197"/></p>
+<p class="h1" id="c5.12"><a href="toc.html#toc-5.12"><b>5.12 THE OUTPUT MERGER STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">After pixel fragments have been generated by the pixel shader, they move onto the output merger (OM) stage of the rendering pipeline. In this stage, some pixel fragments may be rejected (e.g., from the depth or stencil buffer tests). Pixel fragments that are not rejected are written to the back buffer. Blending is also done in this stage, where a pixel may be blended with the pixel currently on the back buffer instead of overriding it completely. Some special effects like transparency are implemented with blending; Chapter <a href="ch10.html#chap10">10</a> is devoted to blending.</p>
+<p class="h1" id="c5.13"><a href="toc.html#toc-5.13"><b>5.13 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>We can simulate 3D scenes on 2D images by employing several techniques based on the way we see things in real life. We observe parallel lines converge to vanishing points, the size of objects diminishes with depth, objects obscure the objects behind them, lighting and shading depict the solid form and volume of 3D objects, and shadows imply the location of light sources and indicate the position of objects relative to other objects in the scene.</li>
+<li>We approximate objects with triangle meshes. We can define each triangle by specifying its three vertices. In many meshes, vertices are shared among triangles; indexed lists can be used to avoid vertex duplication.</li>
+<li>Colors are described by specifying an intensity of red, green, and blue. The additive mixing of these three colors at different intensities allows us to describe millions of colors. To describe the intensities of red, green, and blue, it is useful to use a normalized range from 0 to 1. 0 denotes no intensity, 1 denotes the full intensity, and intermediate values denote intermediate intensities. It is common to incorporate an additional color component, called the <i>alpha component</i>. The alpha component is often used to denote the opacity of a color, which is useful in blending. Including the alpha component, means we can represent a color by a 4D color vector (<i>r</i>, <i>g</i>, <i>b</i>, <i>a</i>) where 0 &#x2264; <i>r</i>, <i>g</i>, <i>b</i>, <i>a</i> &#x2264; 1. Because the data needed to represent a color is a 4D vector, we can use the <span class="code">XMVECTOR</span> type to represent a color in code, and we gain the benefit of SIMD operations whenever use the DirectX Math vector functions to do color operations. To represent a color with 32-bits, a byte is given to each component; the DirectXMath library provides the XMCOLOR structure for storing a 32-bit color. Color vectors are added, subtracted, and scaled just like regular vectors, except that we must clamp their components to the [0, 1]  interval (or [0, 255] for 32-bit colors). The other vector operations such as the dot product and cross <a id="page198"/>product do not make sense for color vectors. The symbol &#x2297; denotes component-wise multiplication and it is defined as: <img src="images/eq232-01.jpg" alt="image" width="320" height="25" style="margin-bottom:-0.5em;"/>.</li>
+<li>Given a geometric description of a 3D scene and a positioned and aimed virtual camera in that scene, the <i>rendering pipeline</i> refers to the entire sequence of steps necessary to generate a 2D image that can be displayed on a monitor screen based on what the virtual camera sees.</li>
+<li>The rendering pipeline can be broken down into the following major stages. The input assembly (IA) stage; the vertex shader (VS) stage; the tessellation stages; the geometry shader (GS) stage; the clipping stage; the rasterization stage (RS); the pixel shader (PS) stage; and the output merger (OM) stage.</li></ol>
+<p class="h1" id="c5.14"><a href="toc.html#toc-5.14"><b>5.14 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Construct the vertex and index list of a pyramid, as shown in Figure <a href="ch05.html#fig5.35">5.35</a>.
+
+<p class="caption"><img src="images/Fig5-35.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig5.35"><b><i>Figure 5.35.</i></b>&nbsp;&nbsp;The triangles of a pyramid.</p>
+</li>
+<li>Consider the two shapes shown in Figure <a href="ch05.html#fig5.36">5.36</a>. Merge the objects into one vertex and index list. (The idea here is that when you append the second index list to the first, you will need to update the appended indices since they reference vertices in the original vertex list, not the merged vertex list.)
+
+<p class="caption"><img src="images/Fig5-36.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.36"><b><i>Figure 5.36.</i></b>&nbsp;&nbsp;Shapes for Exercise 2.</p>
+
+</li>
+<li>Relative to the world coordinate system, suppose that the camera is positioned at (&minus;20, 35, -50) and looking at the point (10, 0, 30). Compute the view matrix assuming (0, 1, 0) describes the &ldquo;up&rdquo; direction in the world.</li>
+<li>Given that the view frustum<a id="page199"/> has a vertical field of view angle &theta; = 45&deg;, the aspect ratio is <i>a</i> = 4/3, the near plane is <i>n</i> = 1, and the far plane is <i>f</i> = 100, find the corresponding perspective projection matrix.</li>
+<li>Suppose that the view window has height 4. Find the distance <i>d</i> from the origin the view window must be to create a vertical field of view angle &theta; = 60&deg;.</li>
+<li>Consider the following perspective projection matrix:
+
+<p class="eq"><img src="images/eq233-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1"> Find the vertical field of view angle &alpha; the aspect ratio <i>r</i>, and the near and far plane values that were used to build this matrix. </p></li>
+<li>Suppose that you are given the following perspective projection matrix with fixed <i>A</i>, <i>B</i>, <i>C</i>, <i>D</i>:
+<p class="eq"><img src="images/eq233-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Find the vertical field of view angle &alpha; the aspect ratio <i>r</i>, and the near and far plane values that were used to build this matrix in terms of <i>A</i>, <i>B</i>, <i>C</i>, <i>D</i>. That is, solve the following equations:</p>
+<p class="eq"><img src="images/eq233-08.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Solving these equations will give you formulas for extracting the vertical field of view angle &alpha; the aspect ratio <i>r</i>, and the near and far plane values from any perspective projection matrix of the kind described in this book. </p></li>
+<li>For projective texturing algorithms<a id="page200"/>, we multiply an affine transformation matrix <b>T</b> after the projection matrix. Prove that it does not matter if we do the perspective divide before or after multiplying by <b>T</b>. Let, <b>v</b> be a 4D vector, <b>P</b> be a projection matrix, <b>T</b> be a 4 &times; 4 affine transformation matrix, and let a <i>w</i> subscript denote the <i>w</i>-coordinate of a 4D vector, prove:
+<p class="eq"><img src="images/eq234-01.jpg" alt="image" width="100%"/></p></li>
+<li>Prove that the inverse of the projection matrix is given by:
+<p class="eq"><img src="images/eq234-02.jpg" alt="image" width="100%"/></p></li>
+<li>Let [<i>x</i>, <i>y</i>, <i>z</i>, 1] be the coordinates of a point in view space, and let [<i>x</i><sub>ndc</sub>, <i>y</i><sub>ndc</sub>, <i>z</i><sub>ndc</sub>, 1] be the coordinates of the same point in NDC space. Prove that you can transform from NDC space to view space in the following way:
+<p class="eq"><img src="images/eq234-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Explain why you need the division by <i>w</i>. Would you need the division by <i>w</i> if you were transforming from homogeneous clip space to view space?</p></li>
+<li>Another way to describe the view frustum is by specifying the width and height of the view volume at the near plane. Given the width <i>w</i> and height <i>h</i> of the view volume at the near plane, and given the near plane <i>n</i> and far plane <i>f</i> show that the perspective projection matrix is given by: 
+<p class="eq"><img src="images/eq234-04.jpg" alt="image" width="100%"/></p></li>
+<li>Given a view frustum with vertical<a id="page201"/> field of view angle &theta;, aspect ratio is <i>a</i>, near plane <i>n</i>, and far plane <i>f</i>, find the 8 vertex corners of the frustum.</li>
+<li>Consider the 3D shear transform given by <i>S</i><sub>xy</sub>(<i>x</i>, <i>y</i>, <i>z</i>) = (<i>x</i> + <i>zt</i><sub>x</sub>, <i>y</i> + <i>zt</i><sub>y</sub>, <i>z</i>). This transformation is illustrated in Figure <a href="ch05.html#fig5.37">5.37</a>. Prove that this is a linear transformation and has the following matrix representation:
+<p class="eq"><img src="images/eq235-01.jpg" alt="image" width="100%"/></p>
+<p class="caption"><img src="images/Fig5-37.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig5.37"><b><i>Figure 5.37.</i></b>&nbsp;&nbsp;The <i>x</i>- and <i>y</i>-coordinates sheared by the <i>z</i>-coordinate. The top face of the box lies in the <i>z</i> = 1 plane. Observe that the shear transform translates points in this plane.</p></li>
+<li>Consider 3D points in the plane <i>z</i> = 1; that is, points of the form (<i>x</i>, <i>y</i>, 1). Observe that transforming a point (<i>x</i>, <i>y</i>, 1) by the shear transformation <b>S</b><sub>xy</sub> given in the previous exercise amounts to a 2D translation in the <i>z</i> = 1 plane:
+<p class="eq"><img src="images/eq235-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If we are working on a 2D application, we could use 3D coordinates, but where our 2D universe always lies on the plane <i>z</i> = 1; then we could use <b>S</b><sub>xy</sub> to do translations in our 2D space.</p>
+<p class="tx">&nbsp;&nbsp;&nbsp;Conclude the following generalizations: </p>
+<ol class="lc-alpha">
+<li>Just as a plane in 3D space is a 2D space, a plane in 4D space is a 3D space. When we write homogeneous points (<i>x</i>, <i>y</i>, <i>z</i>, 1) we are working in the 3D space that lives in the 4D plane <i>w</i> = 1. </li>
+<li>The translation matrix is the matrix representation of the 4D shear transformation  <i>S</i><sub>xyz</sub>(<i>x</i>, <i>y</i>, <i>z</i>, <i>w</i>) = (<i>x</i> + <i>wt</i><sub>x</sub>, <i>y</i> + <i>wt</i><sub>y</sub>, <i>z</i> + <i>wt</i><sub>z</sub>, <i>w</i>). The 4D shear transformation has the effect of translating points in the plane <i>w</i> = 1.</li></ol></li></ol>
+</body>
+</html>

@@ -1,0 +1,1743 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page265"/><a href="toc.html#toc-07" id="chap07">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">7</span></span><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-06"><b>D</b><span class="sc">RAWING IN</span><br/><br/><b>D</b><span class="sc">IRECT</span>3D<br/><br/><b>P</b><span class="sc">ART</span> II</a></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+
+
+<p class="tx">This chapter introduces a number of drawing patterns that we will use throughout the rest of this book. The chapter begins by introducing a drawing optimization, which we refer to as &ldquo;frame resources.&rdquo; With frame resources, we modify our render loop so that we do not have to flush the command queue every frame; this improves CPU and GPU utilization. Next we introduce the concept of a render item and explain how we divide up our constant data based on update frequency. In addition, we examine root signatures in more detail and learn about the other root parameter types: root descriptors and root constants. Finally, we show how to draw some more complicated objects; by the end of this chapter, you will be able to draw a surface that resembles hills and valleys, cylinders, spheres, and an animated wave simulation.</p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To understand a modification to our rendering process that does not require us to flush the command queue every frame, thereby improving performance. </li>
+<li>To learn about the two other types of root signature parameter types: root descriptors and root constants.</li>
+<li>To discover how to procedurally generate and draw common geometric shapes like grids, cylinders, and spheres.</li>
+<li>To find out how we can animate vertices on the CPU and upload the new vertex positions to the GPU using dynamic vertex buffers.<a id="page266"/></li></ol>
+<p class="h1" id="c7.1"><a href="toc.html#toc-7.1"><b>7.1 FRAME RESOURCES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Recall from &#x00A7;4.2 that the CPU and GPU work in parallel. The CPU builds and submits command lists (in addition to other CPU work) and the GPU processes commands in the command queue. The goal is to keep both CPU and GPU busy to take full advantage of the hardware resources available on the system. So far in our demos, we have been synchronizing the CPU and GPU once per frame. Two examples of why this is necessary are:</p>
+<ol><li>The command allocator cannot be reset until the GPU is finished executing the commands. Suppose we did not synchronize so that the CPU could continue on to the next frame <i>n</i>+1 before the GPU has finished processing the current frame <i>n</i>: If the CPU resets the command allocator in frame <i>n</i>+1, but the GPU is still processing commands from frame <i>n</i>, then we would be clearing the commands the GPU is still working on.</li>
+<li>A constant buffer cannot be updated by the CPU until the GPU has finished executing the drawing commands that reference the constant buffer. This example corresponds to the situation described in &#x00A7;4.2.2 and Figure <a href="ch04.html#fig4.7">4.7</a>. Suppose we did not synchronize so that the CPU could continue on to the next frame <i>n </i>+ 1 before the GPU has finished processing the current frame <i>n</i>: If the CPU overwrites the constant buffer data in frame <i>n</i>+1, but the GPU has not yet executed the draw call that references the constant buffer in frame <i>n</i>, then the constant buffer contains the wrong data for when the GPU executes the draw call for frame <i>n</i>. </li></ol>
+<p class="tx1">Thus we have been calling <span class="code">D3DApp::FlushCommandQueue</span> at the end of every frame to ensure the GPU has finished executing all the commands for the frame. This solution works but is inefficient for the following reasons: </p>
+<ol><li>At the beginning of a frame, the GPU will not have any commands to process since we waited to empty the command queue. It will have to wait until the CPU builds and submits some commands for execution. </li>
+<li>At the end of a frame, the CPU is waiting for the GPU to finish processing commands. </li></ol>
+<p class="tx1">So every frame, the CPU and GPU are idling at some point.</p>
+<p class="tx">One solution to this problem is to create a circular array of the resources the CPU needs to modify each frame. We call such resources <i>frame resources</i>, and we usually use a circular array of three frame resource elements. The idea is that for frame <i>n</i>, the CPU will cycle through the frame resource array to get the next available (i.e., not in use by GPU) frame resource. The CPU will then do any resource updates, and build and submit command lists for frame <i>n</i> while the GPU works on previous frames. The CPU will then continue on to frame <i>n</i>+1 and repeat. If the frame resource array<a id="page267"/> has three elements, this lets the CPU get up to two frames ahead of the GPU, ensuring that the GPU is kept busy. Below is an example of the frame resource class we use for the &ldquo;Shapes&rdquo; demo in this chapter. Because the CPU only needs to modify constant buffers in this demo, the frame resource class only contains constant buffers.</p>
+<p class="code"><span class="code">// Stores the resources needed for the CPU to build the command lists</span></p>
+<p class="code"><span class="code">// for a frame. The contents here will vary from app to app based on</span></p>
+<p class="code"><span class="code">// the needed resources.</span></p>
+<p class="code"><span class="code">struct FrameResource</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource(ID3D12Device* device, UINT passCount,&nbsp;&nbsp;UINT objectCount);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource(const FrameResource&amp; rhs) = delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource&amp; operator=(const FrameResource&amp; rhs) = delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span>&tilde;<span class="code">FrameResource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We cannot reset the allocator until the GPU is done processing the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// commands. So each frame needs their own allocator.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12CommandAllocator&gt; CmdListAlloc;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We cannot update a cbuffer until the GPU is done processing the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// commands that reference it. So each frame needs their own cbuffers.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;PassConstants&gt;&gt; PassCB = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;ObjectConstants&gt;&gt; ObjectCB = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fence value to mark commands up to this fence point. This lets us</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// check if these frame resources are still in use by the GPU.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT64 Fence = 0;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">FrameResource::FrameResource(ID3D12Device* device, UINT passCount, UINT&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;objectCount)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(device-&gt;CreateCommandAllocator(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_COMMAND_LIST_TYPE_DIRECT,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(CmdListAlloc.GetAddressOf())));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;PassCB = std::make_unique&lt;UploadBuffer&lt;PassConstants&gt;&gt;(device, passCount, true);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ObjectCB = std::make_unique&lt;UploadBuffer&lt;ObjectConstants&gt;&gt;(device, objectCount, true);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">FrameResource::</span>&tilde;<span class="code">FrameResource() { }</span></p>
+<p class="tx1">Our application class will then instantiate a vector of three frame resources, and keep member variables to track the current frame resource:</p>
+<p class="code"><span class="code">static const int NumFrameResources = 3;</span></p>
+<p class="code"><span class="code">std::vector&lt;std::unique_ptr&lt;FrameResource&gt;&gt; mFrameResources;</span></p>
+<p class="code"><span class="code">FrameResource* mCurrFrameResource = nullptr;</span></p>
+<p class="code"><span class="code">int mCurrFrameResourceIndex = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShapesApp::BuildFrameResources()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; gNumFrameResources; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mFrameResources.push_back(std::make_unique&lt;FrameResource&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;md3dDevice.Get(), 1, (UINT)mAllRitems.size()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Now, for CPU frame<a id="page268"/> <i>n</i>, the algorithm works like so:</p>
+<p class="code"><span class="code">void ShapesApp::Update(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Cycle through the circular frame resource array.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % NumFrameResources;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCurrFrameResource = mFrameResources[mCurrFrameResourceIndex];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Has the GPU finished processing the commands of the current frame&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// resource. If not, wait until the GPU has completed commands up to</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// this fence point.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(mCurrFrameResource-&gt;Fence != 0 &amp;&amp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandQueue-&gt;GetLastCompletedFence() &lt; mCurrFrameResource-&gt;Fence)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ThrowIfFailed(mCommandQueue-&gt;SetEventOnFenceCompletion(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mCurrFrameResource-&gt;Fence, eventHandle));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;WaitForSingleObject(eventHandle, INFINITE);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;CloseHandle(eventHandle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// [&hellip;] Update resources in mCurrFrameResource (like cbuffers).</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShapesApp::Draw(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// [&hellip;] Build and submit command lists for this frame.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Advance the fence value to mark commands up to this fence point.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCurrFrameResource-&gt;Fence = ++mCurrentFence;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add an instruction to the command queue to set a new fence point.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Because we are on the GPU timeline, the new fence point won&rsquo;t be&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// set until the GPU finishes processing all the commands prior to</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// this Signal().</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandQueue-&gt;Signal(mFence.Get(), mCurrentFence);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Note that GPU could still be working on commands from previous</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// frames, but that is okay, because we are not touching any frame</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// resources associated with those frames.&nbsp;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Note that this solution does<a id="page269"/> not prevent waiting. If one processor is processing frames much faster than the other, one processor will eventually have to wait for the other to catch up, as we cannot let one get too far ahead of the other. If the GPU is processing commands faster than the CPU can submit work, then the GPU will idle. In general, if we are trying to push the graphical limit, we want to avoid this situation, as we are not taking full advantage of the GPU. On the other hand, if the CPU is always processing frames faster than the GPU, then the CPU will have to wait at some point. This is the desired situation, as the GPU is being fully utilized; the extra CPU cycles can always be used for other parts of the game such as AI, physics, and game play logic. </p>
+<p class="tx">So if multiple frame resources do not prevent any waiting, how does it help us? It helps us keep the GPU fed. While the GPU is processing commands from frame <i>n</i>, it allows the CPU to continue on to build and submit commands for frames <i>n</i>+1 and <i>n</i>+2. This helps keep the command queue nonempty so that the GPU always has work to do.</p>
+<p class="h1" id="c7.2"><a href="toc.html#toc-7.2"><b>7.2 RENDER ITEMS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Drawing an object requires setting multiple parameters such as binding vertex and index buffers, binding object constants, setting a primitive type, and specifying the <span class="code">DrawIndexedInstanced</span> parameters. As we begin to draw more objects in our scenes, it is helpful to create a lightweight structure that stores the data needed to draw an object; this data will vary from app to app as we add new features which will require different drawing data. We call the set of data needed to submit a full draw call the rendering pipeline a <i>render item</i>. For this demo, our <span class="code">RenderItem</span> structure looks like this:</p>
+<p class="code"><span class="code">// Lightweight structure stores parameters to draw a shape. This will</span></p>
+<p class="code"><span class="code">// vary from app-to-app.</span></p>
+<p class="code"><span class="code">struct RenderItem</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;RenderItem() = default;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// World matrix of the shape that describes the object&rsquo;s local space</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// relative to the world space, which defines the position,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// orientation, and scale of the object in the world.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4X4 World = MathHelper::Identity4x4();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Dirty flag indicating the object data has changed and we need&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// to update the constant buffer. Because we have an object&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// cbuffer for each FrameResource, we have to apply the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// update to each FrameResource. Thus, when we modify obect data we</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// should set</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;&nbsp;NumFramesDirty = gNumFrameResources so that each frame resource</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// gets the update.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int NumFramesDirty = gNumFrameResources;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Index into GPU constant buffer corresponding to the ObjectCB&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// for this render item.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT ObjCBIndex = -1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Geometry associated with this render-item. Note that multiple</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// render-items can share the same geometry.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshGeometry* Geo = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Primitive topology.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// DrawIndexedInstanced parameters.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT IndexCount = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT StartIndexLocation = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int BaseVertexLocation = 0;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Our application will maintain<a id="page270"/> lists of render items based on how they need to be drawn; that is, render items that need different PSOs will be kept in different lists.</p>
+<p class="code"><span class="code">// List of all the render items.</span></p>
+<p class="code"><span class="code">std::vector&lt;std::unique_ptr&lt;RenderItem&gt;&gt; mAllRitems;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Render items divided by PSO.</span></p>
+<p class="code"><span class="code">std::vector&lt;RenderItem*&gt; mOpaqueRitems;</span></p>
+<p class="code"><span class="code">std::vector&lt;RenderItem*&gt; mTransparentRitems;</span></p>
+<p class="h1" id="c7.3"><a href="toc.html#toc-7.3"><b>7.3 PASS CONSTANTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Observe from the previous section that we introduced a new constant buffer in our <span class="code">FrameResource</span> class:</p>
+<p class="code"><span class="code">std::unique_ptr&lt;UploadBuffer&lt;PassConstants&gt;&gt; PassCB = nullptr;</span></p>
+<p class="tx1">In the demos going forward, this buffer stores constant data that is fixed over a given rendering pass such as the eye position, the view and projection matrices, and information about the screen (render target) dimensions; it also includes game timing information, which is useful data to have access to in shader programs. Note that our demos will not necessarily use all this constant data, but it is convenient to have available, and there is little cost providing the extra data. For example, while we do not need the render target sizes now, when we go to implement some post processing effect, having that information will be needed. </p>
+<p class="code"><span class="code">cbuffer cbPass : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">We have also modified<a id="page271"/> our per object constant buffer to only store constants that are associated with an object. So far, the only constant data we associate with an object for drawing is its world matrix:</p>
+<p class="code"><span class="code">cbuffer cbPerObject : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float4x4 gWorld;&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The idea of these changes is to group constants based on update frequency. The per pass constants only need to be updated once per rendering pass, and the object constants only need to change when an object&rsquo;s world matrix changes. If we had a static object in the scene, like a tree, we only need to set its world matrix once to a constant buffer and then never update the constant buffer again. In our demos, we implement the following methods to handle updating the per pass and per object constant buffers. These methods are called once per frame in the <span class="code">Update</span> method.</p>
+<p class="code"><span class="code">void ShapesApp::UpdateObjectCBs(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto currObjectCB = mCurrFrameResource-&gt;ObjectCB.get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(auto&amp; e : mAllRitems)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Only update the cbuffer data if the constants have changed.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// This needs to be tracked per frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(e-&gt;NumFramesDirty &gt; 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX world = XMLoadFloat4x4(&amp;e-&gt;World);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ObjectConstants objConstants;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;objConstants.World, XMMatrixTranspose(world));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currObjectCB-&gt;CopyData(e-&gt;ObjCBIndex, objConstants);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Next FrameResource need to be updated too.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;e-&gt;NumFramesDirty--;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShapesApp::UpdateMainPassCB(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX view = XMLoadFloat4x4(&amp;mView);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX proj = XMLoadFloat4x4(&amp;mProj);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX viewProj = XMMatrixMultiply(view, proj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX invView = XMMatrixInverse(&amp;XMMatrixDeterminant(view), view);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX invProj = XMMatrixInverse(&amp;XMMatrixDeterminant(proj), proj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX invViewProj = XMMatrixInverse(&amp;XMMatrixDeterminant(viewProj), viewProj);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.View, XMMatrixTranspose(view));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.InvView, XMMatrixTranspose(invView));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.Proj, XMMatrixTranspose(proj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.InvProj, XMMatrixTranspose(invProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.ViewProj, XMMatrixTranspose(viewProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mMainPassCB.InvViewProj, XMMatrixTranspose(invViewProj));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.EyePosW = mEyePos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.RenderTargetSize = XMFLOAT2((float)mClientWidth, (float)mClientHeight);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.InvRenderTargetSize = XMFLOAT2(1.0f / mClientWidth, 1.0f / mClientHeight);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.NearZ = 1.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.FarZ = 1000.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.TotalTime = gt.TotalTime();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mMainPassCB.DeltaTime = gt.DeltaTime();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto currPassCB = mCurrFrameResource-&gt;PassCB.get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;currPassCB-&gt;CopyData(0, mMainPassCB);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">We update our vertex shader<a id="page272"/> accordingly to support these constant buffer changes:</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Just pass vertex color into the pixel shader.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.Color = vin.Color;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The extra vector-matrix multiplication per vertex this adjustment gives is negligible on modern GPUs, which have plenty of computation power. </p>
+<p class="tx">The resources that our shaders<a id="page273"/> expect have changed; therefore, we need to update the root signature accordingly to take two descriptor tables (we need two tables because the CBVs will be set at different frequencies&mdash;the per pass CBV only needs to be set once per rendering pass while the per object CBV needs to be set per render item):</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE cbvTable0;</span></p>
+<p class="code"><span class="code">cbvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE cbvTable1;</span></p>
+<p class="code"><span class="code">cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Create root CBVs.</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsDescriptorTable(1, &amp;cbvTable0);</span></p>
+<p class="code"><span class="code">slotRootParameter[1].InitAsDescriptorTable(1, &amp;cbvTable1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0, nullptr,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Do not go overboard with the number of constant buffers in your shaders. [Thibieroz13] recommends you keep them under five for performance.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c7.4"><a href="toc.html#toc-7.4"><b>7.4 SHAPE GEOMETRY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this section, we show how to create the geometry for ellipsoids, spheres, cylinders and cones. These shapes are useful for drawing sky domes, debugging, visualizing collision detection, and deferred rendering. For example, you might want to render all of your game characters as spheres for a debug test. </p>
+<p class="tx">We put our procedural geometry generation code in the <span class="code">GeometryGenerator</span> class (GeometryGenerator.h/.cpp). <span class="code">GeometryGenerator</span> is a utility class for generating simple geometric shapes like grids, sphere, cylinders, and boxes, which we use throughout this book for our demo programs. This class generates the data in system memory, and we must then copy the data we want to our vertex and index buffers. <span class="code">GeometryGenerator</span> creates some vertex data that will be used in later chapters. We do not need this data in our current demos, and so we do <i>not</i> copy this data into our vertex buffers. The <span class="code">MeshData</span> structure is a simple structure nested inside <span class="code">GeometryGenerator</span> that stores a vertex and index list:<a id="page274"/></p>
+<p class="code"><span class="code">class GeometryGenerator</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;using uint16 = std::uint16_t;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;using uint32 = std::uint32_t;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;struct Vertex</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Vertex(){}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Vertex(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT3&amp; p,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT3&amp; n,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT3&amp; t,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT2&amp; uv) :</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Position(p),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Normal(n),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TangentU(t),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TexC(uv){}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Vertex(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float px, float py, float pz,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float nx, float ny, float nz,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float tx, float ty, float tz,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float u, float v) :&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Position(px,py,pz),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Normal(nx,ny,nz),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TangentU(tx, ty, tz),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TexC(u,v){}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 Normal;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 TangentU;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT2 TexC;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;struct MeshData</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;Vertex&gt; Vertices;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;uint32&gt; Indices32;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;uint16&gt;&amp; GetIndices16()</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(mIndices16.empty())</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mIndices16.resize(Indices32.size());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for(size_t i = 0; i &lt; Indices32.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mIndices16[i] = static_cast&lt;uint16&gt;(Indices32[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return mIndices16;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;private:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;uint16&gt; mIndices16;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">};</span><a id="page275"/></p>
+<p class="h2" id="c7.4.1"><a href="toc.html#toc-7.4.1"><b>7.4.1 Generating a Cylinder Mesh</b></a></p>
+<p class="tx1">We define a cylinder by specifying its bottom and top radii, its height, and the slice and stack count, as shown in Figure <a href="ch07.html#fig7.1">7.1</a>. We break the cylinder into three parts: 1) the side geometry, 2) the top cap geometry, and 3) the bottom cap geometry. </p>
+
+<p class="caption"><img src="images/Fig7-1.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.1"><b><i>Figure 7.1.</i></b>&nbsp;&nbsp;In this illustration, the cylinder on the left has eight slices and four stacks, and the cylinder on the right has sixteen slices and eight stacks. The slices and stacks control the triangle density. Note that the top and bottom radii can differ so that we can create cone shaped objects, not just &ldquo;pure&rdquo; cylinders.</p>
+
+<p class="h3" id="c7.4.1.1"><a href="toc.html#toc-7.4.1.1"><b>7.4.1.1 Cylinder Side Geometry</b></a></p>
+<p class="tx1">We generate the cylinder centered at the origin, parallel to the <i>y</i>-axis. From Figure <a href="ch07.html#fig7.1">7.1</a>, all the vertices lie on the &ldquo;rings&rdquo; of the cylinder, where there are <i>stackCount</i> + 1 rings, and each ring has <i>sliceCount</i> unique vertices. The difference in radius between consecutive rings is &#x0394;<i>r = (topRadius &ndash; bottomRadius)/stackCount</i>. If we start at the bottom ring with index 0, then the radius of the <i>i</i>th ring is <i>r</i><sub>i</sub> = <i>bottomRadius</i> + <i>i</i>&#x0394;<i>r</i> and the height of the <i>i</i>th ring is <img src="images/eq309-01.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/> where &#x0394;<i>h</i> is the stack height and <i>h</i> is the cylinder height. So the basic idea is to iterate over each ring, and generate the vertices that lie on that ring. This gives the following implementation:</p>
+<p class="code"><span class="code">GeometryGenerator::MeshData&nbsp;</span></p>
+<p class="code"><span class="code">GeometryGenerator::CreateCylinder(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float bottomRadius, float topRadius,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float height, uint32 sliceCount, uint32 stackCount)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshData meshData;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Build Stacks.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float stackHeight = height / stackCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Amount to increment radius as we move up each stack level from</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// bottom to top.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float radiusStep = (topRadius - bottomRadius) / stackCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 ringCount = stackCount+1;</span></p>
+<p class="code">&nbsp;<a id="page276"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute vertices for each stack ring starting at the bottom and&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// moving up.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; ringCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float y = -0.5f*height + i*stackHeight;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float r = bottomRadius + i*radiusStep;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// vertices of ring</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float dTheta = 2.0f*XM_PI/sliceCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(uint32 j = 0; j &lt;= sliceCount; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Vertex vertex;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float c = cosf(j*dTheta);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float s = sinf(j*dTheta);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertex.Position = XMFLOAT3(r*c, y, r*s);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertex.TexC.x = (float)j/sliceCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertex.TexC.y = 1.0f - (float)i/stackCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Cylinder can be parameterized as follows, where we introduce v</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// parameter that goes in the same direction as the v tex-coord</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// so that the bitangent goes in the same direction as the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// v tex-coord.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;Let r0 be the bottom radius and let r1 be the top radius.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;y(v) = h - hv for v in [0,1].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;r(v) = r1 + (r0-r1)v</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;x(t, v) = r(v)*cos(t)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;y(t, v) = h - hv</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;&nbsp;z(t, v) = r(v)*sin(t)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dx/dt = -r(v)*sin(t)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dy/dt = 0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dz/dt = +r(v)*cos(t)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dx/dv = (r0-r1)*cos(t)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dy/dv = -h</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// dz/dv = (r0-r1)*sin(t)</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// This is unit length.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertex.TangentU = XMFLOAT3(-s, 0.0f, c);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float dr = bottomRadius-topRadius;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3 bitangent(dr*c, -height, dr*s);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR T = XMLoadFloat3(&amp;vertex.TangentU);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR B = XMLoadFloat3(&amp;bitangent);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR N = XMVector3Normalize(XMVector3Cross(T, B));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;vertex.Normal, N);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices.push_back(vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span><a id="page277"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Observe that the first and last vertex of each ring is duplicated in position, but the texture coordinates are not duplicated. We have to do this so that we can apply textures to cylinders correctly. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The actual method </i><span class="code">GeometryGenerator::CreateCylinder</span><i> creates additional vertex data such as normal vectors and texture coordinates that will be useful for future demos. Do not worry about these quantities for now. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Observe from Figure <a href="ch07.html#fig7.2">7.2</a> that there is a quad (two triangles) for each slice in every stack. Figure <a href="ch07.html#fig7.2">7.2</a> shows that the indices for the <i>i</i>th stack and <i>j</i>th slice are given by:</p>
+
+<p class="eq"><img src="images/eq311-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">where <i>n</i> is the number of vertices per ring. So the key idea is to loop over every slice in every stack, and apply the above formulas.</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add one because we duplicate the first and last vertex per ring</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// since the texture coordinates are different.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 ringVertexCount = sliceCount+1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute indices for each stack.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; stackCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(uint32 j = 0; j &lt; sliceCount; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(i*ringVertexCount + j);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back((i+1)*ringVertexCount + j);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back((i+1)*ringVertexCount + j+1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(i*ringVertexCount + j);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back((i+1)*ringVertexCount + j+1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(i*ringVertexCount + j+1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildCylinderTopCap(bottomRadius, topRadius, height,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;sliceCount, stackCount, meshData);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;BuildCylinderBottomCap(bottomRadius, topRadius, height,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;sliceCount, stackCount, meshData);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return meshData;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="caption"><img src="images/Fig7-2.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig7.2"><b><i>Figure 7.2.</i></b>&nbsp;&nbsp;The vertices <i>A</i>, <i>B</i>, <i>C</i>, <i>D</i> contained in the <i>i</i>th and <i>i</i> + 1th ring, and <i>j</i>th slice.<a id="page278"/></p>
+
+
+<p class="h3" id="c7.4.1.2"><a href="toc.html#toc-7.4.1.2"><b>7.4.1.2 Cap Geometry</b></a></p>
+<p class="tx1">Generating the cap geometry amounts to generating the slice triangles of the top and bottom rings to approximate a circle:</p>
+<p class="code"><span class="code">void GeometryGenerator::BuildCylinderTopCap(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float bottomRadius, float topRadius, float height,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 sliceCount, uint32 stackCount, MeshData&amp; meshData)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 baseIndex = (uint32)meshData.Vertices.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float y = 0.5f*height;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dTheta = 2.0f*XM_PI/sliceCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Duplicate cap ring vertices because the texture coordinates and&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// normals differ.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt;= sliceCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float x = topRadius*cosf(i*dTheta);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float z = topRadius*sinf(i*dTheta);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Scale down by the height to try and make top cap texture coord</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// area proportional to base.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float u = x/height + 0.5f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float v = z/height + 0.5f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices.push_back(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Vertex(x, y, z, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, u, v) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Cap center vertex.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Vertices.push_back(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Vertex(0.0f, y, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.5f, 0.5f) );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Index of center vertex.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 centerIndex = (uint32)meshData.Vertices.size()-1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; sliceCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(centerIndex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(baseIndex + i+1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32.push_back(baseIndex + i);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The bottom cap code is analogous.<a id="page279"/></p>
+<p class="h2" id="c7.4.2"><a href="toc.html#toc-7.4.2"><b>7.4.2 Generating a Sphere Mesh</b></a></p>
+<p class="tx1">We define a sphere by specifying its radius, and the slice and stack count, as shown in Figure <a href="ch07.html#fig7.3">7.3</a>. The algorithm for generating the sphere is very similar to that of the cylinder, except that the radius per ring changes is a nonlinear way based on trigonometric functions. We will leave it to the reader to study the <span class="code">GeometryGenerator::CreateSphere</span> code. Note that we can apply a non-uniform scaling world transformation to transform a sphere into an ellipsoid.</p>
+
+<p class="caption"><img src="images/Fig7-3.jpg" alt="image" width="30%"/></p>
+<p class="caption" id="fig7.3"><b><i>Figure 7.3.</i></b>&nbsp;&nbsp;The idea of slices and stacks also apply to a sphere to control the level of tessellation.</p>
+
+<p class="h2" id="c7.4.3"><a href="toc.html#toc-7.4.3"><b>7.4.3 Generating a Geosphere Mesh</b></a></p>
+<p class="tx1">Observe from Figure <a href="ch07.html#fig7.3">7.3</a> that the triangles of the sphere do not have equal areas. This can be undesirable for some situations. A geosphere approximates a sphere using triangles with almost equal areas as well as equal side lengths (see Figure <a href="ch07.html#fig7.4">7.4</a>).</p>
+
+<p class="caption"><img src="images/Fig7-4.jpg" alt="image" width="50%"/></p>
+<p class="caption" id="fig7.4"><b><i>Figure 7.4.</i></b>&nbsp;&nbsp;Approximating a geosphere by repeated subdivision and reprojection onto the sphere.</p>
+
+<p class="tx">To generate a geosphere, we start with an icosahedron, subdivide the triangles, and then project the new vertices onto the sphere with the given radius. We can repeat this process to improve the tessellation. </p>
+<p class="tx">Figure <a href="ch07.html#fig7.5">7.5</a> shows how a triangle can be subdivided into four equal sized triangles. The new vertices are found just by taking the midpoints along the edges of the original triangle. The new vertices can then be projected onto a sphere of radius <i>r</i> by projecting the vertices onto the unit sphere<a id="page280"/> and then scalar multiplying by <img src="images/eq314-01.jpg" alt="image" width="80" height="25" style="margin-bottom:-0.5em;"/></p>
+
+<p class="caption"><img src="images/Fig7-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.5"><b><i>Figure 7.5.</i></b>&nbsp;&nbsp;Subdividing a triangle into four triangles of equal area.</p>
+
+<p class="tx">The code is given below:</p>
+<p class="code"><span class="code">GeometryGenerator::MeshData&nbsp;</span></p>
+<p class="code"><span class="code">GeometryGenerator::CreateGeosphere(float radius, uint32 numSubdivisions)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshData meshData;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Put a cap on the number of subdivisions.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;numSubdivisions = std::min&lt;uint32&gt;(numSubdivisions, 6u);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Approximate a sphere by tessellating an icosahedron.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float X = 0.525731f;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float Z = 0.850651f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 pos[12] =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-X, 0.0f, Z), XMFLOAT3(X, 0.0f, Z),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-X, 0.0f, -Z), XMFLOAT3(X, 0.0f, -Z),&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, Z, X),&nbsp;&nbsp;XMFLOAT3(0.0f, Z, -X),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(0.0f, -Z, X), XMFLOAT3(0.0f, -Z, -X),&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(Z, X, 0.0f),&nbsp;&nbsp;XMFLOAT3(-Z, X, 0.0f),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(Z, -X, 0.0f), XMFLOAT3(-Z, -X, 0.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 k[60] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1,4,0, 4,9,0, 4,5,9, 8,5,4, 1,8,4,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1,10,8, 10,3,8, 8,3,5, 3,2,5, 3,7,2,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;3,10,7, 10,6,7, 6,11,7, 6,0,11, 6,1,0,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;10,1,6, 11,0,9, 2,11,9, 5,2,9, 11,2,7&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Vertices.resize(12);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Indices32.assign(&amp;k[0], &amp;k[60]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; 12; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].Position = pos[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; numSubdivisions; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Subdivide(meshData);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Project vertices onto sphere and scale.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; meshData.Vertices.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Project onto unit sphere.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&amp;meshData.Vertices[i].Position));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Project onto sphere.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR p = radius*n;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;meshData.Vertices[i].Position, p);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;meshData.Vertices[i].Normal, n);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Derive texture coordinates from spherical coordinates.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float theta = atan2f(meshData.Vertices[i].Position.z,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; meshData.Vertices[i].Position.x);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Put in [0, 2pi].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(theta &lt; 0.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;theta += XM_2PI;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float phi = acosf(meshData.Vertices[i].Position.y / radius);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].TexC.x = theta/XM_2PI;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].TexC.y = phi/XM_PI;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Partial derivative of P with respect to theta</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].TangentU.x = -radius*sinf(phi)*sinf(theta);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].TangentU.y = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i].TangentU.z = +radius*sinf(phi)*cosf(theta);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR T = XMLoadFloat3(&amp;meshData.Vertices[i].TangentU);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;meshData.Vertices[i].TangentU, XMVector3Normalize(T));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return meshData;</span></p>
+<p class="code"><span class="code">}</span><a id="page281"/></p>
+<p class="h1" id="c7.5"><a href="toc.html#toc-7.5"><b>7.5 SHAPES DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">To demonstrate our sphere and cylinder generation code, we implement the &ldquo;Shapes&rdquo; demo shown in Figure <a href="ch07.html#fig7.6">7.6</a>. In addition, you will also gain experience positioning and drawing multiple objects in a scene (i.e., creating multiple world transformation matrices). Furthermore, we place all of the scene geometry in one big vertex and index buffer. Then we will use the <span class="code">DrawIndexedInstanced</span> method to draw one object at a time (as the world matrix needs to be changed between objects); so you will see an example<a id="page282"/> of using the <span class="code">StartIndexLocation</span> and <span class="code">BaseVertexLocation</span> parameters of <span class="code">DrawIndexedInstanced</span>.</p>
+
+<p class="caption"><img src="images/Fig7-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.6"><b><i>Figure 7.6.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Shapes&rdquo; demo.</p>
+
+<p class="h2" id="c7.5.1"><a href="toc.html#toc-7.5.1"><b>7.5.1 Vertex and Index Buffers</b></a></p>
+<p class="tx1">As Figure <a href="ch07.html#fig7.6">7.6</a> shows, in this demo we draw a box, grid, cylinders, and sphere. Even though we draw multiple spheres and cylinders in this demo, we only need one copy of the sphere and cylinder geometry. We simply redraw the same sphere and cylinder mesh multiple times, but with different world matrices; this is an example of <i>instancing</i> geometry, which saves memory. </p>
+<p class="tx">We pack all the mesh vertices and indices into one vertex and index buffer. This is done by concatenating the vertex and index arrays. This means that when we draw an object, we are only drawing a subset of the vertex and index buffers. There are three quantities we need to know in order to draw only a subset of the geometry using <span class="code">ID3D12CommandList::DrawIndexedInstanced</span> (recall Figure <a href="ch06.html#fig6.3">6.3</a> and the discussion about it from Chapter <a href="ch06.html#chap06">6</a>). We need to know the starting index to the object in the concatenated index buffer, its index count, and we need to know the base vertex location&mdash;the index of the object&rsquo;s first vertex relative to the concatenated vertex buffer. Recall that the base vertex location is an integer value added to the indices in a draw call before the vertices are fetched, so that the indices reference the proper subset in the concatenated vertex buffer. (See also Exercise 2 in Chapter <a href="ch05.html#chap05">5</a>.)</p>
+<p class="tx">The code below shows how the geometry<a id="page283"/> buffers are created, how the necessary drawing quantities are cached, and how the objects are drawn.</p>
+<p class="code"><span class="code">void ShapesApp::BuildShapeGeometry()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator geoGen;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.0f, 30.0f, 60, 40);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 20, 20);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f,&nbsp;&nbsp;3.0f, 20, 20);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We are concatenating all the geometry into one big vertex/index</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// buffer. So define the regions in the buffer each submesh covers.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Cache the vertex offsets to each object in the concatenated vertex&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT boxVertexOffset = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT gridVertexOffset = (UINT)box.Vertices.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Cache the starting index for each object in the concatenated index&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT boxIndexOffset = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT gridIndexOffset = (UINT)box.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Define the SubmeshGeometry that cover different&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// regions of the vertex/index buffers.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry boxSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxSubmesh.IndexCount = (UINT)box.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxSubmesh.StartIndexLocation = boxIndexOffset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxSubmesh.BaseVertexLocation = boxVertexOffset;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry gridSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridSubmesh.IndexCount = (UINT)grid.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridSubmesh.StartIndexLocation = gridIndexOffset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridSubmesh.BaseVertexLocation = gridVertexOffset;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry sphereSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;sphereSubmesh.StartIndexLocation = sphereIndexOffset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;sphereSubmesh.BaseVertexLocation = sphereVertexOffset;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry cylinderSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span><a id="page284"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Extract the vertex elements we are interested in and pack the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// vertices of all the meshes into one vertex buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto totalVertexCount =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;box.Vertices.size() +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;grid.Vertices.size() +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;sphere.Vertices.size() +</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cylinder.Vertices.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;Vertex&gt; vertices(totalVertexCount);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT k = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; box.Vertices.size(); ++i, ++k)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Pos = box.Vertices[i].Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Color = XMFLOAT4(DirectX::Colors::DarkGreen);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; grid.Vertices.size(); ++i, ++k)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Pos = grid.Vertices[i].Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Color = XMFLOAT4(DirectX::Colors::ForestGreen);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; sphere.Vertices.size(); ++i, ++k)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Pos = sphere.Vertices[i].Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Color = XMFLOAT4(DirectX::Colors::Crimson);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; cylinder.Vertices.size(); ++i, ++k)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Pos = cylinder.Vertices[i].Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[k].Color = XMFLOAT4(DirectX::Colors::SteelBlue);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;std::uint16_t&gt; indices;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;indices.insert(indices.end(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::begin(box.GetIndices16()),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::end(box.GetIndices16()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;indices.insert(indices.end(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::begin(grid.GetIndices16()),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::end(grid.GetIndices16()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;indices.insert(indices.end(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::begin(sphere.GetIndices16()),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::end(sphere.GetIndices16()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;indices.insert(indices.end(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::begin(cylinder.GetIndices16()),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::end(cylinder.GetIndices16()));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto geo = std::make_unique&lt;MeshGeometry&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;Name = "shapeGeo";</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(vbByteSize, &amp;geo-&gt;VertexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;VertexBufferCPU-&gt;GetBufferPointer(), vertices.data(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vbByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(ibByteSize, &amp;geo-&gt;IndexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;IndexBufferCPU-&gt;GetBufferPointer(), indices.data(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ibByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), vertices.data(), vbByteSize, geo-&gt;VertexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), indices.data(), ibByteSize, geo-&gt;IndexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexByteStride = sizeof(Vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferByteSize = vbByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexFormat = DXGI_FORMAT_R16_UINT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferByteSize = ibByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["box"] = boxSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["grid"] = gridSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["sphere"] = sphereSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["cylinder"] = cylinderSubmesh;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mGeometries[geo-&gt;Name] = std::move(geo);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The <span class="code">mGeometries</span> variable used in the last line of the above<a id="page285"/> method is defined like so:</p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, std::unique_ptr&lt;MeshGeometry&gt;&gt; mGeometries;</span></p>
+<p class="tx1">This is a common pattern we employ for the rest of this book. It is cumbersome to create a new variable name for each geometry, PSO, texture, shader, etc., so we use unordered maps for constant time lookup and reference our objects by name. Here are some more examples:</p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, std::unique_ptr&lt;MeshGeometry&gt;&gt; mGeometries;</span></p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, ComPtr&lt;ID3DBlob&gt;&gt; mShaders;</span></p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, ComPtr&lt;ID3D12PipelineState&gt;&gt; mPSOs;</span><a id="page286"/></p>
+<p class="h2" id="c7.5.2"><a href="toc.html#toc-7.5.2"><b>7.5.2 Render Items</b></a></p>
+<p class="tx1">We now define our scene render items. Observe how all the render items share the same <span class="code">MeshGeometry</span>, and we use the <span class="code">DrawArgs</span> to get the <span class="code">DrawIndexedInstanced</span> parameters to draw a subregion of the vertex/index buffers.</p>
+<p class="code"><span class="code">// ShapesApp member variable.</span></p>
+<p class="code"><span class="code">std::vector&lt;std::unique_ptr&lt;RenderItem&gt;&gt; mAllRitems;</span></p>
+<p class="code"><span class="code">std::vector&lt;RenderItem*&gt; mOpaqueRitems;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void ShapesApp::BuildRenderItems()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto boxRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;boxRitem-&gt;World,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMatrixScaling(2.0f, 2.0f, 2.0f)*XMMatrixTranslation(0.0f, 0.5f, 0.0f));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;ObjCBIndex = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;IndexCount = boxRitem-&gt;Geo-&gt;DrawArgs["box"].IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;StartIndexLocation = boxRitem-&gt;Geo-&gt;DrawArgs["box"].&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;boxRitem-&gt;BaseVertexLocation = boxRitem-&gt;Geo-&gt;DrawArgs["box"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; BaseVertexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mAllRitems.push_back(std::move(boxRitem));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto gridRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;World = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;ObjCBIndex = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;IndexCount = gridRitem-&gt;Geo-&gt;DrawArgs["grid"].IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;StartIndexLocation = gridRitem-&gt;Geo-&gt;DrawArgs["grid"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gridRitem-&gt;BaseVertexLocation = gridRitem-&gt;Geo-&gt;DrawArgs["grid"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; BaseVertexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mAllRitems.push_back(std::move(gridRitem));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Build the columns and spheres in rows as in Figure <a href="ch07.html#fig7.6">7.6</a>.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCBIndex = 2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 5; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto leftCylRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto rightCylRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto leftSphereRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto rightSphereRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i*5.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i*5.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i*5.0f);</span><a id="page287"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ i*5.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;leftCylRitem-&gt;World, rightCylWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;ObjCBIndex = objCBIndex++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;IndexCount = leftCylRitem-&gt;Geo-&gt;DrawArgs["cylinder"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;Geo-&gt;DrawArgs["cylinder"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leftCylRitem-&gt;Geo-&gt;DrawArgs["cylinder"].BaseVertexLocation;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;rightCylRitem-&gt;World, leftCylWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;ObjCBIndex = objCBIndex++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;IndexCount = rightCylRitem-&gt; Geo-&gt;DrawArgs["cylinder"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;Geo-&gt;DrawArgs["cylinder"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rightCylRitem-&gt;Geo-&gt;DrawArgs["cylinder"].BaseVertexLocation;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;leftSphereRitem-&gt;World, leftSphereWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;ObjCBIndex = objCBIndex++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;IndexCount = leftSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;leftSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].BaseVertexLocation;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;rightSphereRitem-&gt;World, rightSphereWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;ObjCBIndex = objCBIndex++;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;Geo = mGeometries["shapeGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;IndexCount = rightSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;rightSphereRitem-&gt;Geo-&gt;DrawArgs["sphere"].BaseVertexLocation;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mAllRitems.push_back(std::move(leftCylRitem));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mAllRitems.push_back(std::move(rightCylRitem));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mAllRitems.push_back(std::move(leftSphereRitem));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mAllRitems.push_back(std::move(rightSphereRitem));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// All the render items are opaque in this demo.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(auto&amp; e : mAllRitems)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mOpaqueRitems.push_back(e.get());</span></p>
+<p class="code"><span class="code">}</span><a id="page288"/></p>
+<p class="h2" id="c7.5.3"><a href="toc.html#toc-7.5.3"><b>7.5.3 Frame Resources and Constant Buffer Views</b></a></p>
+<p class="tx1">Recall that we have a vector of <span class="code">FrameResource</span>s, and each <span class="code">FrameResource</span> has an upload buffer for storing the pass constants and constant buffers for every render item in the scene.</p>
+<p class="code"><span class="code">std::unique_ptr&lt;UploadBuffer&lt;PassConstants&gt;&gt; PassCB = nullptr;</span></p>
+<p class="code"><span class="code">std::unique_ptr&lt;UploadBuffer&lt;ObjectConstants&gt;&gt; ObjectCB = nullptr;&nbsp;</span></p>
+<p class="tx1">If we have 3 frame resources and <i>n</i> render items, then we have three 3<i>n</i> object constant buffers and 3 pass constant buffers. Hence we need 3(<i>n</i>+1) constant buffer views (CBVs). Thus we will need to modify our CBV heap to include the additional descriptors:</p>
+<p class="code"><span class="code">void ShapesApp::BuildDescriptorHeaps()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCount = (UINT)mOpaqueRitems.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Need a CBV descriptor for each object for each frame resource,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// +1 for the perPass CBV for each frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numDescriptors = (objCount+1) * gNumFrameResources;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Save an offset to the start of the pass CBVs. These are the last 3 descriptors.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mPassCbvOffset = objCount * gNumFrameResources;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvHeapDesc.NumDescriptors = numDescriptors;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvHeapDesc.NodeMask = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(md3dDevice-&gt;CreateDescriptorHeap(&amp;cbvHeapDesc,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;IID_PPV_ARGS(&amp;mCbvHeap)));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Now, we can populate the CBV heap with the following code where descriptors 0 to <i>n</i>-1 contain the object CBVs for the 0th frame resource, descriptors <i>n</i> to 2<i>n</i>&minus;1 contains the object CBVs for 1st frame resource, descriptors 2<i>n</i> to 3<i>n</i>&minus;1 contain the objects CBVs for the 2nd frame resource, and descriptors 3<i>n,</i> 3<i>n</i>+1, and 3<i>n</i>+2 contain the pass CBVs for the 0th, 1st, and 2nd frame resource, respectively:<a id="page289"/></p>
+<p class="code"><span class="code">void ShapesApp::BuildConstantBufferViews()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; (ObjectConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCount = (UINT)mOpaqueRitems.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Need a CBV descriptor for each object for each frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int frameIndex = 0; frameIndex &lt; gNumFrameResources; ++frameIndex)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto objectCB = mFrameResources[frameIndex]-&gt;ObjectCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(UINT i = 0; i &lt; objCount; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objectCB-&gt;GetGPUVirtualAddress();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the ith object constant buffer in the current buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbAddress += i*objCBByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the object CBV in the descriptor heap.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int heapIndex = frameIndex*objCount + i;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mCbvHeap-&gt;GetCPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbvDesc.BufferLocation = cbAddress;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cbvDesc.SizeInBytes = objCBByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;md3dDevice-&gt;CreateConstantBufferView(&amp;cbvDesc, handle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; (PassConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Last three descriptors are the pass CBVs for each frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int frameIndex = 0; frameIndex &lt; gNumFrameResources; ++frameIndex)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto passCB = mFrameResources[frameIndex]-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Pass buffer only stores one cbuffer per frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS cbAddress = passCB-&gt;GetGPUVirtualAddress();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the pass cbv in the descriptor heap.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int heapIndex = mPassCbvOffset + frameIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mCbvHeap-&gt;GetCPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;handle.Offset(heapIndex, mCbvSrvUavDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cbvDesc.BufferLocation = cbAddress;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cbvDesc.SizeInBytes = passCBByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;md3dDevice-&gt;CreateConstantBufferView(&amp;cbvDesc, handle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Recall that we can get a<a id="page290"/> handle to the first descriptor in a heap with the <span class="code">ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart</span> method. However, now that our heap has more than one descriptor, this method is no longer sufficient. We need to be able to offset to other descriptors in the heap. To do this, we need to know the size to increment in the heap to get to the next descriptor. This is hardware specific, so we have to query this information from the device, and it depends on the heap type. Recall that our <span class="code">D3DApp</span> class caches this information:</p>
+<p class="code"><span class="code">mRtvDescriptorSize = md3dDevice-&gt;GetDescriptorHandleIncrementSize(</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_TYPE_RTV);</span></p>
+     <p class="tx"><span class="code">mDsvDescriptorSize = md3dDevice-&gt;GetDescriptorHandleIncrementSize(</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_TYPE_DSV);</span></p>
+     <p class="tx"><span class="code">mCbvSrvUavDescriptorSize = md3dDevice-&gt;GetDescriptorHandleIncrementSize(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);</span></p>
+<p class="tx1">Once we know the descriptor increment size, we can use one of the two <span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE::Offset</span> methods to offset the handle by <i>n</i> descriptors:</p>
+<p class="code"><span class="code">// Specify the number of descriptors to offset times the descriptor</span></p>
+<p class="code"><span class="code">// Offset by n descriptors:</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap-&gt;GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">handle.Offset(n * mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Or equivalently, specify the number of descriptors to offset,&nbsp;</span></p>
+<p class="code"><span class="code">// followed by the descriptor increment size:</span></p>
+<p class="code"><span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap-&gt;GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">handle.Offset(n, mCbvSrvDescriptorSize);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><span class="code">CD3DX12_GPU_DESCRIPTOR_HANDLE</span><i> has the same </i><span class="code">Offset</span><i> methods.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c7.5.4"><a href="toc.html#toc-7.5.4"><b>7.5.4 Drawing the Scene</b></a></p>
+<p class="tx1">At last we can draw our render items. Perhaps the only tricky part is offsetting to the correct CBV in the heap for the object we want to draw. Notice how a render item stores an index to the constant buffer that is associated with the render item. </p>
+<p class="code"><span class="code">void ShapesApp::DrawRenderItems(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;RenderItem*&gt;&amp; ritems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto objectCB = mCurrFrameResource-&gt;ObjectCB-&gt;Resource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each render item&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; ritems.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto ri = ritems[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetVertexBuffers(0, 1, &amp;ri-&gt;Geo-&gt;VertexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetIndexBuffer(&amp;ri-&gt;Geo-&gt;IndexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetPrimitiveTopology(ri-&gt;PrimitiveType);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the CBV in the descriptor heap for this object and</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// for this frame resource.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT cbvIndex = mCurrFrameResourceIndex*(UINT)mOpaqueRitems.size()&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ ri-&gt;ObjCBIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto cbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mCbvHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cbvHandle.Offset(cbvIndex, mCbvSrvUavDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootDescriptorTable(0, cbvHandle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount, 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;StartIndexLocation, ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The <span class="code">DrawRenderItems</span> method is invoked in the<a id="page291"/> main <span class="code">Draw</span> call:</p>
+<p class="code"><span class="code">void ShapesApp::Draw(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto cmdListAlloc = mCurrFrameResource-&gt;CmdListAlloc;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reuse the memory associated with command recording.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We can only reset when the associated command lists have&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// finished execution on the GPU.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(cmdListAlloc-&gt;Reset());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// A command list can be reset after it has been added to the</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// command queue via ExecuteCommandList.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Reusing the command list reuses memory.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(mIsWireframe)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ThrowIfFailed(mCommandList-&gt;Reset(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;cmdListAlloc.Get(), mPSOs["opaque_wireframe"].Get()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ThrowIfFailed(mCommandList-&gt;Reset(cmdListAlloc.Get(), mPSOs["opaque"].Get()));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetViewports(1, &amp;mScreenViewport);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;RSSetScissorRects(1, &amp;mScissorRect);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indicate a state transition on the resource usage.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_PRESENT,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Clear the back buffer and depth buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ClearRenderTargetView(CurrentBackBufferView(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Colors::LightSteelBlue, 0, nullptr);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ClearDepthStencilView(DepthStencilView(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;1.0f, 0, 0, nullptr);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Specify the buffers we are going to render to.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;OMSetRenderTargets(1, &amp;CurrentBackBufferView(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;true, &amp;DepthStencilView());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12DescriptorHeap* descriptorHeaps[] = { mCbvHeap.Get() };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootSignature(mRootSignature.Get());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;int passCbvIndex = mPassCbvOffset + mCurrFrameResourceIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto passCbvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCbvHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;passCbvHandle.Offset(passCbvIndex, mCbvSrvUavDescriptorSize);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootDescriptorTable(1, passCbvHandle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mOpaqueRitems);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indicate a state transition on the resource usage.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;ResourceBarrier(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_RENDER_TARGET,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_RESOURCE_STATE_PRESENT));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Done recording commands.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(mCommandList-&gt;Close());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add the command list to the queue for execution.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12CommandList* cmdsLists[] = { mCommandList.Get() };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandQueue-&gt;ExecuteCommandLists(_countof(cmdsLists), cmdsLists);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Swap the back and front buffers</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(mSwapChain-&gt;Present(0, 0));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Advance the fence value to mark commands up to this fence point.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCurrFrameResource-&gt;Fence = ++mCurrentFence;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Add an instruction to the command queue to set a new fence point.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Because we are on the GPU timeline, the new fence point won&rsquo;t be&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// set until the GPU finishes processing all the commands prior to this Signal().</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandQueue-&gt;Signal(mFence.Get(), mCurrentFence);</span></p>
+<p class="code"><span class="code">}</span><a id="page293"/></p>
+<p class="h1" id="c7.6"><a href="toc.html#toc-7.6"><b>7.6 MORE ON ROOT SIGNATURES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We introduced root signatures in &#x00A7;6.6.5 of the previous chapter. A root signature defines what resources need to be bound to the pipeline before issuing a draw call and how those resources get mapped to shader input registers. What resources need to be bound depends on what resources the current shader programs expect. When the PSO is created, the root signature and shader programs combination will be validated. </p>
+<p class="h2" id="c7.6.1"><a href="toc.html#toc-7.6.1"><b>7.6.1 Root Parameters</b></a></p>
+<p class="tx1">Recall that a root signature is defined by an array of root parameters. Thus far we have only created a root parameter that stores a descriptor table. However, a root parameter can actually be one of three types: </p>
+<ol><li><i>Descriptor Table</i>: Expects a descriptors table referencing a contiguous range in a heap that identifies the resource to be bound. </li>
+<li><i>Root descriptor (inline descriptor)</i>: Expects a descriptor to be set directly that identifies the resource to be bound; the descriptor does not need to be in a heap. Only CBVs to constant buffers, and SRV/UAVs to buffers can be bound as a root descriptor. In particular, this means SRVs to textures cannot be bound as a root descriptor.</li>
+<li><i>Root constant</i>: Expects a list of 32-bit constant values to be bound directly. </li></ol>
+<p class="tx1">For performance, there is a limit of 64 DWORDs that can be put in a root signature. The three types of root parameters have the following costs:</p>
+<ol><li>Descriptor Table: 1 DWORD</li>
+<li>Root Descriptor: 2 DWORDs</li>
+<li>Root Constant: 1 DWORD per 32-bit constant</li></ol>
+<p class="tx1">We can create an arbitrary root signature, provided we do not go over the sixty-four DWORD limit. Root constants are very convenient but their cost adds up quickly. For example, if the only constant data we needed was a world-view-projection matrix, we could use sixteen root constants to store it, which would make us not need to bother with a constant buffer and CBV heap. However, that eats up a quarter of our root signature budget. Using a root descriptor would only be two DWORDs, and a descriptor table is only one DWORD. As our applications become more complex, our constant buffer data will become larger, and it is unlikely we will be able to get away with using only root constants. In a real world application, you will probably use a combination of all three types of root parameters. </p>
+<p class="tx">In code a root parameter<a id="page294"/> is described by filling out a <span class="code">CD3DX12_ROOT_PARAMETER</span> structure. As we have seen with CD3DX code, the <span class="code">CD3DX12_ROOT_PARAMETER</span> extends <span class="code">D3D12_ROOT_PARAMETER</span> and add some helper initialization functions.</p>
+<p class="code"><span class="code">typedef struct D3D12_ROOT_PARAMETER</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE ParameterType;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;union&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_DESCRIPTOR_TABLE DescriptorTable;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_CONSTANTS Constants;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_DESCRIPTOR Descriptor;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_SHADER_VISIBILITY ShaderVisibility;</span></p>
+<p class="code"><span class="code">}D3D12_ROOT_PARAMETER;</span></p>
+<ol><li><span class="code">ParameterType</span>: A member of the following enumerated type indicating the root parameter type (descriptor table, root constant, CBV root descriptor, SRV root descriptor, UAV root descriptor).
+<p class="code"><span class="code">&nbsp;&nbsp;enum D3D12_ROOT_PARAMETER_TYPE</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE = 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS= 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE_CBV&nbsp;&nbsp;&nbsp;= 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE_SRV&nbsp;&nbsp;&nbsp;= 3 ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE_UAV&nbsp;&nbsp;&nbsp;= 4&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;} &nbsp;&nbsp;&nbsp;D3D12_ROOT_PARAMETER_TYPE;</span></p></li>
+<li><span class="code">DescriptorTable</span>/<span class="code">Constants/Descriptor</span>: A structure describing the root parameter. The member of the union you fill out depends on the root parameter type. &#x00A7;7.6.2, &#x00A7;7.6.3, and &#x00A7;7.6.4 discuss these structures.  </li>
+<li><span class="code">ShaderVisibility</span>: A member of the following enumeration that specifies which shader programs this root parameter is visible to. Usually in this book we specify <span class="code">D3D12_SHADER_VISIBILITY_ALL</span>. However, if we know a resource is only going to be used in a pixel shader, for example, then we can specify <span class="code">D3D12_SHADER_VISIBILITY_PIXEL</span>. Limiting the visibility of a root parameter can potentially lead to some optimizations. 
+<p class="code"><span class="code">&nbsp;&nbsp;enum D3D12_SHADER_VISIBILITY</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_ALL&nbsp;&nbsp;&nbsp;= 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_VERTEX&nbsp;&nbsp;&nbsp;= 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_HULL&nbsp;&nbsp;&nbsp;= 2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_DOMAIN&nbsp;&nbsp;&nbsp;= 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_GEOMETRY&nbsp;&nbsp;&nbsp;= 4,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY_PIXEL&nbsp;&nbsp;&nbsp;= 5</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;} &nbsp;&nbsp;&nbsp;D3D12_SHADER_VISIBILITY;</span><a id="page295"/></p></li></ol>
+<p class="h2" id="c7.6.2"><a href="toc.html#toc-7.6.2"><b>7.6.2 Descriptor Tables</b></a></p>
+<p class="tx1">A descriptor table root parameter is further defined by filling out the <span class="code">DescriptorTable</span> member of <span class="code">D3D12_ROOT_PARAMETER</span>.</p>
+<p class="code"><span class="code">typedef struct D3D12_ROOT_DESCRIPTOR_TABLE</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT NumDescriptorRanges;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const D3D12_DESCRIPTOR_RANGE *pDescriptorRanges;</span></p>
+<p class="code"><span class="code">} &nbsp;&nbsp;&nbsp;D3D12_ROOT_DESCRIPTOR_TABLE;</span></p>
+<p class="tx1">This simply specifies an array of <span class="code">D3D12_DESCRIPTOR_RANGE</span>s and the number of ranges in the array. </p>
+<p class="tx">The <span class="code">D3D12_DESCRIPTOR_RANGE</span> structure is defined like so:</p>
+<p class="code"><span class="code">typedef struct D3D12_DESCRIPTOR_RANGE</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE RangeType;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT NumDescriptors;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT BaseShaderRegister;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT RegisterSpace;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT OffsetInDescriptorsFromTableStart;</span></p>
+<p class="code"><span class="code">} &nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE;</span></p>
+<ol><li><span class="code">RangeType</span>: A member of the following enumerated type indicating the type of descriptors in this range:
+<p class="code"><span class="code">&nbsp;&nbsp;enum D3D12_DESCRIPTOR_RANGE_TYPE</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_SRV&nbsp;&nbsp;&nbsp;= 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_UAV&nbsp;&nbsp;&nbsp;= 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_CBV&nbsp;&nbsp;&nbsp;= 2 ,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER = 3&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;} &nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE;</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Sampler descriptors are discussed in the chapter on texturing.</i></p>
+</td></tr>
+</tbody>
+</table>
+</li>
+<li><span class="code">NumDescriptors</span>: The number of descriptors in the range. </li>
+<li><span class="code">BaseShaderRegister</span>: Base shader register arguments are bound to. For example, if you set NumDescriptors to 3, BaseShaderRegister to 1 and the range type is CBV (for constant buffers), then you will be binding to HLSL registers
+<p class="code"><span class="code">&nbsp;&nbsp;cbuffer cbA : register(b1) {&hellip;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbuffer cbB : register(b2) {&hellip;};</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbuffer cbC : register(b3) {&hellip;};</span></p></li>
+<li><span class="code">RegisterSpace:</span> This property gives you another dimension to specify shader registers. For example, the following two registers seem to overlap register slot t0, but they are different registers<a id="page296"/> because they live in different spaces:   Texture2D gDiffuseMap : register(t0, space0);
+<p class="code"><span class="code">&nbsp;&nbsp;Texture2D gNormalMap : register(t0, space1);</span></p>
+If no space register is explicitly specified in the shader, it automatically defaults to space0. Usually we use space0, but for arrays of resources it is useful to use multiple spaces, and necessary if the arrays are of an unknown size. </li>
+<li><span class="code">OffsetInDescriptorsFromTableStart</span>: The offset of this range of descriptors from the start of the table. See the example below.</li></ol>
+<p class="tx1">A slot parameter initialized as a descriptor table takes an array of <span class="code">D3D12_DESCRIPTOR_RANGE</span> instances because we can mix various types of descriptors in one table. Suppose we defined a table of six descriptors by the following three ranges in order: two CBVs, three SRVs and one UAV. This table would be defined like so:</p>
+<p class="code"><span class="code">// Create a table with 2 CBVs, 3 SRVs and 1 UAV.</span></p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE descRange[3];</span></p>
+<p class="code"><span class="code">descRange[0].Init(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_CBV, // descriptor type</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;2, // descriptor count</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // base shader register arguments are bound to for this root&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; // parameter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // register space</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0);// offset from start of table</span></p>
+<p class="code"><span class="code">descRange[1].Init(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_SRV, // descriptor type</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;3, // descriptor count</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // base shader register arguments are bound to for this root&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; // parameter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // register space</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;2);// offset from start of table</span></p>
+<p class="code"><span class="code">descRange[2].Init(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_UAV, // descriptor type</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;1, // descriptor count</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // base shader register arguments are bound to for this root&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; // parameter</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, // register space</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;5);// offset from start of table</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsDescriptorTable(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;3, descRange, D3D12_SHADER_VISIBILITY_ALL);</span></p>
+<p class="tx1">As usual, there is a <span class="code">CD3DX12_DESCRIPTOR_RANGE</span> variation that inherits from <span class="code">D3D12_DESCRIPTOR_RANGE,</span> and we use the following initialization function:</p>
+<p class="code"><span class="code">void CD3DX12_DESCRIPTOR_RANGE::Init(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE rangeType,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT numDescriptors,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT baseShaderRegister,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT registerSpace = 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT offsetInDescriptorsFromTableStart =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);</span></p>
+<p class="tx1">This table covers six descriptors,<a id="page297"/> and the application is expected to bind a contiguous range of descriptors in a descriptor heap that include two CBVs followed by three SRVs followed by one UAV. We see that all the range types start at register 0 but there is no &ldquo;overlap&rdquo; conflict because CBVs, SRVs, and UAVs all get bound to different register types, each starting at register 0. </p>
+<p class="tx1">We can have Direct3D compute the <span class="code">OffsetInDescriptorsFromTableStart&nbsp;</span>value for us by specifying <span class="code">D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;</span> this instructs Direct3D to use the previous range descriptor counts in the table to compute the offset. Note that the <span class="code">CD3DX12_DESCRIPTOR_RANGE::Init&nbsp;</span>method defaults to the register space to 0, and the <span class="code">OffsetInDescriptorsFromTableStart to D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND.</span></p>
+<p class="h2" id="c7.6.3"><a href="toc.html#toc-7.6.3"><b>7.6.3 Root Descriptors</b></a></p>
+<p class="tx1">A root descriptor root parameter is further defined by filling out the <span class="code">Descriptor</span> member of <span class="code">D3D12_ROOT_PARAMETER</span>.</p>
+<p class="code"><span class="code">typedef struct D3D12_ROOT_DESCRIPTOR</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT ShaderRegister;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT RegisterSpace;</span></p>
+<p class="code"><span class="code">}D3D12_ROOT_DESCRIPTOR;</span></p>
+<ol><li><span class="code">ShaderRegister</span>: The shader register the descriptor will be bound to. For example, if you specify 2 and this root parameter is a CBV then the parameter gets mapped to the constant buffer in <span class="code">register(b2):</span>
+<p class="code"><span class="code">&nbsp;&nbsp;cbuffer cbPass : register(b2) {&hellip;};</span></p></li>
+<li><span class="code">RegisterSpace</span>: See <span class="code">D3D12_DESCRIPTOR_RANGE::RegisterSpace</span>.</li></ol>
+<p class="tx1">Unlike descriptor tables which require us to set a descriptor handle in a descriptor heap, to set a root descriptor, we simply bind the virtual address of the resource directly.  </p>
+<p class="code"><span class="code">UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof</span></p>
+<p class="code"><span class="code">&nbsp;(ObjectConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">D3D12_GPU_VIRTUAL_ADDRESS objCBAddress =&nbsp;&nbsp;objectCB-&gt;GetGPUVirtualAddress();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Offset to the constants for this object in the buffer.</span></p>
+<p class="code"><span class="code">objCBAddress += ri-&gt;ObjCBIndex*objCBByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cmdList-&gt;SetGraphicsRootConstantBufferView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; 0, // root parameter index</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; objCBAddress);</span><a id="page298"/></p>
+<p class="h2" id="c7.6.4"><a href="toc.html#toc-7.6.4"><b>7.6.4 Root Constants</b></a></p>
+<p class="tx1">A descriptor table root parameter is further defined by filling out the <span class="code">Constants</span> member of <span class="code">D3D12_ROOT_PARAMETER</span>.</p>
+<p class="code"><span class="code">&nbsp;&nbsp;typedef struct D3D12_ROOT_CONSTANTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT ShaderRegister;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT RegisterSpace;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT Num32BitValues;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;} &nbsp;&nbsp;&nbsp;D3D12_ROOT_CONSTANTS;</span></p>
+<ol><li><span class="code">ShaderRegister</span>: See <span class="code">D3D12_ROOT_DESCRIPTOR::ShaderRegister</span>.</li>
+<li><span class="code">RegisterSpace</span>: See <span class="code">D3D12_DESCRIPTOR_RANGE::RegisterSpace</span>.</li>
+<li><span class="code">Num32BitValues</span>: The number of 32-bit constants this root parameter expects.</li></ol>
+<p class="tx1">Setting root constants still maps the data to a constant buffer from the shader&rsquo;s perspective. The following example illustrates:</p>
+<p class="code"><span class="code">// Application code: Root signature definition.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[1];</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsConstants(12, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0, nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Application code: to set the constants to register b0.</span></p>
+<p class="code"><span class="code">auto weights = CalcGaussWeights(2.5f);</span></p>
+<p class="code"><span class="code">int blurRadius = (int)weights.size() / 2;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cmdList-&gt;SetGraphicsRoot32BitConstants(0, 1, &amp;blurRadius, 0);</span></p>
+<p class="code"><span class="code">cmdList-&gt;SetGraphicsRoot32BitConstants(0, (UINT)weights.size(), weights.data(), 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// HLSL code.</span></p>
+<p class="code"><span class="code">cbuffer cbSettings : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// We cannot have an array entry in a constant buffer that gets</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// mapped onto root constants, so list each element.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;int gBlurRadius;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Support up to 11 blur weights.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w3;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w4;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w5;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w6;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w7;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w8;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w9;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float w10;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The <span class="code">ID3D12GraphicsCommandList::SetGraphicsRoot32BitConstants</span> method has the following prototype:<a id="page299"/></p>
+<p class="code"><span class="code">void ID3D12GraphicsCommandList::SetGraphicsRoot32BitConstants(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT RootParameterIndex,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT Num32BitValuesToSet,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const void *pSrcData,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT DestOffsetIn32BitValues);</span></p>
+<ol><li><span class="code">RootParameterIndex</span>: Index of the root parameter we are setting.</li>
+<li><span class="code">Num32BitValuesToSet</span>: The number of 32-bit values to set.</li>
+<li><span class="code">pSrcData</span>: Pointer to an array of 32-bit values to set.</li>
+<li><span class="code">DestOffsetIn32BitValues</span>: Offset in 32-bit values in the constant buffer.</li></ol>
+<p class="tx">As with root descriptors, setting root constants bypasses the need for a descriptor heap. </p>
+<p class="h2" id="c7.6.5"><a href="toc.html#toc-7.6.5"><b>7.6.5 A More Complicated Root Signature Example</b></a></p>
+<p class="tx1">Consider a shader that expects the following resources:</p>
+<p class="code"><span class="code">Texture2D gDiffuseMap : register(t0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbPerObject : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gWorld;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gTexTransform;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbPass : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gAmbientLight;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Light gLights[MaxLights];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">cbuffer cbMaterial : register(b2)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;gDiffuseAlbedo;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3&nbsp;&nbsp;gFresnelR0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;gRoughness;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gMatTransform;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">The root signature for this shader<a id="page300"/> would be described as follows:</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE texTable;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;texTable.Init(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_DESCRIPTOR_RANGE_TYPE_SRV,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;1, // number of descriptors</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;0); // register t0</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_PARAMETER slotRootParameter[4];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Perfomance TIP: Order from most frequent to least frequent.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[0].InitAsDescriptorTable(1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;texTable, D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[1].InitAsConstantBufferView(0); // register b0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[2].InitAsConstantBufferView(1); // register b1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;slotRootParameter[3].InitAsConstantBufferView(2); // register b2</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0, nullptr,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="h2" id="c7.6.6"><a href="toc.html#toc-7.6.6"><b>7.6.6 Root Parameter Versioning</b></a></p>
+<p class="tx1"><i>Root arguments</i> refer to the actual values we pass to root parameters. Consider the following code where we change the root arguments (only descriptor table in this case) between draw calls:</p>
+<p class="code"><span class="code">for(size_t i = 0; i &lt; mRitems.size(); ++i)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const auto&amp; ri = mRitems[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Offset to the CBV for this frame and this render item.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int cbvOffset = mCurrFrameResourceIndex*(int)mRitems.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvOffset += ri.CbIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cbvHandle.Offset(cbvOffset, mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Identify descriptors to use for this draw call.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootDescriptorTable(0, cbvHandle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ri.IndexCount, 1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ri.StartIndexLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ri.BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Each draw call will<a id="page301"/> be executed with the currently set state of the root arguments at the time of the draw call. This works because the hardware automatically saves a snapshot of the current state of the root arguments for each draw call. In other words, the root arguments are automatically versioned for each draw call.</p>
+<p class="tx">Note that a root signature can provide more fields than a shader uses. For example, if the root signature specifies a root CBV in root parameter 2, but the shader does not use that constant buffer, then this combination is valid as long as the root signature does specify all the resource the shader does use. </p>
+<p class="tx">For performance, we should aim to keep the root signature small. One reason for this is the automatic versioning of the root arguments per draw call. The larger the root signature, the larger these snapshots of the root arguments will be.  Additionally, the SDK documentation advises that root parameters should be ordered in the root signature from most frequently changed to least frequently changed. The Direct3D 12 documentation also advises to avoid switching the root signature when possible, so it is a good idea to share the same root signature across many PSOs you create. In particular, it may be beneficial to have a &ldquo;super&rdquo; root signature that works with several shader programs even though not all the shaders uses all the parameters the root signature defines. On the other hand, it also depends how big this &ldquo;super&rdquo; root signature has to be for this to work. If it is too big, it could cancel out the gains of not switching the root signature.</p>
+<p class="h1" id="c7.7"><a href="toc.html#toc-7.7"><b>7.7 LAND AND WAVES DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this section, we show how to build the &ldquo;Land and Waves&rdquo; demo shown in Figure <a href="ch07.html#fig7.7">7.7</a>. This demo constructs a triangle grid mesh procedurally and offsets the vertex heights to create a terrain. In addition, it uses another triangle grid to represent water, and animates the vertex heights to create waves. This demo also switches to using root descriptors for constant buffers, which allows us to drop support for a descriptor heap for CBVs. </p>
+
+<p class="caption"><img src="images/Fig7-7.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.7"><b><i>Figure 7.7.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Lands and Waves&rdquo; demo. Because we do not have lighting yet, it is difficult to see the shape of the waves. Hold the &lsquo;1&rsquo; key down to view the scene in wireframe mode to see the waves better.</p>
+
+<p class="tx">The graph of a<a id="page302"/> &ldquo;nice&rdquo; real-valued function <i>y</i> = <i>f</i>(<i>x</i>, <i>z</i>) is a surface. We can approximate the surface by constructing a grid in the <i>xz</i>-plane, where every quad is built from two triangles, and then applying the function to each grid point; see Figure <a href="ch07.html#fig7.8">7.8</a>.</p>
+
+<p class="caption"><img src="images/Fig7-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.8"><b><i>Figure 7.8.</i></b>&nbsp;&nbsp;(Top) Lay down a grid in the <i>xz</i>-plane. (Bottom) For each grid point, apply the function <i>f</i>(<i>x</i>, <i>z</i>) to obtain the <i>y</i>-coordinate. The plot of the points (<i>x</i>, <i>f</i>(<i>x</i>, <i>z</i>), <i>z</i>) gives the graph of a surface.</p>
+
+<p class="h2" id="c7.7.1"><a href="toc.html#toc-7.7.1"><b>7.7.1 Generating the Grid Vertices</b></a></p>
+<p class="tx1">So the main task is how to build the grid in the <i>xz</i>-plane. A grid of <i>m</i> &times; <i>n</i> vertices induces (<i>m</i> &ndash; 1) &times; (<i>n</i> &ndash; 1) quads (or cells), as shown in Figure <a href="ch07.html#fig7.9">7.9</a>. Each cell will be covered by two triangles, so there are a total of 2 (<i>m</i> &ndash; 1) &times; (<i>n</i> &ndash; 1) triangles. If the grid has width <i>w </i>and depth <i>d</i>, the cell spacing along the <i>x</i>-axis is <i>dx = w/(n &ndash; </i>1) and the cell spacing along the <i>z</i>-axis is <i>dz = d/(m </i>&minus; 1). To generate the vertices, we start at the upper-left corner and incrementally compute the vertex coordinates row-by-row. The coordinates of the <i>ij</i>th grid vertex in the <i>xz</i>-plane are given by:<a id="page303"/></p>
+
+<p class="eq"><img src="images/eq336-01.jpg" alt="image" width="100%"/></p>
+<p class="caption"><img src="images/Fig7-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.9"><b><i>Figure 7.9.</i></b>&nbsp;&nbsp;Grid construction.</p>
+
+
+<p class="tx1">The following code generates the grid vertices:</p>
+<p class="code"><span class="code">GeometryGenerator::MeshData&nbsp;</span></p>
+<p class="code"><span class="code">GeometryGenerator::CreateGrid(float width, float depth, uint32 m, uint32 n)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MeshData meshData;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 vertexCount = m*n;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 faceCount&nbsp;&nbsp;= (m-1)*(n-1)*2;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float halfWidth = 0.5f*width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float halfDepth = 0.5f*depth;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dx = width / (n-1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dz = depth / (m-1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float du = 1.0f / (n-1);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float dv = 1.0f / (m-1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Vertices.resize(vertexCount);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; m; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float z = halfDepth - i*dz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(uint32 j = 0; j &lt; n; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;float x = -halfWidth + j*dx;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].Position = XMFLOAT3(x, 0.0f, z);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].Normal&nbsp;&nbsp;= XMFLOAT3(0.0f, 1.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TangentU = XMFLOAT3(1.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Stretch texture over grid.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TexC.x = j*du;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Vertices[i*n+j].TexC.y = i*dv;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span><a id="page304"/></p>
+<p class="h2" id="c7.7.2"><a href="toc.html#toc-7.7.2"><b>7.7.2 Generating the Grid Indices</b></a></p>
+<p class="tx1">After we have computed the vertices, we need to define the grid triangles by specifying the indices. To do this, we iterate over each quad, again row-by-row starting at the top-left, and compute the indices to define the two triangles of the quad; referring to Figure <a href="ch07.html#fig7.10">7.10</a>, for an <i>m</i> &times; <i>n </i>vertex grid, the linear array indices of the two triangles are computed as follows:</p>
+<p class="eq"><img src="images/eq338-01.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/Fig7-10.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig7.10"><b><i>Figure 7.10.</i></b>&nbsp;&nbsp;The indices of the <i>ij</i>th quad&rsquo;s vertices.</p>
+
+<p class="tx">The corresponding code:<a id="page305"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;meshData.Indices32.resize(faceCount*3); // 3 indices per face</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Iterate over each quad and compute indices.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint32 k = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(uint32 i = 0; i &lt; m-1; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(uint32 j = 0; j &lt; n-1; ++j)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k]&nbsp;&nbsp;= i*n+j;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k+1] = i*n+j+1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k+2] = (i+1)*n+j;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k+3] = (i+1)*n+j;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k+4] = i*n+j+1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;meshData.Indices32[k+5] = (i+1)*n+j+1;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;k += 6; // next quad</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return meshData;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c7.7.3"><a href="toc.html#toc-7.7.3"><b>7.7.3 Applying the Height Function</b></a></p>
+<p class="tx1">After we have created the grid, we can extract the vertex elements we want from the <span class="code">MeshData</span> grid, turn the flat grid into a surface representing hills, and generate a color for each vertex based on the vertex altitude (<i>y</i>-coordinate). </p>
+<p class="code"><span class="code">// Not to be confused with GeometryGenerator::Vertex.</span></p>
+<p class="code"><span class="code">struct Vertex</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4 Color;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">void LandAndWavesApp::BuildLandGeometry()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator geoGen;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.0f, 160.0f, 50, 50);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Extract the vertex elements we are interested and apply the height</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// function to each vertex. In addition, color the vertices based on</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// their height so we have sandy looking beaches, grassy low hills,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// and snow mountain peaks.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;Vertex&gt; vertices(grid.Vertices.size());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; grid.Vertices.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto&amp; p = grid.Vertices[i].Position;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Pos = p;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Pos.y = GetHillsHeight(p.x, p.z);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Color the vertex based on its height.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(vertices[i].Pos.y &lt; -10.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Sandy beach color.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Color = XMFLOAT4(1.0f, 0.96f, 0.62f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;else if(vertices[i].Pos.y &lt; 5.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Light yellow-green.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Color = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;else if(vertices[i].Pos.y &lt; 12.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Dark yellow-green.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Color = XMFLOAT4(0.1f, 0.48f, 0.19f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;else if(vertices[i].Pos.y &lt; 20.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Dark brown.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Color = XMFLOAT4(0.45f, 0.39f, 0.34f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// White snow.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;vertices[i].Color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;std::uint16_t&gt; indices = grid.GetIndices16();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto geo = std::make_unique&lt;MeshGeometry&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;Name = "landGeo";</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(vbByteSize, &amp;geo-&gt;VertexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;VertexBufferCPU-&gt;GetBufferPointer(), vertices.data(), vbByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(ibByteSize, &amp;geo-&gt;IndexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;IndexBufferCPU-&gt;GetBufferPointer(), indices.data(), ibByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), vertices.data(), vbByteSize, geo-&gt;VertexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), indices.data(), ibByteSize,&nbsp;&nbsp;geo-&gt;IndexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexByteStride = sizeof(Vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferByteSize = vbByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexFormat = DXGI_FORMAT_R16_UINT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferByteSize = ibByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry submesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;submesh.IndexCount = (UINT)indices.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;submesh.StartIndexLocation = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;submesh.BaseVertexLocation = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["grid"] = submesh;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mGeometries["landGeo"] = std::move(geo);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The function <i>f</i>(<i>x</i>, <i>z</i>) we have used in this demo is given by:<a id="page307"/></p>
+<p class="code"><span class="code">float LandAndWavesApp::GetHeight(float x, float z)const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 0.3f*(z*sinf(0.1f*x) + x*cosf(0.1f*z));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Its graph looks like somewhat like a terrain with hills and valleys (see Figure <a href="ch07.html#fig7.7">7.7</a>). </p>
+<p class="h2" id="c7.7.4"><a href="toc.html#toc-7.7.4"><b>7.7.4 Root CBVs</b></a></p>
+<p class="tx1">Another change we make to the &ldquo;Land and Waves&rdquo; demo from the previous &ldquo;Shape&rdquo; demos is that we use root descriptors so that we can bind CBVs directly without having to use a descriptor heap. Here are the changes that need to be made to do this:</p>
+<ol><li>The root signature needs to be changed to take two root CBVs instead of two descriptor tables.  </li>
+<li>No CBV heap is needed nor needs to be populated with descriptors.</li>
+<li>There is new syntax for binding a root descriptor.</li></ol>
+<p class="tx1">The new root signature is defined like so:</p>
+<p class="code"><span class="code">// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Create root CBV.</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsConstantBufferView(0); // per-object CBV</span></p>
+<p class="code"><span class="code">slotRootParameter[1].InitAsConstantBufferView(1); // per-pass CBV</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(2, slotRootParameter, 0,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="tx1">Observe that we use the<a id="page308"/> <span class="code">InitAsConstantBufferView</span> helper method to create root CBV; the parameter specifies the shader register this parameter is bound to (in the above code, shader constant buffer register &ldquo;b0&rdquo; and &ldquo;b1&rdquo;).</p>
+<p class="tx">Now, we bind a CBV as an argument to a root descriptor using the following method:</p>
+<p class="code"><span class="code">void&nbsp;</span></p>
+<p class="code"><span class="code">ID3D12GraphicsCommandList::SetGraphicsRootConstantBufferView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT RootParameterIndex,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS BufferLocation);&nbsp;</span></p>
+<ol><li><span class="code">RootParameterIndex</span>: The index of the root parameter we are binding a CBV to.</li>
+<li><span class="code">BufferLocation</span>: The virtual address to the resource that contains the constant buffer data.</li></ol>
+<p class="tx1">With this change, our drawing code now looks like this:</p>
+<p class="code"><span class="code">void LandAndWavesApp::Draw(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bind per-pass constant buffer. We only need to do this once per-</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// pass.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootConstantBufferView(1, passCB-</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void LandAndWavesApp::DrawRenderItems(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;RenderItem*&gt;&amp; ritems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;(ObjectConstants));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto objectCB = mCurrFrameResource-&gt;ObjectCB-&gt;Resource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each render item&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; ritems.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto ri = ritems[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetVertexBuffers(0, 1, &amp;ri-&gt;Geo-&gt;VertexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetIndexBuffer(&amp;ri-&gt;Geo-&gt;IndexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetPrimitiveTopology(ri-&gt;PrimitiveType);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS objCBAddress =&nbsp;&nbsp;objectCB-&gt;GetGPUVirtualAddress();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;objCBAddress += ri-&gt;ObjCBIndex*objCBByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(0, objCBAddress);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount, 1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;StartIndexLocation, ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span><a id="page309"/></p>
+<p class="h2" id="c7.7.5"><a href="toc.html#toc-7.7.5"><b>7.7.5 Dynamic Vertex Buffers</b></a></p>
+<p class="tx1">So far we have stored our vertices in a default buffer resource. We use this kind of resource when we want to store static geometry. That is, geometry that we do not change&mdash;we set the data, and the GPU reads and draws the data. A dynamic vertex buffer is where we change the vertex data frequently, say per-frame. For example, suppose we are doing a wave simulation, and we solve the wave equation for the solution function <i>f</i>(<i>x</i>, <i>z</i>, <i>t</i>). This function represents the wave height at each point in the <i>xz</i>-plane at time <i>t</i>. If we were to use this function to draw the waves, we would use a triangle grid mesh like we did with the peaks and valleys, and apply <i>f</i>(<i>x</i>, <i>z</i>, <i>t</i>) to each grid point in order to obtain the wave heights at the grid points. Because this function also depends on time <i>t</i> (i.e., the wave surface changes with time), we would need to reapply this function to the grid points a short time later (say every 1/30th of a second) to get a smooth animation. Thus, we need a dynamic vertex buffer in order to update the heights of the triangle grid mesh vertices as time passes. Another situation that leads to dynamic vertex buffers is particle systems with complex physics and collision detection. Each frame we will do the physics and collision detection on the CPU to find the new position of the particles. Because the particle positions are changing each frame, we need a dynamic vertex buffer in order to update the particle positions for drawing each frame.</p>
+<p class="tx">We have already seen an example of uploading data from the CPU to the GPU per-frame when we used upload buffers to update our constant buffer data. We can apply the same technique and use our <span class="code">UploadBuffer</span> class, but instead of storing an array of constant buffers, we store an array of vertices:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;Vertex&gt;&gt; WavesVB = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;WavesVB = std::make_unique&lt;UploadBuffer&lt;Vertex&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;device, waveVertCount, false);</span></p>
+<p class="tx1">Because we need to upload the new contents from the CPU to the wave&rsquo;s dynamic vertex buffer every frame, the dynamic vertex buffer needs to be a frame resource. Otherwise we could overwrite the memory before the GPU has finished processing the last frame.  </p>
+<p class="tx">Every frame, we run the wave simulation and update<a id="page310"/> the vertex buffer like so:</p>
+<p class="code"><span class="code">void LandAndWavesApp::UpdateWaves(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Every quarter second, generate a random wave.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static float t_base = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if((mTimer.TotalTime() - t_base) &gt;= 0.25f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;t_base += 0.25f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int i = MathHelper::Rand(4, mWaves-&gt;RowCount() - 5);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int j = MathHelper::Rand(4, mWaves-&gt;ColumnCount() - 5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float r = MathHelper::RandF(0.2f, 0.5f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mWaves-&gt;Disturb(i, j, r);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Update the wave simulation.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mWaves-&gt;Update(gt.DeltaTime());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Update the wave vertex buffer with the new solution.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto currWavesVB = mCurrFrameResource-&gt;WavesVB.get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; mWaves-&gt;VertexCount(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Vertex v;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;v.Pos = mWaves-&gt;Position(i);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;v.Color = XMFLOAT4(DirectX::Colors::Blue);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;currWavesVB-&gt;CopyData(i, v);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Set the dynamic VB of the wave renderitem to the current frame VB.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mWavesRitem-&gt;Geo-&gt;VertexBufferGPU = currWavesVB-&gt;Resource();</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We save a reference to the wave render item (</i><span class="code">mWavesRitem</span><i>) so that we can set its vertex buffer on the fly. We need to do this because its vertex buffer is a dynamic buffer and changes every frame.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">There is some overhead when using dynamic buffers, as the new data must be transferred from CPU memory back up to GPU memory. Therefore, static buffers should be preferred to dynamic buffers, provided static buffers will work. Recent versions of Direct3D have introduced new features to lessen the need for dynamic buffers. For instance:</p>
+<ol><li>Simple animations may be done in a vertex shader.</li>
+<li>It is possible, through render to texture or compute shaders and vertex texture fetch functionality, to implement a wave simulation like the one described above that runs completely on the GPU.</li>
+<li>The geometry shader provides<a id="page311"/> the ability for the GPU to create or destroy primitives, a task that would normally need to be done on the CPU without a geometry shader. </li>
+<li>The tessellation stages can add tessellate geometry on the GPU, a task that would normally need to be done on the CPU without hardware tessellation. </li></ol>
+<p class="tx1">Index buffers can be dynamic, too. However, in the &ldquo;Land and Waves&rdquo; demo, the triangle topology remains constant and only the vertex heights change; therefore, only the vertex buffer needs to be dynamic.</p>
+<p class="tx">The &ldquo;Waves&rdquo; demo for this chapter uses a dynamic vertex buffer to implement a simple wave simulation like the one described at the beginning of this section. For this book, we are not concerned with the actual algorithm details for the wave simulation (see [Lengyel02] for that), but more with the process so as to illustrate dynamic buffers: update the simulation on CPU and then update the vertex data using an upload buffer.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We mention again that this demo could be implemented on the GPU using more advanced methods such as render to texture functionality or the compute shader, and vertex texture fetch. Because we have not covered these topics yet, we do the wave simulation on the CPU and update the new vertices using dynamic vertex buffers.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c7.8"><a href="toc.html#toc-7.8"><b>7.8 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Waiting for the GPU to finish executing all the commands in the queue every frame is inefficient because it causes both the CPU and GPU to idle at some point. A more efficient technique is to create <i>frame resources</i>&mdash;a circular array of the resources the CPU needs to modify each frame. This way, the CPU does not need to wait for the GPU to finish before moving on to the next frame; the CPU will just work with the next available (i.e., not in use by GPU) frame resource. If the CPU is always processing frames faster than the GPU, then eventually the CPU will have to wait at some point for the GPU to catch up, but this is the desired situation, as the GPU is being fully utilized; the extra CPU cycles can always be used for other parts of the game such as AI, physics, and game play logic. </li>
+<li>We can get a handle to the first descriptor in a heap with the <span class="code">ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart</span> method. We can get a descriptor size (depends on the hardware and descriptor type) with the <span class="code">ID3D12Device::GetDescriptorHandleIncrementSize(DescriptorHeapType type)</span> method. Once we know the descriptor<a id="page312"/> increment size, we can use one of the two <span class="code">CD3DX12_CPU_DESCRIPTOR_HANDLE::Offset</span> methods to offset the handle by <i>n</i> descriptors:
+<p class="code"><span class="code">// Specify the number of descriptors to offset times the descriptor</span></p>
+<p class="code"><span class="code">// increment size:</span></p>
+<p class="code"><span class="code">D3D12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap-&gt;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">handle.Offset(n * mCbvSrvDescriptorSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Or equivalently, specify the number of descriptors to offset,</span></p>
+<p class="code"><span class="code">// followed by the descriptor increment size:</span></p>
+<p class="code"><span class="code">D3D12_CPU_DESCRIPTOR_HANDLE handle = mCbvHeap-&gt;GetCPUDescriptorHandleForHeapStart();</span></p>
+<p class="code"><span class="code">handle.Offset(n, mCbvSrvDescriptorSize);</span></p>
+<p class="code"><span class="code">The CD3DX12_GPU_DESCRIPTOR_HANDLE type has the same Offset methods.</span></p></li>
+<li>A root signature defines what resources need to be bound to the pipeline before issuing a draw call and how those resources get mapped to shader input registers. What resources need to be bound depends on what resources the bound shader programs expect. When the PSO is created, the root signature and shader programs combination will be validated. A root signature is specified as an array of root parameters. A root parameter can be a descriptor table, root descriptor, or root constant. A descriptor table specifies a contiguous range of descriptors in a heap. A root descriptor is used to bind a descriptor directly in the root signature (it does not need to be in a heap). Root constants are used to bind constant values directly in the root signature. For performance, there is a limit of sixty-four DWORDs that can be put in a root signature. Descriptor tables cost one DWORD each, root descriptors cost two DWORDs each, and root constants cost one DWORD for each 32-bit constant. The hardware automatically saves a snapshot of the root arguments for each draw call. Thus we are safe to change root arguments per draw call, however, we should also try to keep the root signatures small so there is less memory to copy. </li>
+<li>Dynamic vertex buffers are used when the contents of a vertex buffer needs to be updated frequently at runtime (e.g., every frame or every 1/30th of a second). We can use an <span class="code">UploadBuffer</span> to implement dynamic vertex buffers, but instead of storing an array of constant buffers, we store an array of vertices. Because we need to upload the new contents from the CPU to the wave&rsquo;s dynamic vertex buffer every frame, the dynamic vertex buffer needs to be a frame resource. There is some overhead when using dynamic vertex buffers, as the new data must be transferred from CPU memory back up to GPU memory. Therefore, static vertex buffers should be preferred to dynamic vertex buffers, provided static vertex buffers will work. Recent versions of Direct3D have introduced new features to lessen the need for dynamic buffers. <a id="page313"/></li></ol>
+<p class="h1" id="c7.9"><a href="toc.html#toc-7.9"><b>7.9 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Modify the &ldquo;Shape&rdquo; demo to use <span class="code">GeometryGenerator::CreateGeosphere</span> instead of <span class="code">GeometryGenerator::CreateSphere.</span> Try with 0, 1, 2, and 3 subdivision levels.</li>
+<li>Modify the &ldquo;Shapes&rdquo; demo to use sixteen root constants to set the per-object world matrix instead of a descriptor table. </li>
+<li>On the DVD, there a file called Models/Skull.txt. This file contains the vertex and index lists needed to render the skull in Figure <a href="ch07.html#fig7.11">7.11</a>. Study the file using a text editor like notepad, and modify the &ldquo;Shapes&rdquo; demo to load and render the skull mesh.</li></ol>
+
+<p class="caption"><img src="images/Fig7-11.jpg" alt="image" width="40%"/></p>
+<p class="caption" id="fig7.11"><b><i>Figure 7.11.</i></b>&nbsp;&nbsp;Rendered output of Exercise 4.</p>
+</body>
+</html>

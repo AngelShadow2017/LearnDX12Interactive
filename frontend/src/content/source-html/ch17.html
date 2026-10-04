@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page583"/><a href="toc.html#toc-17" id="chap17">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">17</span></span><br/><br/><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-17"><b>P</b><span class="sc">ICKING</span><br/><br/><br/><br/><br/><br/><br/></a></p>
+</td></tr>
+</tbody></table>
+
+<p class="tx1">&nbsp;<br/><br/></p>
+
+<p class="tx1">In this chapter, we have the problem of determining the 3D object (or primitive) the user picked with the mouse cursor (see Figure <a href="ch17.html#fig17.1">17.1</a>). In other words, given the 2D screen coordinates of the mouse cursor, can we determine the 3D object that was projected onto that point? To solve this problem, in some sense, we must work backwards; that is to say, we typically transform from 3D space to screen space, but here we transform from screen space back to 3D space. Of course, we already have a slight problem: a 2D screen point does not correspond to a unique 3D point (i.e., more than one 3D point could be projected onto the same 2D projection window point&mdash;see Figure <a href="ch17.html#fig17.2">17.2</a>). Thus, there is some ambiguity in determining which object is really picked. However, this is not such a big problem, as the closest object to the camera is usually the one we want. </p>
+
+<p class="caption"><img src="images/Fig17-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.1"><b><i>Figure 17.1.</i></b>&nbsp;&nbsp;The user picking the dodecahedron.</p>
+<p class="caption"><img src="images/Fig17-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.2"><b><i>Figure 17.2.</i></b>&nbsp;&nbsp;A side view of the frustum. Observe that several points in 3D space can get projected onto a point on the projection window.</p>
+
+<p class="tx">Consider Figure <a href="ch17.html#fig17.3">17.3</a>, which shows the viewing frustum.<a id="page584"/> Here <b>p</b> is the point on the projection window that corresponds to the clicked screen point <b>s</b>. Now, we see that if we shoot a <i>picking ray</i>, originating at the eye position, through <b>p</b>, we will intersect the object whose projection surrounds <b>p</b>, namely the cylinder in this example. Therefore, our strategy is as follows: Once we compute the picking ray, we can iterate through each object in the scene and test if the ray intersects it. The object that the ray intersects is the object that was picked by the user. As mentioned, the ray may intersect several scene objects (or none at all&mdash;nothing was picked), if the objects are along the ray&rsquo;s path but with different depth values, for example. In this case, we can just take the intersected object nearest to the camera as the picked object.</p>
+<p class="caption"><img src="images/Fig17-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.3"><b><i>Figure 17.3.</i></b>&nbsp;&nbsp;A ray shooting through <b>p</b> will intersect the object whose projection surrounds <b>p</b>. Note that the projected point <b>p</b> on the projection window corresponds to the clicked screen point s.</p>
+
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn how to implement the picking algorithm and to understand how it works. We break picking down into the following four steps:
+<ol class="lc-alpha">
+<li>Given the clicked screen point <b>s</b>, find its corresponding point on the projection window and call it <b>p</b>.</li>
+<li>Compute the picking ray in view space. That is the ray originating at the origin, in view space, which shoots through <b>p</b>.</li>
+<li>Transform the picking ray and the models to be tested with the ray into the same space.</li>
+<li>Determine the object the picking ray intersects. The nearest (from the camera) intersected object corresponds to the picked screen object.<a id="page585"/></li></ol></li></ol>
+<p class="h1" id="c17.1"><a href="toc.html#toc-17.1"><b>17.1  SCREEN TO PROJECTION  WINDOW TRANSFORM</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The first task is to transform the clicked screen point to normalized device coordinates (see &#x00A7;5.4.3.3). Recall that the viewport matrix transforms vertices from normalized device coordinates to screen space; it is given below:</p>
+
+<p class="eq"><img src="images/eq619-01.jpg" alt="image" width="95%"/></p>
+<p class="tx1">The variables of the viewport matrix refer to those of the <span class="code">D3D12_VIEWPORT</span> structure:</p>
+<p class="code"><span class="code">typedef struct D3D12_VIEWPORT</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT TopLeftX;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT TopLeftY;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT Width;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT Height;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT MinDepth;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FLOAT MaxDepth;</span></p>
+<p class="code"><span class="code">} D3D12_VIEWPORT;</span></p>
+<p class="tx1">Generally, for a game, the viewport is the entire backbuffer and the depth buffer range is 0 to 1. Thus, <i>TopLeftX</i> = 0,<i> TopLeftY</i> = 0, <i>MinDepth </i>= 0, <i>MaxDepth </i>= 1, <i>Width </i>=<i> w</i>, and <i>Height</i> = <i>h</i>, where <i>w</i> and <i>h</i>, are the width and height of the backbuffer, respectively. Assuming this is indeed the case, the viewport matrix simplifies to:</p>
+
+<p class="eq"><img src="images/eq619-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Now let <b>p</b><i><sub>ndc</sub></i> = (<i>x</i><i><sub>ndc</sub></i>,<i> y</i><i><sub>ndc</sub></i>,<i> z</i><i><sub>ndc</sub></i>, 1) be a point in normalized device space (i.e., &minus;1 &#x2264; <i>x</i><i><sub>ndc</sub></i> &#x2264; 1, &minus;1 &#x2264; <i>y</i><i><sub>ndc</sub></i> &#x2264; 1, and 0 &#x2264; <i>z</i><i><sub>ndc</sub></i> &#x2264; 1). Transforming <b>p</b><i><sub>ndc</sub></i> to screen space yields:</p>
+
+<p class="eq"><img src="images/eq619-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The coordinate<a id="page586"/> <i>z</i><i><sub>ndc</sub></i> is just used by the depth buffer and we are not concerned with any depth coordinates for picking. The 2D screen point <b>p</b><i><sub>s</sub></i> = (<i>x</i><i><sub>s</sub>, y</i><i><sub>s</sub></i>) corresponding to <b>p</b><i><sub>ndc</sub></i> is just the transformed <i>x</i>- and <i>y</i>-coordinates:</p>
+
+<p class="eq"><img src="images/eq620-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The above equation gives us the screen point <b>p</b><i><sub>s</sub></i> in terms of the normalized device point <b>p</b><i><sub>ndc</sub></i> and the viewport dimensions. However, in our picking situation, we are initially given the screen point <b>p</b><i><sub>s</sub></i> and the viewport dimensions, and we want to find <b>p</b><i><sub>ndc</sub></i>. Solving the above equations for <b>p</b><i><sub>ndc</sub></i> yields:</p>
+
+<p class="eq"><img src="images/eq620-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">We now have the clicked point in NDC space. But to shoot the picking ray, we really want the screen point in view space. Recall from &#x00A7;5.6.3.3 that we mapped the projected point from view space to NDC space by dividing the x-coordinate by the aspect ratio r:</p>
+
+<p class="eq"><img src="images/eq620-05.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Thus, to get back to view space, we just need to multiply the <i>x</i>-coordinate in NDC space by the aspect ratio. The clicked point in view space is thus:</p>
+<p class="eq"><img src="images/eq620-03.jpg" alt="image" width="100%"/></p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The projected y-coordinate in view space is the same in NDC space. This is because we chose the height of the projection window in view space to cover the interval </i>[&minus;1, 1].</p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">Now recall from &#x00A7;5.6.3.1 that the projection window lies at a distance <img src="images/eq620-04.jpg" alt="image" width="70" height="30" style="margin-bottom:-0.5em;"/> from the origin, where &alpha; is the vertical field of view angle. So we could shoot the<a id="page587"/> picking ray through the point (<i>x</i><i><sub>v</sub></i>, <i>y</i><i><sub>v</sub></i>, <i>d </i>) on the projection window. However, this requires that we compute <img src="images/eq620-04.jpg" alt="image" width="70" height="30" style="margin-bottom:-0.5em;"/>. A simpler way is to observe from Figure <a href="ch17.html#fig17.4">17.4</a> that:</p>
+<p class="caption"><img src="images/Fig17-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.4"><b><i>Figure 17.4.</i></b>&nbsp;&nbsp;By similar triangles, <img src="images/eq621-01.jpg" alt="image" width="70" height="30" style="margin-bottom:-0.5em;"/> and <img src="images/eq621-02.jpg" alt="image" width="70" height="30" style="margin-bottom:-0.5em;"/>.</p>
+
+<p class="eq"><img src="images/eq621-04.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Recalling that <img src="images/eq621-05.jpg" alt="image" width="110" height="50" style="margin-bottom:-1.5em;"/> and <img src="images/eq621-06.jpg" alt="image" width="110" height="50" style="margin-bottom:-1.5em;"/> in the projection matrix, we can rewrite this as:</p>
+
+<p class="eq"><img src="images/eq621-07.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus, we can shoot our picking ray through the point (<i>x</i>&prime;<i><sub>v</sub></i>,<sub> </sub><i>y</i>&prime;<i><sub>v</sub></i>, 1) instead. Note that this yields the same picking ray as the one shot through the point (<i>x</i><i><sub>v</sub></i>,<sub> </sub><i>y</i><i><sub>v</sub></i>,<sub> </sub><i>d</i>). The code that computes the picking ray in view space is given below:</p>
+<p class="code"><span class="code">void PickingApp::Pick(int sx, int sy)</span></p>
+<p class="code">{</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4X4 P&nbsp;</span>=<span class="code">&nbsp;mCamera.GetProj4x4f();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute picking ray in view space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float vx&nbsp;</span>=<span class="code">&nbsp;(</span>+<span class="code">2.0f*sx / mClientWidth - 1.0f) / P(0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float vy&nbsp;</span>=<span class="code">&nbsp;(-2.0f*sy / mClientHeight&nbsp;</span>+<span class="code">&nbsp;1.0f) / P(1, 1);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Ray definition in view space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR rayOrigin&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR rayDir&nbsp;</span>=<span class="code">&nbsp;XMVectorSet(vx, vy, 1.0f, 0.0f);</span></p>
+<p class="tx1">Note that the ray originates<a id="page588"/> from the origin in view space since the eye sits at the origin in view space.</p>
+<p class="h1" id="c17.2"><a href="toc.html#toc-17.2"><b>17.2 WORLD/LOCAL SPACE PICKING RAY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">So far we have the picking ray in view space, but this is only useful if our objects are in view space as well. Because the view matrix transforms geometry from world space to view space, the inverse of the view matrix transforms geometry from view space to world space. If <b>r</b><i><sub>v</sub></i>(<i>t</i>) = <b>q</b> + <i>t</i><b>u</b> is the view space picking ray and <b>V </b>is the view matrix, then the world space picking ray is given by:</p>
+
+<p class="eq"><img src="images/eq622-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Note that the ray origin <b>q</b> is transformed as a point (i.e., <i>q</i><i><sub>w </sub></i>= 1) and the ray direction <b>u</b> is transformed as a vector (i.e., <i>u</i><i><sub>w</sub></i> = 0). </p>
+<p class="tx">A world space picking ray can be useful in some situations where you have some objects defined in world space. However, most of the time, the geometry of an object is defined relative to the object&rsquo;s own local space. Therefore, to perform the ray/object intersection test, we must transform the ray into the local space of the object. If <b>W</b> is the world matrix of an object, the matrix <b>W</b><sup>&minus;1</sup> transforms geometry from world space to the local space of the object. Thus the local space picking ray is:</p>
+
+<p class="eq"><img src="images/eq622-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Generally, each object in the scene has its own local space. Therefore, the ray must be transformed to the local space of each scene object to do the intersection test. </p>
+<p class="tx">One might suggest transforming the meshes to world space and doing the intersection test there. However, this is too expensive. A mesh may contain thousands of vertices, and all those vertices would need to be transformed to world space. It is much more efficient to just transform the ray to the local spaces of the objects. </p>
+<p class="tx">The following code shows how the picking ray is transformed from view space<a id="page589"/> to the local space of an object: </p>
+<p class="code"><span class="code">// Assume nothing is picked to start, so the picked render-item is invisible.</span></p>
+<p class="code"><span class="code">mPickedRitem-&gt;Visible&nbsp;</span>=<span class="code">&nbsp;false;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Check if we picked an opaque render item. A real app might keep a separate</span></p>
+<p class="code"><span class="code">// "picking list" of objects that can be selected.&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">for(auto ri : mRitemLayer[(int)RenderLayer::Opaque])</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto geo&nbsp;</span>=<span class="code">&nbsp;ri-&gt;Geo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Skip invisible render-items.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(ri-&gt;Visible&nbsp;</span>==<span class="code">&nbsp;false)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;continue;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX V&nbsp;</span>=<span class="code">&nbsp;mCamera.GetView();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX invView&nbsp;</span>=<span class="code">&nbsp;XMMatrixInverse(&amp;XMMatrixDeterminant(V), V);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX W&nbsp;</span>=<span class="code">&nbsp;XMLoadFloat4x4(&amp;ri-&gt;World);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX invWorld&nbsp;</span>=<span class="code">&nbsp;XMMatrixInverse(&amp;XMMatrixDeterminant(W), W);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Tranform ray to vi space of Mesh.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX toLocal&nbsp;</span>=<span class="code">&nbsp;XMMatrixMultiply(invView, invWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;rayOrigin&nbsp;</span>=<span class="code">&nbsp;XMVector3TransformCoord(rayOrigin, toLocal);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rayDir&nbsp;</span>=<span class="code">&nbsp;XMVector3TransformNormal(rayDir, toLocal);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Make the ray direction unit length for the intersection tests.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;rayDir&nbsp;</span>=<span class="code">&nbsp;XMVector3Normalize(rayDir);</span></p>
+<p class="tx1">The <span class="code">XMVector3TransformCoord</span> and <span class="code">XMVector3TransformNormal</span> functions take 3D vectors as parameters, but note that with the <span class="code">XMVector3TransformCoord</span> function there is an understood <i>w</i> = 1 for the fourth component. On the other hand, with the <span class="code">XMVector3TransformNormal</span> function there is an understood <i>w</i> = 0 for the fourth component. Thus we can use <span class="code">XMVector3TransformCoord</span> to transform points and we can use <span class="code">XMVector3TransformNormal</span> to transform vectors.</p>
+<p class="h1" id="c17.3"><a href="toc.html#toc-17.3"><b>17.3 RAY/MESH INTERSECTION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Once we have the picking ray and a mesh in the same space, we can perform the intersection test to see if the picking ray intersects the mesh. The following code iterates through each triangle in the mesh and does a ray/triangle intersection test. If the ray intersects one of the triangles, then it must have hit the mesh the triangle belongs to. Otherwise, the ray misses the mesh. Typically, we want the nearest triangle intersection, as it is possible for a ray to intersect several mesh triangles<a id="page590"/> if the triangles overlap with respect to the ray. </p>
+<p class="code"><span class="code">// If we hit the bounding box of the Mesh, then we might have&nbsp;</span></p>
+<p class="code"><span class="code">// picked a Mesh triangle, so do the ray/triangle tests.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// If we did not hit the bounding box, then it is impossible that we hit&nbsp;</span></p>
+<p class="code"><span class="code">// the Mesh, so do not waste effort doing ray/triangle tests.</span></p>
+<p class="code"><span class="code">float tmin&nbsp;</span>=<span class="code">&nbsp;0.0f;</span></p>
+<p class="code"><span class="code">if(ri-&gt;Bounds.Intersects(rayOrigin, rayDir, tmin))</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NOTE: For the demo, we know what to cast the vertex/index data to.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// If we were mixing formats, some metadata would be needed to figure</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// out what to cast it to.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto vertices&nbsp;</span>=<span class="code">&nbsp;(Vertex*)geo-&gt;VertexBufferCPU-&gt;GetBufferPointer();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto indices&nbsp;</span>=<span class="code">&nbsp;(std::uint32_t*)geo-&gt;IndexBufferCPU-&gt;GetBufferPointer();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT triCount&nbsp;</span>=<span class="code">&nbsp;ri-&gt;IndexCount / 3;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Find the nearest ray/triangle intersection.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;tmin&nbsp;</span>=<span class="code">&nbsp;MathHelper::Infinity;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i&nbsp;</span>=<span class="code">&nbsp;0; i &lt; triCount;&nbsp;</span>++<span class="code">i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Indices for this triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i0&nbsp;</span>=<span class="code">&nbsp;indices[i * 3&nbsp;</span>+<span class="code">&nbsp;0];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i1&nbsp;</span>=<span class="code">&nbsp;indices[i * 3&nbsp;</span>+<span class="code">&nbsp;1];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT i2&nbsp;</span>=<span class="code">&nbsp;indices[i * 3&nbsp;</span>+<span class="code">&nbsp;2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Vertices for this triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v0&nbsp;</span>=<span class="code">&nbsp;XMLoadFloat3(&amp;vertices[i0].Pos);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v1&nbsp;</span>=<span class="code">&nbsp;XMLoadFloat3(&amp;vertices[i1].Pos);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR v2&nbsp;</span>=<span class="code">&nbsp;XMLoadFloat3(&amp;vertices[i2].Pos);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// We have to iterate over all the triangles in order to find&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// the nearest intersection.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float t&nbsp;</span>=<span class="code">&nbsp;0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(TriangleTests::Intersects(rayOrigin, rayDir, v0, v1, v2, t))</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(t &lt; tmin)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// This is the new nearest picked triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;tmin&nbsp;</span>=<span class="code">&nbsp;t;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UINT pickedTriangle&nbsp;</span>=<span class="code">&nbsp;i;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Set a render item to the picked triangle so that</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// we can render it with a special "highlight" material.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;Visible&nbsp;</span>=<span class="code">&nbsp;true;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;IndexCount&nbsp;</span>=<span class="code">&nbsp;3;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;BaseVertexLocation&nbsp;</span>=<span class="code">&nbsp;0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Picked render item needs same world matrix as object picked.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;World&nbsp;</span>=<span class="code">&nbsp;ri-&gt;World;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;NumFramesDirty&nbsp;</span>=<span class="code">&nbsp;gNumFrameResources;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the picked triangle in the mesh index buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;StartIndexLocation&nbsp;</span>=<span class="code">&nbsp;3 * pickedTriangle;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Observe that for picking, we use the system memory copy of the mesh geometry stored in the <span class="code">MeshGeometry</span> class. This is because we cannot access a vertex/index buffer for reading that is going to be drawn by the GPU. It is common to store system memory copies<a id="page591"/> of geometry for things like picking and collision detection. Sometimes a simplified version of the mesh is stored for these purposes to save memory and computation.</p>
+<p class="h2" id="c17.3.1"><a href="toc.html#toc-17.3.1"><b>17.3.1 Ray/AABB Intersection</b></a></p>
+<p class="tx1">Observe that we first use the DirectX collision library function <span class="code">BoundingBox:: Intersects</span> to see if the ray intersects the bounding box of the mesh. This is analogous to the frustum culling optimization in the previous chapter. Performing a ray intersection test for every triangle in the scene adds up in computation time. Even for meshes not near the picking ray, we would still have to iterate over each triangle to conclude the ray misses the mesh; this is wasteful and inefficient. A popular strategy is to approximate the mesh with a simple bounding volume, like a sphere or box. Then, instead of intersecting the ray with the mesh, we first intersect the ray with the bounding volume. If the ray misses the bounding volume, then the ray necessarily misses the triangle mesh and so there is no need to do further calculations. If the ray intersects the bounding volume, then we do the more precise ray/mesh test. Assuming that the ray will miss most bounding volumes in the scene, this saves us many ray/triangle intersection tests. The <span class="code">BoundingBox::Intersects</span> function returns true if the ray intersects the box and false otherwise; it is prototyped as follows:</p>
+<p class="code"><span class="code">bool XM_CALLCONV&nbsp;</span></p>
+<p class="code"><span class="code">BoundingBox::Intersects(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Origin,&nbsp;&nbsp; // ray origin</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Direction, // ray direction (must be unit length)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&amp; Dist ); const // ray intersection parameter</span></p>
+<p class="tx1">Given the ray<span class="code">&nbsp;</span><b>r(</b><i>t) </i>= <b>q </b>+ <i>t</i><b>u</b>, the last parameter outputs the ray parameter <i>t</i><i><sub>0</sub></i> that yields the actual intersection point <b>p</b>:</p>
+
+<p class="eq"><img src="images/eq625-01.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="c17.3.2"><a href="toc.html#toc-17.3.2"><b>17.3.2 Ray/Sphere Intersection</b></a></p>
+<p class="tx1">There is also a ray/sphere intersection test given in the DirectX collision library:</p>
+<p class="code"><span class="code">bool XM_CALLCONV&nbsp;</span></p>
+<p class="code"><span class="code">BoundingSphere::Intersects(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Origin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Direction,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&amp; Dist ); const</span></p>
+<p class="tx1">To give a flavor of these tests, we show how to derive the ray/sphere intersection test. The points<span class="code">&nbsp;</span><b>p </b>on the surface of a sphere with center <b>c</b> and radius <i>r</i> satisfy the equation:</p>
+
+<p class="eq"><img src="images/eq625-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Let <b>r</b>(<i>t</i>) = <b>q</b> + <i>t</i><b>u</b> be a ray.<a id="page592"/> We wish to solve for <i>t</i><sub>1</sub> and <i>t</i><sub>2</sub> such that <b>r</b>(<i>t</i><sub>1</sub>) and <b>r</b>(<i>t</i><sub>2</sub>) satisfy the sphere equation (i.e., the parameters <i>t</i><sub>1</sub> and <i>t</i><sub>2</sub> along the ray that yields the intersection points). </p>
+
+<p class="eq"><img src="images/eq626-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If the ray direction is unit length, then <i>a</i> = <b>u &#x00B7; u</b> =1. If the solution has imaginary components, the ray misses the sphere. If the two real solutions are the same, the ray intersects a point tangent to the sphere. If the two real solutions are distinct, the ray pierces two points of the sphere. A negative solution indicates an intersection point &ldquo;behind&rdquo; the ray. The smallest positive solution gives the nearest intersection parameter. </p>
+<p class="h2" id="c17.3.3"><a href="toc.html#toc-17.3.3"><b>17.3.3 Ray/Triangle Intersection</b></a></p>
+<p class="tx1">For performing a ray/triangle intersection test, we use the DirectX collision library function <span class="code">TriangleTests::Intersects:</span></p>
+<p class="code"><span class="code">bool XM_CALLCONV&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">TriangleTests::Intersects(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Origin,&nbsp;&nbsp;// ray origin</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR Direction, // ray direction (unit length)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMVECTOR V0, // triangle vertex v0&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;GXMVECTOR V1, // triangle vertex v1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HXMVECTOR V2, // triangle vertex v2</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float&amp; Dist ); // ray intersection parameter</span></p>
+<p class="tx1">Let <b>r</b>(<i>t</i>) = <b>q</b> + <i>t</i><b>u</b> be a ray and <b>T</b>(<i>u</i>, <i>v</i>) = <b>v</b><sub>0</sub> + <i>u</i>(<b>v</b><sub>1</sub> &ndash; <b>v</b><sub>0</sub>) + <i>v</i>(<b>v</b><sub>2</sub> &ndash; <b>v</b><sub>0</sub>) for <i>u</i> &#x2265; 0, <i>v</i> &#x2265; 0,  <i>u </i>+ <i>v</i> &#x2264; 1 be a triangle (see Figure <a href="ch17.html#fig17.5">17.5</a>). We wish to simultaneously solve for <i>t</i>, <i>u</i>, <i>v </i>such that <b>r</b>(<i>t</i>) = <b>T</b>(<i>u</i>, <i>v</i>) (i.e., the point the ray and triangle intersect):<a id="page593"/></p>
+<p class="caption"><img src="images/Fig17-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.5"><b><i>Figure 17.5.</i></b>&nbsp;&nbsp;The point <b>p</b> in the plane of the triangle has coordinates (<i>u</i>, <i>v</i>) relative to the skewed coordinate system with origin <b>v</b><sub>0</sub> and axes <b>v</b><sub>1</sub> &minus; <b>v</b><sub>0</sub> and  <b>v</b><sub>2</sub> &minus; <b>v</b><sub>0</sub>.</p>
+
+<p class="tx"><img src="images/eq627-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">For notational convenience, let <b>e<sub>1</sub> = v<sub>1</sub> &minus; v<sub>0</sub></b>, <b>e<sub>2</sub> = v<sub>2</sub> &minus; v<sub>0</sub></b> and <b>m = q &minus; v<sub>0</sub></b></p>
+
+<p class="eq"><img src="images/eq627-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Consider the matrix equation <b>Ax</b> = <b>b</b>, where <b>A</b> is invertible. Then Cramer&rsquo;s Rule tells us that <i>x</i><i><sub>i</sub></i> = det <b>A</b><i><sub>i</sub></i>/det <b>A</b>, where <b>A</b><i><sub>i</sub></i> is found by swapping the <i>i</i>th column vector in <b>A</b> with <b>b</b>. Therefore,</p>
+
+<p class="eq"><img src="images/eq627-02.jpg" alt="image" width="100%"/></p>
+
+<p class="eq"><img src="images/eq628-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Using the fact that<a id="page594"/> <img src="images/eq628-02.jpg" alt="image" width="150" height="70" style="margin-bottom:-2.0em;"/> we can reformulate this as:</p>
+
+<p class="eq"><br/><br/><img src="images/eq628-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">To optimize the computations a bit, we can use the fact that every time we swap columns in a matrix, the sign of the determinant changes:</p>
+<p class="eq"><img src="images/eq628-04.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">And note the common cross products that can be reused in the calculations:  <b>m</b> &times; <b>e</b><sub>1</sub> and <b>u</b> &times; <b>e</b><sub>2</sub>.</p>
+<p class="h1" id="c17.4"><a href="toc.html#toc-17.4"><b>17.4 DEMO APPLICATION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The demo for this chapter renders a car mesh and allows the user to pick a triangle by pressing the right mouse button, and the selected triangle is rendered using a &ldquo;highlight&rdquo; material (see Figure <a href="ch17.html#fig17.6">17.6</a>). To render the triangle with a highlight, we need a render-item for it. Unlike the previous render-items in this book where we defined them at initialization time, this render-item can only be partially filled out at initialization time. This is because we do not yet know which triangle will be picked, and so we do not know the starting index location and world matrix. In addition, a triangle does not need to always be picked. Therefore, we have added a <span class="code">Visible</span> property to the render-item structure. An invisible render-item will not be drawn. The below code, which is part of the <span class="code">PickingApp::Pick</span> method, shows how we fill out the remaining render-item properties based on the selected triangle:<a id="page595"/></p>
+
+<p class="caption"><img src="images/Fig17-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig17.6"><b><i>Figure 17.6.</i></b>&nbsp;&nbsp;The picked triangle is highlighted green.</p>
+
+<p class="code"><span class="code">// Cache a pointer to the render-item of the picked&nbsp;</span></p>
+<p class="code"><span class="code">// triangle in the PickingApp class.</span></p>
+<p class="code"><span class="code">RenderItem* mPickedRitem;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">if(TriangleTests::Intersects(rayOrigin, rayDir, v0, v1, v2, t))</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(t &lt; tmin)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// This is the new nearest picked triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;tmin&nbsp;</span>=<span class="code">&nbsp;t;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT pickedTriangle&nbsp;</span>=<span class="code">&nbsp;i;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Set a render item to the picked triangle so that</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// we can render it with a special "highlight" material.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;Visible&nbsp;</span>=<span class="code">&nbsp;true;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;IndexCount&nbsp;</span>=<span class="code">&nbsp;3;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;BaseVertexLocation&nbsp;</span>=<span class="code">&nbsp;0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Picked render item needs same world matrix as object picked.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;World&nbsp;</span>=<span class="code">&nbsp;ri-&gt;World;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;NumFramesDirty&nbsp;</span>=<span class="code">&nbsp;gNumFrameResources;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Offset to the picked triangle in the mesh index buffer.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mPickedRitem-&gt;StartIndexLocation&nbsp;</span>=<span class="code">&nbsp;3 * pickedTriangle;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">This render-item is drawn after we draw our opaque render-items. It uses a special highlight PSO, which uses transparency blending and sets the depth test comparison function to <span class="code">D3D12_COMPARISON_FUNC_LESS_EQUAL</span>. This is needed because the picked triangle will be drawn twice, the second time with the highlighted material. The second time the triangle is drawn the depth test would fail if the comparison function was just <span class="code">D3D12_COMPARISON_FUNC_LESS</span>.</p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Opaque]);</span></p>
+<p class="code"><span class="code">mCommandList-&gt;SetPipelineState(mPSOs["highlight"].Get());</span></p>
+<p class="code"><span class="code">DrawRenderItems(mCommandList.Get(), mRitemLayer[(int)RenderLayer::Highlight]);</span><a id="page596"/></p>
+<p class="h1" id="c17.5"><a href="toc.html#toc-17.5"><b>17.5 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Picking is the technique used to determine the 3D object that corresponds to the 2D projected object displayed on the screen that the user clicked on with the mouse.</li>
+<li>The picking ray is found by shooting a ray, originating at the origin of the view space, through the point on the projection window that corresponds to the clicked screen point.</li>
+<li>We can transform a ray <b>r</b>(<i>t) </i>= <b>q</b> + <i>t</i><b>u</b> by transforming its origin q and direction <b>u</b> by a transformation matrix. Note that the origin is transformed as a point (<i>w </i>= 1) and the direction is treated as a vector (<i>w </i>= 0).</li>
+<li>To test if a ray has intersected an object, we perform a ray/triangle intersection test for every triangle in the object. If the ray intersects one of the triangles, then it must have hit the mesh the triangle belongs to. Otherwise, the ray misses the mesh. Typically, we want the nearest triangle intersection, as it is possible for a ray to intersect several mesh triangles if the triangles overlap with respect to the ray.</li>
+<li>A performance optimization for ray/mesh intersection tests is to first perform an intersection test between the ray and a bounding volume that approximates the mesh. If the ray misses the bounding volume, then the ray necessarily misses the triangle mesh and so there is no need to do further calculations. If the ray intersects the bounding volume, then we do the more precise ray/mesh test. Assuming that the ray will miss most bounding volumes in the scene, this saves us many ray/triangle intersection tests. </li></ol>
+<p class="h1" id="c17.6"><a href="toc.html#toc-17.6"><b>17.6 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Modify the &ldquo;Picking&rdquo; demo to use a bounding sphere for the mesh instead of an AABB. </li>
+<li>Research the algorithm for doing a ray/AABB intersection test.</li>
+<li>If you had thousands of objects in a scene, you would still have to do thousands of ray/bounding volume tests for picking. Research <i>octrees</i>, and explain how they can be used to reduce ray/bounding volume intersection tests. Incidentally, the same general strategy works for reducing frustum/bounding volume intersection tests for frustum culling. </li></ol>
+</body>
+</html>

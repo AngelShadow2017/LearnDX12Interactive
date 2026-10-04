@@ -1,0 +1,661 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page539"/><a href="toc.html#toc-15" id="chap15">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">15</span></span><br/><br/><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-15"><b>B</b><span class="sc">UILDING A </span> <b>F</b><span class="sc">IRST</span><br/><br/><b>P</b><span class="sc">ERSON</span> <b>C</b><span class="sc">AMERA</span>
+<br/><br/><span class="sc">AND</span> <b>D</b><span class="sc">YNAMIC</span><br/><br/> <b>I</b><span class="sc">NDEXING</span></a><br/><br/><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/></p>
+<p class="tx1">In this chapter, we cover two separate short topics. First, we design a camera system that behaves more as you would expect in a first person game. This camera system will replace the orbiting camera system we have been using thus far in the demos. Second, we introduce a new Direct3D fig12 technique called dynamic indexing (new to shader model 5.1), where we can dynamically index an array of texture objects <span class="code">(Texture2D gDiffuseMap[n])</span>. This is similar to how we indexed the special texture array object <span class="code">(Texture2DArray)</span> in Chapter <a href="ch12.html#chap12">12</a>, but unlike <span class="code">Texture2DArray</span> the textures in this array can be different sizes and formats, making it more flexible than <span class="code">Texture2DArrays</span>.</p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To review the mathematics of the view space transformation.</li>
+<li>To be able to identify the typical functionality of a first person camera.</li>
+<li>To learn how to implement a first person camera.</li>
+<li>To understand how to dynamically index into an array of textures.<a id="page540"/></li></ol>
+<p class="h1" id="c15.1"><a href="toc.html#toc-15.1"><b>15.1 VIEW TRANSFORM REVIEW</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">View space is the coordinate system attached to the camera as shown in Figure <a href="ch15.html#fig15.1">15.1</a>.  The camera sits at the origin looking down the positive <i>z</i>-axis, the <i>x</i>-axis aims to the right of the camera, and the <i>y</i>-axis aims above the camera. Instead of describing our scene vertices relative to the world space, it is convenient for later stages of the rendering pipeline to describe them relative to the camera coordinate system. The change of coordinate transformation from world space to view space is called the <i>view transform</i>, and the corresponding matrix is called the <i>view matrix. </i></p>
+
+<p class="caption"><img src="images/Fig15-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig15.1"><b><i>Figure 15.1.</i></b>&nbsp;&nbsp;The camera coordinate system. Relative to its own coordinate system, the camera sits at the origin looking down the positive <i>z-axis.</i></p>
+
+<p class="tx">If <b>Q</b><sub>W</sub> = (<i>Q</i><sub>x</sub>,<i> Q</i><sub>y</sub>,<i> Q</i><sub>z</sub>, 1)<i>, </i><b>u</b><sub>W</sub> = (<i>u</i><sub>x</sub>,<i> u</i><sub>y</sub>,<i> u</i><sub>z</sub>, 0), <b>v</b><sub>W</sub> = (<i>v</i><sub>x</sub><i>, v</i><sub>y</sub>, <i>v</i><sub>z</sub>, 0), and <b>w</b><sub>W</sub> = (<i>w</i><sub>x</sub>, <i>w</i><sub>y</sub>, <i>w</i><sub>z</sub>, 0) describe, respectively, the origin, <i>x-, y</i>-, and<i> z</i>-axes of view space with homogeneous coordinates relative to world space, then we know from &#x00A7;3.4.3 that the change of coordinate matrix from view space to world space is:</p>
+
+<p class="eq"><img src="images/eq574-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">However, this is not the transformation we want. We want the reverse transformation from world space to view space. But recall from &#x00A7;3.4.5 that reverse transformation is just given by the inverse. Thus <b>W</b><sup>&minus;1</sup> transforms from world space to view space.</p>
+<p class="tx">The world coordinate system and view coordinate system generally differ by position and orientation only, so it makes intuitive sense that <b>W</b> = <b>RT</b> (i.e., the world matrix can be decomposed into a rotation followed by a translation). This form makes the inverse easier to compute:</p>
+
+<p class="eq"><img src="images/eq574-02.jpg" alt="image" width="100%"/></p>
+
+<p class="eq"><img src="images/eq575-01.jpg" alt="image" width="100%"/></p>
+<p class="tx">So the view matrix has the form:<a id="page541"/></p>
+
+<p class="eq" id="eq15.1"><img src="images/eq575-02.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">As with all change-of-coordinate transformations, we are not moving anything in the scene. The coordinates change because we are using the camera space frame of reference instead of the world space frame of reference.</p>
+<p class="h1" id="c15.2"><a href="toc.html#toc-15.2"><b>15.2 THE CAMERA CLASS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">To encapsulate our camera related code, we define and implement a <span class="code">Camera</span> class. The data of the camera class stores two key pieces of information. The <i>position, right, up</i>, and look vectors of the camera defining, respectively, the origin, <i>x</i>-axis, <i>y</i>-axis, and <i>z</i>-axis of the view space coordinate system in world coordinates, and the properties of the frustum. You can think of the lens of the camera as defining the frustum (its field of view and near and far planes). Most of the methods are trivial (e.g., simple access methods). See the comments below for an overview of the methods and data members. We review selected methods in the next section.<a id="page542"/></p>
+<p class="code"><span class="code">class Camera</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Camera();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span>&tilde;<span class="code">Camera();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Get/Set world camera position.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMVECTOR GetPosition()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 GetPosition3f()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void SetPosition(float x, float y, float z);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void SetPosition(const DirectX::XMFLOAT3&amp; v);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Get camera basis vectors.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMVECTOR GetRight()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 GetRight3f()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMVECTOR GetUp()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 GetUp3f()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMVECTOR GetLook()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 GetLook3f()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Get frustum properties.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetNearZ()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetFarZ()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetAspect()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetFovY()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetFovX()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Get near and far plane dimensions in view space coordinates.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetNearWindowWidth()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetNearWindowHeight()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetFarWindowWidth()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float GetFarWindowHeight()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Set frustum.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void SetLens(float fovY, float aspect, float zn, float zf);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Define camera space via LookAt parameters.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void LookAt(DirectX::FXMVECTOR pos,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DirectX::FXMVECTOR target,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DirectX::FXMVECTOR worldUp);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void LookAt(const DirectX::XMFLOAT3&amp; pos,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT3&amp; target,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;const DirectX::XMFLOAT3&amp; up);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Get View/Proj matrices.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMMATRIX GetView()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMMATRIX GetProj()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT4X4 GetView4x4f()const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT4X4 GetProj4x4f()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Strafe/Walk the camera a distance d.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void Strafe(float d);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void Walk(float d);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Rotate the camera.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void Pitch(float angle);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void RotateY(float angle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// After modifying camera position/orientation, call to rebuild the view matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;void UpdateViewMatrix();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">private:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Camera coordinate system with coordinates relative to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 mPosition = { 0.0f, 0.0f, 0.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 mRight = { 1.0f, 0.0f, 0.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 mUp = { 0.0f, 1.0f, 0.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT3 mLook = { 0.0f, 0.0f, 1.0f };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Cache frustum properties.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mNearZ = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mFarZ = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mAspect = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mFovY = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mNearWindowHeight = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;float mFarWindowHeight = 0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;bool mViewDirty = true;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Cache View/Proj matrices.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT4X4 mView = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;DirectX::XMFLOAT4X4 mProj = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">};</span><a id="page543"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The Camera.h/Camera.cpp files are in the Common directory.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c15.3"><a href="toc.html#toc-15.3"><b>15.3 SELECTED METHOD IMPLEMENTATIONS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Many of the camera class methods are trivial get/set methods that we will omit here. However, we will review a few of the important ones in this section. </p>
+<p class="h2" id="c15.3.1"><a href="toc.html#toc-15.3.1"><b>15.3.1 </b><b><span class="code">XMVECTOR</span> Return Variations</b></a></p>
+<p class="tx1">First, we want to remark that we provide <span class="code">XMVECTOR</span> return variations for many of the &ldquo;get&rdquo; methods; this is just for convenience so that the client code does not need to convert if they need an <span class="code">XMVECTOR:</span></p>
+<p class="code"><span class="code">XMVECTOR Camera::GetPosition()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return XMLoadFloat3(&amp;mPosition);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMFLOAT3 Camera::GetPosition3f()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mPosition;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c15.3.2"><a href="toc.html#toc-15.3.2"><b>15.3.2 </b><b><span class="code">SetLens</span></b></a></p>
+<p class="tx1">We can think of the frustum as the lens of our camera, for it controls our view of view. We cache the frustum properties and build the projection matrix is the <span class="code">SetLens</span> method:</p>
+<p class="code"><span class="code">void Camera::SetLens(float fovY, float aspect, float zn, float zf)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// cache properties</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mFovY = fovY;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mAspect = aspect;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mNearZ = zn;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mFarZ = zf;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mNearWindowHeight = 2.0f * mNearZ * tanf( 0.5f*mFovY );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mFarWindowHeight = 2.0f * mFarZ * tanf( 0.5f*mFovY );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX P = XMMatrixPerspectiveFovLH(mFovY, mAspect, mNearZ, mFarZ);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat4x4(&amp;mProj, P);</span></p>
+<p class="code"><span class="code">}</span><a id="page544"/></p>
+<p class="h2" id="c15.3.3"><a href="toc.html#toc-15.3.3"><b>15.3.3 Derived Frustum Info</b></a></p>
+<p class="tx1">As we just saw, we cache the vertical field of view angle, but additionally provide a method that derives the horizontal field of view angle. Moreover, we provide methods to return the width and height of the frustum at the near and far planes, which are sometimes useful to know. The implementations of these methods are just trigonometry, and if you have trouble following the equations, then review &#x00A7;5.6.3:</p>
+<p class="code"><span class="code">float Camera::GetFovX()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float halfWidth = 0.5f*GetNearWindowWidth();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return 2.0f*atan(halfWidth / mNearZ);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float Camera::GetNearWindowWidth()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mAspect * mNearWindowHeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float Camera::GetNearWindowHeight()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mNearWindowHeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float Camera::GetFarWindowWidth()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mAspect * mFarWindowHeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float Camera::GetFarWindowHeight()const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return mFarWindowHeight;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h2" id="c15.3.4"><a href="toc.html#toc-15.3.4"><b>15.3.4 Transforming the Camera</b></a></p>
+<p class="tx1">For a first person camera, ignoring collision detection, we want to be able to:</p>
+<ol><li>Move the camera along its<a id="page545"/> look vector to move forwards and backwards. This can be implemented by translating the camera position along its look vector.</li>
+<li>Move the camera along its right vector to strafe right and left. This can be implemented by translating the camera position along its right vector.</li>
+<li>Rotate the camera around its right vector to look up and down. This can be implemented by rotating the camera&rsquo;s look and up vectors around its right vector using the <span class="code">XMMatrixRotationAxis function.</span></li>
+<li>Rotate the camera around the world&rsquo;s <i>y</i>-axis (assuming the <i>y</i>-axis corresponds to the world&rsquo;s &ldquo;up&rdquo; direction) vector to look right and left. This can be implemented by rotating all the basis vectors around the world&rsquo;s <i>y</i>-axis using the <span class="code">XMMatrixRotationY function.</span></li></ol>
+<p class="code"><span class="code">void Camera::Walk(float d)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// mPosition += d*mLook</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR s = XMVectorReplicate(d);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR l = XMLoadFloat3(&amp;mLook);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR p = XMLoadFloat3(&amp;mPosition);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mPosition, XMVectorMultiplyAdd(s, l, p));}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void Camera::Strafe(float d)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// mPosition += d*mRight</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR s = XMVectorReplicate(d);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR r = XMLoadFloat3(&amp;mRight);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR p = XMLoadFloat3(&amp;mPosition);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mPosition, XMVectorMultiplyAdd(s, r, p));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void Camera::Pitch(float angle)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Rotate up and look vector about the right vector.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX R = XMMatrixRotationAxis(XMLoadFloat3(&amp;mRight), angle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mUp,&nbsp;&nbsp;XMVector3TransformNormal(XMLoadFloat3(&amp;mUp), R));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mLook, XMVector3TransformNormal(XMLoadFloat3(&amp;mLook), R));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void Camera::RotateY(float angle)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Rotate the basis vectors about the world y-axis.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX R = XMMatrixRotationY(angle);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mRight,&nbsp;&nbsp;XMVector3TransformNormal(XMLoadFloat3(&amp;mRight), R));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mUp, XMVector3TransformNormal(XMLoadFloat3(&amp;mUp), R));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;mLook, XMVector3TransformNormal(XMLoadFloat3(&amp;mLook), R));</span></p>
+<p class="code"><span class="code">}</span><a id="page546"/></p>
+<p class="h2" id="c15.3.5"><a href="toc.html#toc-15.3.5"><b>15.3.5 Building the View Matrix</b></a></p>
+<p class="tx1">The first part of the <span class="code">UpdateViewMatrix&nbsp;</span>method<span class="code">&nbsp;</span><i>reorthonormalizes</i> the camera&rsquo;s right, up, and look vectors. That is to say, it makes sure they are mutually orthogonal to each other and unit length. This is necessary because after several rotations, numerical errors can accumulate and cause these vectors to become non-orthonormal. When this happens, the vectors no longer represent a rectangular coordinate system, but a skewed coordinate system, which is not what we want. The second part of this method just plugs the camera vectors into Equation <a href="ch15.html#eq15.1">15.1</a> to compute the view transformation matrix.</p>
+<p class="code"><span class="code">void Camera::UpdateViewMatrix()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(mViewDirty)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR R = XMLoadFloat3(&amp;mRight);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR U = XMLoadFloat3(&amp;mUp);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR L = XMLoadFloat3(&amp;mLook);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMVECTOR P = XMLoadFloat3(&amp;mPosition);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Keep camera&rsquo;s axes orthogonal to each other and of unit length.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;L = XMVector3Normalize(L);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;U = XMVector3Normalize(XMVector3Cross(L, R));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// U, L already ortho-normal, so no need to normalize cross product.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;R = XMVector3Cross(U, L);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Fill in the view matrix entries.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float x = -XMVectorGetX(XMVector3Dot(P, R));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float y = -XMVectorGetX(XMVector3Dot(P, U));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float z = -XMVectorGetX(XMVector3Dot(P, L));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;mRight, R);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;mUp, U);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat3(&amp;mLook, L);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(0, 0) = mRight.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(1, 0) = mRight.y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(2, 0) = mRight.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(3, 0) = x;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(0, 1) = mUp.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(1, 1) = mUp.y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(2, 1) = mUp.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(3, 1) = y;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(0, 2) = mLook.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(1, 2) = mLook.y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(2, 2) = mLook.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(3, 2) = z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(0, 3) = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(1, 3) = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(2, 3) = 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mView(3, 3) = 1.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mViewDirty = false;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span><a id="page547"/></p>
+<p class="h1" id="c15.4"><a href="toc.html#toc-15.4"><b>15.4 CAMERA DEMO COMMENTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We can now remove all the old variables from our application class that were related to the orbital camera system such as <span class="code">mPhi, mTheta, mRadius, mView, and mProj</span>. We will add a member variable:</p>
+<p class="code"><span class="code">Camera mCam;</span></p>
+<p class="tx1">When the window is resized, we know longer rebuild the projection matrix explicitly, and instead delegate the work to the <span class="code">Camera</span> class with <span class="code">SetLens:</span></p>
+<p class="code"><span class="code">void CameraApp::OnResize()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3DApp::OnResize();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCamera.SetLens(0.25f*MathHelper::Pi, AspectRatio(), 1.0f, 1000.0f);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">In the <span class="code">UpdateScene&nbsp;</span>method, we handle keyboard input to move the camera:</p>
+<p class="code"><span class="code">void CameraApp::UpdateScene(float dt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( GetAsyncKeyState(&lsquo;W&rsquo;) &amp; 0x8000 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCamera.Walk(10.0f*dt);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( GetAsyncKeyState(&lsquo;S&rsquo;) &amp; 0x8000 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCamera.Walk(-10.0f*dt);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( GetAsyncKeyState(&lsquo;A&rsquo;) &amp; 0x8000 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCamera.Strafe(-10.0f*dt);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( GetAsyncKeyState(&lsquo;D&rsquo;) &amp; 0x8000 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCamera.Strafe(10.0f*dt);</span></p>
+<p class="tx">In the <span class="code">OnMouseMove</span> method, we rotate the camera&rsquo;s look direction: </p>
+<p class="code"><span class="code">void CameraAndDynamicIndexingApp::OnMouseMove(WPARAM btnState, int x, int y)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( (btnState &amp; MK_LBUTTON) != 0 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Make each pixel correspond to a quarter of a degree.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float dx = XMConvertToRadians(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.25f*static_cast&lt;float&gt;(x - mLastMousePos.x));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float dy = XMConvertToRadians(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.25f*static_cast&lt;float&gt;(y - mLastMousePos.y));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;<b>mCamera.Pitch(dy);</b></span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;<b>mCamera.RotateY(dx);</b></span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mLastMousePos.x = x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mLastMousePos.y = y;</span></p>
+<p class="code"><span class="code">}</span><a id="page548"/></p>
+
+
+<p class="caption"><img src="images/Fig15-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig15.2"><b><i>Figure 15.2.</i></b>&nbsp;&nbsp;Screenshot of the camera demo. Use the &lsquo;W&rsquo;, &lsquo;S&rsquo;, &lsquo;A&rsquo;, and &lsquo;D&rsquo; keys to move forward, backward, strafe left, and strafe right, respectively. Hold the left mouse button down and move the mouse to &ldquo;look&rdquo; in different directions.</p>
+
+
+
+<p class="tx1">Finally, for rendering, the view and projection matrices can be accessed from the camera instance:</p>
+<p class="code"><span class="code">mCamera.UpdateViewMatrix();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMMATRIX view = mCamera.View();</span></p>
+<p class="code"><span class="code">XMMATRIX proj = mCamera.Proj();</span></p>
+<p class="h1" id="c15.5"><a href="toc.html#toc-15.5"><b>15.5 DYNAMIC INDEXING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The idea of dynamic indexing is relatively straightforward. We dynamically index into an array of resources in a shader program; in this demo, the resources will be an array of textures. The index can be specified in various ways:</p>
+<ol><li>The index can be an element in a constant buffer.</li>
+<li>The index can be a system ID like <span class="code">SV_PrimitiveID</span>, <span class="code">SV_VertexID</span>, <span class="code">SV_DispatchThreadID</span>, or <span class="code">SV_InstanceID</span>.</li>
+<li>The index can be the result of come calculation.</li>
+<li>The index can come from a texture.</li>
+<li>The index can come from a component of the vertex structure.</li></ol>
+<p class="tx1"><a id="page549"/>The following shader syntax declares a texture array of 4 elements and shows how we can index into the texture array where the index comes from a constant buffer:</p>
+<p class="code"><span class="code">cbuffer cbPerDrawIndex : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;int gDiffuseTexIndex;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Texture2D gDiffuseMap[4] : register(t0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 texValue = gDiffuseMap[gDiffuseTexIndex].Sample(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;gsamLinearWrap, pin.TexC);</span></p>
+<p class="tx1">For this demo, our goal is the following: we want to minimize the number of descriptors we set on a per render-item basis. Right now we set the object constant buffer, the material constant buffer, and the diffuse texture map SRV on a per render-item basis. Minimizing the number of descriptors we need to set will make our root signature smaller, which means less overhead per draw call; moreover, this technique of dynamic indexing will prove especially useful with instancing (the topic of the next chapter). Our strategy is as follows:</p>
+<ol><li>Create a structured buffer that stores all of the material data. That is, instead of storing our material data in constant buffers, we will store it in a structured buffer. A structured buffer can be indexed in a shader program. This structured buffer will be bound to the rendering pipeline once per frame making all materials visible to the shader programs. </li>
+<li>Add a <span class="code">MaterialIndex</span> field to our object constant buffer to specify the index of the material to use for this draw call. In our shader programs, we use this to index into the material structured buffer.</li>
+<li>Bind <i>all</i> of the texture SRV descriptors used in the scene once per frame, instead of binding one texture SRV per render-item.</li>
+<li>Add a <span class="code">DiffuseMapIndex</span> field to the material data that specifies the texture map associated with the material. We use this to index into the array of textures we bound to the pipeline in the previous step. </li></ol>
+<p class="tx1">With this setup, we only need to set a per object constant buffer for each render-item. Once we have that, we use the <span class="code">MaterialIndex</span> to fetch the material to use for the draw call, and from that we use the <span class="code">DiffuseMapIndex</span> to fetch the texture to use for the draw call. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Recall that a structured buffer is just an array of data of some type that can live in GPU memory and be accessed by shader programs. Because we still need to be able to update materials on the fly, we use an upload buffer rather than a default buffer. The material structured buffer replaces our material constant buffer in the frame resources class and is created like so:<a id="page550"/></i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">struct MaterialData</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT4 DiffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float Roughness = 64.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Used in texture mapping.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT DiffuseMapIndex = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MaterialPad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MaterialPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MaterialPad2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">MaterialBuffer = std::make_unique&lt;UploadBuffer&lt;MaterialData&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;device, materialCount, false);</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top">&nbsp;</td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Other than that, the code for the material structured buffer is not much different from the code with the material constant buffer.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">We update the root signature based on the new data the shader expects as input:</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE texTable;</span></p>
+<p class="code"><span class="code">texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[4];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Perfomance TIP: Order from most frequent to least frequent.</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsConstantBufferView(0);</span></p>
+<p class="code"><span class="code">slotRootParameter[1].InitAsConstantBufferView(1);</span></p>
+<p class="code"><span class="code">slotRootParameter[2].InitAsShaderResourceView(0, 1);</span></p>
+<p class="code"><span class="code">slotRootParameter[3].InitAsDescriptorTable(1, &amp;texTable, D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">auto staticSamplers = GetStaticSamplers();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;(UINT)staticSamplers.size(), staticSamplers.data(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="tx1">Now, before we draw any render-items, we can bind all of our materials and texture SRVs once per frame rather than per-render-item, and then each render-item just sets the object constant buffer:<a id="page551"/></p>
+     <p class="tx"><span class="code">void CameraAndDynamicIndexingApp::Draw(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootConstantBufferView(1, passCB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Bind all the materials used in this scene. For structured buffers,&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// we can bypass the heap and set as a root descriptor.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;auto matBuffer = mCurrFrameResource-&gt;MaterialBuffer-&gt;Resource();</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootShaderResourceView(2,&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;matBuffer-&gt;GetGPUVirtualAddress());</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Bind all the textures used in this scene. Observe</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// that we only have to specify the first descriptor in the table.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// The root signature knows how many descriptors are expected in the table.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootDescriptorTable(3,&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mOpaqueRitems);&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void CameraAndDynamicIndexingApp::DrawRenderItems(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;RenderItem*&gt;&amp; ritems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each render item&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; ritems.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto ri = ritems[i];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(0, objCBAddress);</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount, 1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;StartIndexLocation, ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">We note that the <span class="code">ObjectConstants</span> structure has been updated to have a <span class="code">MaterialIndex</span>. The value you set for this is the same index you would have used to offset into the material constant buffer:</p>
+<p class="code"><span class="code">// UpdateObjectCBs&hellip;&nbsp;</span></p>
+<p class="code"><span class="code">ObjectConstants objConstants;</span></p>
+<p class="code"><span class="code">XMStoreFloat4x4(&amp;objConstants.World, XMMatrixTranspose(world));</span></p>
+<p class="code"><span class="code">XMStoreFloat4x4(&amp;objConstants.TexTransform, XMMatrixTranspose(texTransform));</span></p>
+<p class="code"><b><span class="code">objConstants.MaterialIndex = e-&gt;Mat-&gt;MatCBIndex;</span></b></p>
+<p class="tx">The modified shader code demonstrating dynamic indexing is included below with relevant sections bolded:</p>
+<p class="code"><span class="code">// Include structures and functions for lighting.</span></p>
+<p class="code"><span class="code">#include &ldquo;LightingUtil.hlsl&rdquo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">struct MaterialData</span></b></p>
+<p class="code"><b><span class="code">{</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;DiffuseAlbedo;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float3&nbsp;&nbsp;FresnelR0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;Roughness;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 MatTransform;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; DiffuseMapIndex;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad1;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad2;</span></b></p>
+<p class="code"><b><span class="code">};</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">// An array of textures, which is only supported in shader model 5.1+. Unlike&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// Texture2DArray, the textures in this array can be different sizes and&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// formats, making it more flexible than texture arrays.</span></b></p>
+<p class="code"><b><span class="code">Texture2D gDiffuseMap[4] : register(t0);</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">// Put in space1, so the texture array does not overlap with these resources.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// The texture array will occupy registers t0, t1, &hellip;, t3 in space0.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">StructuredBuffer&lt;MaterialData&gt; gMaterialData : register(t0, space1);</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per frame.</span></p>
+<p class="code"><span class="code">cbuffer cbPerObject : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gWorld;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gTexTransform;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gMaterialIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint gObjPad2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per material.</span></p>
+<p class="code"><span class="code">cbuffer cbPass : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gAmbientLight;</span><a id="page553"/></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indices [0, NUM_DIR_LIGHTS) are directional lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// are spot lights for a maximum of MaxLights per object.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Light gLights[MaxLights];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosW = posW.xyz;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to use inverse-transpose</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// of world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, matData.MatTransform).xy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = matData.DiffuseAlbedo;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float3 fresnelR0 = matData.FresnelR0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float roughness = matData.Roughness;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint diffuseTexIndex = matData.DiffuseMapIndex;</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Dynamically look up the texture in the array.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;diffuseAlbedo *= gDiffuseMap[diffuseTexIndex].Sample(gsamLinearWrap, pin.TexC);</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolating normal can unnormalize it, so renormalize it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.NormalW = normalize(pin.NormalW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vector from point being lit to eye.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 toEyeW = normalize(gEyePosW - pin.PosW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Light terms.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ambient = gAmbientLight*diffuseAlbedo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Material mat = { diffuseAlbedo, fresnelR0, roughness };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 directLight = ComputeDirectLighting(gLights, mat, pin.PosW, pin.NormalW, toEyeW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 litColor = ambient + directLight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Common convention to take alpha from diffuse albedo.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;litColor.a = diffuseAlbedo.a;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return litColor;</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The above shader code demonstrated<a id="page554"/> writing an explicit register space:</i></p>
+<p class="code"><span class="code">StructuredBuffer&lt;MaterialData&gt; gMaterialData : register(t0, space1);</span></p>
+<br/><i>If you do not explicitly specify a space, it defaults to </i><span class="code">space0</span><i>. A space just gives you another dimension to specify a shader register and is used to prevent resource overlap. For example, we can put multiple resources in register t0 if they are in different spaces:</i>
+<p class="code"><span class="code">Texture2D gDiffuseMap : register(t0, space0);</span></p>
+<p class="code"><span class="code">Texture2D gNormalMap : register(t0, space1);</span></p>
+<p class="code"><span class="code">Texture2D gShadowMap : register(t0, space2);</span></p>
+<br/><i>They are often used when there are arrays of resources. For example, the following 4 element texture array occupies registers t0, t1, t2, and t3:</i>
+<p class="tx"><span class="code">Texture2D gDiffuseMap[4] : register(t0);</span></p>
+<br/><i>We could have counted and figured out that the next free register was t4, or we could just not worry about it and introduce a new space:</i>
+<p class="code"><span class="code">// Put in space1, so the texture array does not overlap with these</span></p>
+<p class="code"><span class="code">// resources.</span></p>
+<p class="code"><span class="code">// The texture array will occupy registers t0, t1, &hellip;, t3 in space0.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;StructuredBuffer&lt;MaterialData&gt; gMaterialData : register(t0, space1);</span></p>
+</td></tr>
+</tbody>
+</table>
+<p class="tx">To conclude this section, three additional<a id="page555"/> uses of dynamic indexing are given: </p>
+<ol><li>Merging nearby meshes with different textures into a single render-item so that they can be drawn with one draw call. The meshes could store the texture/material to use as an attribute in the vertex structure.</li>
+<li>Multitexturing in a single rendering-pass where the textures have different sizes and formats.</li>
+<li>Instancing render-items with different textures and materials using the <span class="code">SV_InstanceID</span> value as an index. We will see an example of this in the next chapter.</li></ol>
+<p class="h1" id="c15.6"><a href="toc.html#toc-15.6"><b>15.6 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>We define the camera coordinate system by specifying its position and orientation. The position is specified by a position vector relative to the world coordinate system, and the orientation is specified by three orthonormal vectors relative to the world coordinate system: a right, up, and look vector. Moving the camera amounts to moving the camera coordinate system relative to the world coordinate system. </li>
+<li>We included projection related quantities in the camera class, as the perspective projection matrix can be thought of as the &ldquo;lens&rdquo; of the camera by controlling the field of view, and near and far planes. </li>
+<li>Moving forward and backwards can be implemented simply by translating the camera position along its look vector. Strafing right and left can be implemented simply by translating the camera position along its right vector. Looking up and down can be achieved by rotating the camera&rsquo;s look and up vectors around its right vector. Looking left and right can be implemented by rotating all the basis vectors around the world&rsquo;s <i>y</i>-axis.</li>
+<li>Dynamic indexing is new to shader model 5.1 and and allows us to dynamically index an array of texture resources, where the textures in this array can be different sizes and formats. One application of this is to bind all of our texture descriptors once per frame, and then index into the texture array in the pixel shader to use the appropriate texture for a given pixel. <a id="page556"/></li></ol>
+<p class="h1" id="c15.7"><a href="toc.html#toc-15.7"><b>15.7 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Given the world space axes and origin in world coordinates: <b>i</b> = (1, 0, 0),  <b>j</b> = (0, 1, 0), <b>k</b> = (0, 0, 1) and <b>O</b> = (0, 0, 0), and the view space axes and origin in world coordinates: <b>u</b> = (<i>u</i><sub>x,</sub> <i>u</i><sub>y</sub>, <i>u</i><sub>z</sub>), <b>v</b> = (<i>v</i><sub>x</sub>, <i>v</i><sub>y</sub>, <i>v</i><sub>z</sub>), <b>w</b> = (<i>w</i><sub>x</sub>, <i>w</i><sub>y</sub>, <i>w</i><sub>z</sub>) and  <b>Q</b> = (<i>Q</i><sub>x</sub>, <i>Q</i><sub>y</sub>, <i>Q</i><sub>z</sub>), derive the view matrix form
+<p class="eq"><img src="images/eq590-01.jpg" alt="image" width="100%"/></p>
+<br/>using the dot product. (Remember, to find the change of coordinate matrix from world space to view space, you just need to describe the world space axes and origin with coordinates relative to view space. Then these coordinates become the rows of the view matrix.)</li>
+<li>Modify the camera demo to support &ldquo;roll.&rdquo; This is where the camera rotates around its look vector. This could be useful for an aircraft game.</li>
+<li>Suppose you have a scene with five boxes at different positions and each box has a different texture. Create a single mesh that stores the geometry for the five boxes at the different positions, and create a single render-item for the five boxes. Add an additional field to the vertex structure that is an index to the texture to use. For example, the vertices of box 0 will have a texture index of 0 so that box 0 is textured with texture 0, the vertices of box 1 will have a texture index of 1 so that box 1 is textured with texture 1, etc. Bind all five textures to the pipeline once per frame, and use the vertex structure index to select the texture to use in the pixel shader. Observe that we have drawn five boxes with five different textures with one draw call. If draw calls were a bottleneck in your application, merging nearby geometries into one render item like this could be an optimization for your application. </li></ol>
+</body>
+</html>

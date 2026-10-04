@@ -1,0 +1,634 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page513"/><a href="toc.html#toc-14" id="chap14">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">14</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-14"><b>T</b><span class="sc">HE</span><br/><br/><b>T</b><span class="sc">ESSELLATION</span><br/><br/><b>S</b><span class="sc">TAGES</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/><br/><br/><br/></p>
+
+
+<p class="tx1">The tessellation stages refer to three stages in the rendering pipeline involved in tessellating geometry. Simply put, tessellation refers to subdividing geometry into smaller triangles and then offsetting the newly generated vertices in some way. The motivation to increase the triangle count is to add detail to the mesh. But why not just create a detailed high-poly mesh to start with and be done? Below are three reasons for tessellation. </p>
+<ol><li>Dynamic LOD on the GPU. We can dynamically adjust the detail of a mesh based on its distance from the camera and other factors. For example, if a mesh is very far away, it would be wasteful to render a high-poly version of it, as we would not be able to see all that detail anyway. As the object gets closer to the camera, we can continuously increase tessellation to increase the detail of the object.</li>
+<li>Physics and animation efficiency. We can perform physics and animation calculations on the low-poly mesh, and then tessellate to the higher polygon version. This saves computation power by performing the physics and animation calculations at a lower frequency. </li>
+<li>Memory savings. We can store lower polygon meshes in memory (on disk, RAM, and VRAM), and then have the GPU tessellate to the higher polygon version on the fly. </li></ol>
+<p class="tx">Figure <a href="ch14.html#fig14.1">14.1</a> shows that the tessellation stages sit between<a id="page514"/> the vertex shader and geometry shader. These stages are optional, as we have not been using them in this book so far. </p>
+
+<p class="caption"><img src="images/Fig14-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.1"><b><i>Figure 14.1.</i></b>&nbsp;&nbsp;A subset of the rendering pipeline showing the tessellation stages.</p>
+
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To discover the patch primitive types used for tessellation.</li>
+<li>To obtain an understanding of what each tessellation stage does, and what the expected inputs and outputs are for each stage.</li>
+<li>To be able to tessellate geometry by writing hull and domain shader programs.</li>
+<li>To become familiar with different strategies for determining when to tessellate and to become familiar with performance considerations regarding hardware tessellation.</li>
+<li>To learn the mathematics of B&#x00E9;zier curves and surfaces and how to implement them in the tessellation stages.</li></ol>
+<p class="h1" id="c14.1"><a href="toc.html#toc-14.1"><b>14.1 TESSELLATION PRIMITIVE TYPES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">When we render for tessellation, we do not submit triangles to the IA stage. Instead, we submit <i>patches</i> with a number of <i>control points</i>. Direct3D supports patches with 1-32 control points, and these are described<a id="page515"/> by the following primitive types:</p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST = 33,</span></p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST = 34,</span></p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST = 35,</span></p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST = 36,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;.</span></p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST = 63,</span></p>
+<p class="code"><span class="code">&nbsp;D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST = 64,</span></p>
+<p class="tx1">A triangle can be thought of a triangle patch with three control points (<span class="code">D3D_PRIMITIVE_3_CONTROL_POINT_PATCH</span>), so you can still submit your usual triangle meshes to be tessellated. A simple quad patch can be submitted with four control points (<span class="code">D3D_PRIMITIVE_4_CONTROL_POINT_PATCH</span>). These patches are eventually tessellated into triangles by the tessellation stages.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>When passing control point primitive types to </i><span class="code">ID3D12GraphicsCommandList::IASetPrimitiveTopology</span><i>, you need to set the </i><span class="code">D3D12_GRAPHICS_PIPELINE_STATE_DESC::PrimitiveTopologyType</span><i> field to </i><span class="code">D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH</span><i>:</i></p>
+<p class="code"><span class="code">opaquePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;</span></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">So what about the patches with a higher number of control points? The idea of control points comes from the construction of certain kinds of mathematical curves and surfaces. If you have ever worked with B&#x00E9;zier curves in a drawing program like Adobe Illustrator, then you know that you mold the shape of the curve via control points. The mathematics of B&#x00E9;zier curves can be generalized to B&#x00E9;zier surfaces. For example, you can create a B&#x00E9;zier quad patch that uses nine control points to shape it or sixteen control points; increasing the number of control points gives you more degrees of freedom in shaping the patch. So the motivation for all these control type primitives is to provide support for these kinds of curved surfaces. We give an explanation and demo of B&#x00E9;zier quad patches in this chapter.</p>
+<p class="h2" id="c14.1.1"><a href="toc.html#toc-14.1.1"><b>14.1.1 Tessellation and the Vertex Shader</b></a></p>
+<p class="tx1">Because we submit patch control points to the rendering pipeline, the control points are what get pumped through the vertex shader. Thus, when tessellation is enabled, the vertex shader is really a &ldquo;vertex shader for control points,&rdquo; and we can do any control point work we need before tessellation starts. Typically, animation or physics calculations are done in the vertex shader at the lower frequency before the geometry is tessellated.<a id="page516"/> </p>
+<p class="h1" id="c14.2"><a href="toc.html#toc-14.2"><b>14.2 THE HULL SHADER</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In the following subsections, we explore the hull shader, which actually consists of two shaders:</p>
+<ol><li>Constant Hull Shader </li>
+<li>Control Point Hull Shader</li></ol>
+<p class="h2" id="c14.2.1"><a href="toc.html#toc-14.2.1"><b>14.2.1 Constant Hull Shader</b></a></p>
+<p class="tx1">This <i>constant hull shader</i> is evaluated per patch, and is tasked with outputting the so-called <i>tessellation factors</i> of the mesh. The tessellation factors instruct the tessellation stage how much to tessellate the patch. Here is an example of a <i>quad patch</i> with four control points, where we tessellate it uniformly three times.</p>
+<p class="code"><span class="code">struct PatchTess</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float EdgeTess[4]&nbsp;&nbsp;: SV_TessFactor;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float InsideTess[2] : SV_InsideTessFactor;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Additional info you want associated per patch.&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">PatchTess ConstantHS(InputPatch&lt;VertexOut, 4&gt; patch,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; uint patchID : SV_PrimitiveID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;PatchTess pt;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Uniformly tessellate the patch 3 times.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[0] = 3; // Left edge</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[1] = 3; // Top edge</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[2] = 3; // Right edge</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[3] = 3; // Bottom edge</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.InsideTess[0] = 3; // u-axis (columns)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.InsideTess[1] = 3; // v-axis (rows)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return pt;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The constant hull shader inputs all the control points of the patch, which is defined by the type <span class="code">InputPatch&lt;VertexOut, 4&gt;</span>. Recall that the control points are first pumped through the vertex shader, so their type is determined by the output type of the vertex shader <span class="code">VertexOut</span>. In this example, our patch has four control points, so we specify 4 for the second template parameter of <span class="code">InputPatch</span>. The system also provides a patch ID value via the <span class="code">SV_PrimitiveID</span> semantic that can be used if needed; the ID uniquely identifies the patches in a draw call. The constant<a id="page517"/> hull shader must output the tessellation factors; the tessellation factors depend on the topology of the patch.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Besides the tessellation factors (</i><span class="code">SV_TessFactor</span><i> and </i><span class="code">SV_InsideTessFactor</span><i>), you can output other patch information from the constant hull shader. The domain shader receives the output from the constant hull shader as input, and could make use of this extra patch information.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx">Tessellating a quad patch consists of two parts:</p>
+<ol><li>Four edge tessellation factors control how much to tessellate along each edge. </li>
+<li>Two interior tessellation factors indicate how to tessellate the quad patch (one tessellation factor for the horizontal dimension of the quad, and one tessellation factor for the vertical dimension of the quad).</li></ol>
+<p class="tx1">Figure <a href="ch14.html#fig14.2">14.2</a> shows examples of different quad patch configurations we can get when the tessellation factors are not the same. Study these figures until you are comfortable with how the edge and interior tessellation factors work.</p>
+<p class="tx">Tessellating a <i>triangle patch</i> also consists of two parts:</p>
+<ol><li>Three edge tessellation factors control how much to tessellate along each edge. </li>
+<li>One interior tessellation factor indicates how much to tessellate the triangle patch. </li></ol>
+<p class="tx1">Figure <a href="ch14.html#fig14.3">14.3</a> shows examples of different triangle patch configurations we can get when the tessellation factors are not the same.  </p>
+
+<p class="tx">The maximum tessellation factor supported by Direct3D 11 hardware is 64. If all the tessellation factors are zero, the patch is rejected from further processing. This allows us to implement optimizations such as frustum culling and backface culling on a per patch basis. </p>
+<ol><li>If a patch is not visible by the frustum, then we can reject the patch from further processing (if we did tessellate it, the tessellated triangles would be rejected during triangle clipping). </li>
+<li>If a patch is backfacing, then we can reject the patch from further processing (if we did tessellate it, the tessellated triangles would be rejected in the backface culling part of rasterization). </li></ol>
+<p class="tx1">A natural question to ask is how much should you tessellate. So remember that the basic idea of tessellation is to add detail to your meshes. However, we do not want to unnecessarily add details if they cannot be appreciated by the user. The following are some common metrics used to determine the amount to tessellate:<a id="page518"/></p>
+<ol><li><b>Distance from the camera: </b>The further an object is from the eye, the less we will notice fine details; therefore, we can render a low-poly version of the object when it is far away, and tessellate more as it gets closer to the eye.</li>
+<li><b>Screen area coverage: </b>We can estimate the number of pixels an object covers on the screen. If this number is small, then we can render a low-poly version of the object. As its screen area coverage increases, we can tessellate more. </li>
+<li><b>Orientation:</b> The orientation of the triangle with respect to the eye is taken into consideration with the idea that triangles along silhouette edges will be more refined than other triangles. </li>
+<li><b>Roughness:</b> Rough surfaces with lots of details will need more tessellation than smooth surfaces. A roughness value can be precomputed by examining the surface textures, which can be used to decide how much to tessellate.</li></ol>
+<p class="tx1">[Story10] gives the following performance advice:</p>
+<ol><li>If the tessellation factors are 1 (which basically means we are not really tessellating), consider rendering the patch without tessellation, as we will be wasting GPU overhead going through the tessellation stages when they are not doing anything.</li>
+<li>For performance reasons related to GPU implementations, do not tessellate such that the triangles are so small they cover less than eight pixels. </li>
+<li>Batch draw calls that use tessellation (i.e., turning tessellation on and off between draw calls is expensive).  </li></ol>
+<p class="h2" id="c14.2.2"><a href="toc.html#toc-14.2.2"><b>14.2.2 Control Point Hull Shader</b></a></p>
+<p class="tx1">The control point hull shader inputs a number of control points and outputs a number of control points. The control point hull shader is invoked once per control point output. One application of the hull shader is to change surface representations, say from an ordinary triangle (submitted to the pipeline with three control points) to a cubic B&#x00E9;zier triangle patch (a patch with ten control points). For example, suppose your mesh is modeled as usual by triangles (three control points); you can use the hull shader to augment the triangle to a higher order cubic B&#x00E9;zier triangle patch with 10 control points, then detail can be added with the additional control points and the triangle patch tessellated to the desired amount. This strategy is the so-called <i>N-patches scheme or PN triangles</i> scheme [Vlachos01]; it is convenient because it uses tessellation to improve existing triangle meshes with no modification to the art pipeline. For our first demo, it will be a simple <i>pass-through</i> shader, where we just pass the control point through unmodified.<a id="page519"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Drivers can detect and optimize pass-through shaders [Bilodeau10b].</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">struct HullOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL : POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[domain("quad")]</span></p>
+<p class="code"><span class="code">[partitioning("integer")]</span></p>
+<p class="code"><span class="code">[outputtopology("triangle_cw")]</span></p>
+<p class="code"><span class="code">[outputcontrolpoints(4)]</span></p>
+<p class="code"><span class="code">[patchconstantfunc("ConstantHS")]</span></p>
+<p class="code"><span class="code">[maxtessfactor(64.0f)]</span></p>
+<p class="code"><span class="code">HullOut HS(InputPatch&lt;VertexOut, 4&gt; p,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint i : SV_OutputControlPointID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint patchId : SV_PrimitiveID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HullOut hout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;hout.PosL = p[i].PosL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return hout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The hull shader inputs all of the control points of the patch via the <span class="code">InputPatch</span> parameter. The system value <span class="code">SV_OutputControlPointID</span> gives an index identifying the output control point the hull shader is working on. Note that the input patch control point count does <i>not</i> need to match the output control point count; for example, the input patch could have 4 control points and the output patch could have sixteen control points; the additional control points could be derived from the four input control points.</p>
+<p class="tx">The control point hull shader introduces a number of attributes:</p>
+<ol><li><span class="code">domain</span>: The patch type. Valid arguments are <span class="code">tri</span>, <span class="code">quad</span>, or <span class="code">isoline</span>.</li>
+<li><span class="code">partitioning</span>: Specifies the subdivision mode of the tessellation. 
+<ol class="lc-alpha">
+<li><span class="code">integer</span>: New vertices are added/removed only at integer tessellation factor values. The fractional part of a tessellation factor is ignored. This creates a noticeable &ldquo;popping&rdquo; when a mesh changes is tessellation level. </li>
+<li>Fractional tessellation (<span class="code">fractional_even/fractional_odd):&nbsp;</span>New vertices are added/removed at integer tessellation factor values, but &ldquo;slide&rdquo; in gradually based on the fractional part of the tessellation factor. This is useful when you want to smoothly transition from a coarser version of the mesh to a finer version through tessellation, rather than abruptly at integer steps. The difference between integer and fractional tessellation is best understood by an animation, so the exercises at the end of this chapter will have you experiment to see the difference first hand. </li></ol></li>
+<li><span class="code">outputtopology</span>: The winding order of the triangles created via subdivision.
+<ol class="lc-alpha">
+<li><span class="code">triangle_cw:</span> clockwise winding order.<a id="page520"/></li>
+<li><span class="code">triangle_ccw:</span> counterclockwise winding order.</li>
+<li><span class="code">line:</span> For line tessellation.</li></ol></li>
+<li><span class="code">outputcontrolpoints</span>: The number of times the hull shader executes, outputting one control point each time. The system value <span class="code">SV_OutputControlPointID</span> gives an index identifying the output control point the hull shader is working on.</li>
+<li><span class="code">patchconstantfunc</span>: A string specifying the constant hull shader function name.</li>
+<li><span class="code">maxtessfactor</span>: A hint to the driver specifying the maximum tessellation factor your shader uses. This can potentially enable optimizations by the hardware if it knows this upper bound, as it will know how much resources are needed for the tessellation. The maximum tessellation factor supported by Direct3D 11 hardware is 64. </li></ol>
+<p class="h1" id="c14.3"><a href="toc.html#toc-14.3"><b>14.3 THE TESSELLATION STAGE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">As programmers, we do not have control of the tessellation stage. This stage is all done by the hardware, and tessellates the patches based on the tessellation factors<a id="page521"/> output from the constant hull shader program. The following figures illustrate different subdivisions based on the tessellation factors.</p>
+<p class="h2" id="c14.3.1"><a href="toc.html#toc-14.3.1"><b>14.3.1 Quad Patch Tessellation Examples</b></a></p>
+<p class="caption"><img src="images/Fig14-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.2"><b><i>Figure 14.2.</i></b>&nbsp;&nbsp;Quad subdivisions based on edge and interior tessellation factors.</p>
+<p class="h2" id="c14.3.2"><a href="toc.html#toc-14.3.2"><b>14.3.2 Triangle Patch Tessellation Examples</b></a></p>
+
+<p class="caption"><img src="images/Fig14-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.3"><b><i>Figure 14.3.</i></b>&nbsp;&nbsp;Triangle subdivisions based on edge and interior tessellation factors.</p>
+
+<p class="h1" id="c14.4"><a href="toc.html#toc-14.4"><b>14.4 THE DOMAIN SHADER</b></a></p>
+
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The tessellation stage outputs all of our newly created vertices and triangles. The domain shader is invoked for each vertex created by the tessellation stage. With tessellation enabled, whereas the vertex shader acts as a vertex shader for each control point, the hull shader is essentially the vertex shader for the tessellated patch. In particular, it is here that we project the vertices of the tessellated patch to homogeneous clip space. </p>
+<p class="tx">For a quad patch, the domain shader inputs the tessellation factors (and any other per patch information you output from the constant hull shader), the parametric (<i>u</i>, <i>v</i>) coordinates of the tessellated vertex positions, and all the patch control points output from the control point hull shader. Note that the domain shader does not give you the actual tessellated vertex positions; instead it gives you the parametric (<i>u</i>, <i>v</i>) coordinates (Figure <a href="ch14.html#fig14.4">14.4</a>) of these points in the patch domain space. It is up to you to use these parametric coordinates and the control points to derive the actual 3D vertex positions; in the code below, we do this via bilinear interpolation (which works just like texture linear filtering). <a id="page522"/></p>
+
+<p class="caption"><img src="images/Fig14-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.4"><b><i>Figure 14.4.</i></b>&nbsp;&nbsp;The tessellation of a quad patch with 4 control points generating 16 vertices in the normalized <i>uv-space</i>, with coordinates in [0, 1]<sup>2</sup>.</p>
+
+<p class="code"><span class="code">struct DomainOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH : SV_POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// The domain shader is called for every vertex created by the tessellator.&nbsp;</span></p>
+<p class="code"><span class="code">// It is like the vertex shader after tessellation.</span></p>
+<p class="code"><span class="code">[domain("quad")]</span></p>
+<p class="code"><span class="code">DomainOut DS(PatchTess patchTess,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; float2 uv : SV_DomainLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; const OutputPatch&lt;HullOut, 4&gt; quad)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DomainOut dout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bilinear interpolation.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v1 = lerp(quad[0].PosL, quad[1].PosL, uv.x);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v2 = lerp(quad[2].PosL, quad[3].PosL, uv.x);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 p = lerp(v1, v2, uv.y);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(p, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return dout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>As shown in Figure <a href="ch14.html#fig14.4">14.4</a>, the ordering of the quad patch control points is row-by-row.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">The domain shader for a triangle patch is similar, except that instead of the parametric (<i>u</i>, <i>v</i>) values being input, the <span class="code">float3</span> barycentric (<i>u</i>, <i>v</i>, <i>w</i>) coordinates of the vertex are input (see &#x00A7;C.3) for an explanation of barycentric coordinates. The reason for outputting barycentric coordinates for triangle patches is probably due to the fact that B&#x00E9;zier triangle patches are defined in terms of barycentric coordinates.</p>
+<p class="h1" id="c14.5"><a href="toc.html#toc-14.5"><b>14.5 TESSELLATING A QUAD</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">For our one of the demos in this chapter, we submit a quad patch to the rendering pipeline, tessellate it based on the distance from the camera, and displace the generated vertices by a<a id="page523"/> mathematic function that is similar to the one we have been using for this &ldquo;hills&rdquo; in our past demos.  </p>
+<p class="tx">Our vertex buffer storing the four control points is created like so:</p>
+<p class="code"><span class="code">void BasicTessellationApp::BuildQuadPatchGeometry()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::array&lt;XMFLOAT3,4&gt; vertices =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-10.0f, 0.0f, +10.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+10.0f, 0.0f, +10.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-10.0f, 0.0f, -10.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+10.0f, 0.0f, -10.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::array&lt;std::int16_t, 4&gt; indices = { 0, 1, 2, 3 };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto geo = std::make_unique&lt;MeshGeometry&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;Name = "quadpatchGeo";</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(vbByteSize, &amp;geo-&gt;VertexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;VertexBufferCPU-&gt;GetBufferPointer(), vertices.data(), vbByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(ibByteSize, &amp;geo-&gt;IndexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;IndexBufferCPU-&gt;GetBufferPointer(), indices.data(), ibByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), vertices.data(), vbByteSize,&nbsp;&nbsp;geo-&gt;VertexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), indices.data(), ibByteSize,&nbsp;&nbsp;geo-&gt;IndexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexByteStride = sizeof(XMFLOAT3);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferByteSize = vbByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexFormat = DXGI_FORMAT_R16_UINT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferByteSize = ibByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry quadSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.IndexCount = 4;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.StartIndexLocation = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.BaseVertexLocation = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["quadpatch"] = quadSubmesh;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mGeometries[geo-&gt;Name] = std::move(geo);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Our render-item for the<a id="page524"/> quad patch is created as follows:</p>
+<p class="code"><span class="code">void BasicTessellationApp::BuildRenderItems()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto quadPatchRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;World = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;TexTransform = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;ObjCBIndex = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;Mat = mMaterials["whiteMat"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;Geo = mGeometries["quadpatchGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;IndexCount = quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].BaseVertexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mRitemLayer[(int)RenderLayer::Opaque].push_back(quadPatchRitem.get());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mAllRitems.push_back(std::move(quadPatchRitem));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">We will now turn attention to the hull shader. The hull shader is similar to what we showed in &#x00A7;14.2.1 and &#x00A7;14.2.2, except that we now determine the tessellation factors based on the distance from the eye. The idea behind this is to use a low-poly mesh in the distance, and increase the tessellation (and hence triangle count) as the mesh approaches the eye (see Figure <a href="ch14.html#fig14.5">14.5</a>). The hull shader is simply a pass-through shader.<a id="page525"/></p>
+
+<p class="caption"><img src="images/Fig14-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.5"><b><i>Figure 14.5.</i></b>&nbsp;&nbsp;The mesh is tessellated more as the distance to the eye decreases.</p>
+
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosL = vin.PosL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">struct PatchTess</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float EdgeTess[4]&nbsp;&nbsp;: SV_TessFactor;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float InsideTess[2] : SV_InsideTessFactor;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">PatchTess ConstantHS(InputPatch&lt;VertexOut, 4&gt; patch, uint patchID : SV_PrimitiveID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;PatchTess pt;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 centerL = 0.25f*(patch[0].PosL +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;patch[1].PosL +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;patch[2].PosL +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;patch[3].PosL);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 centerW = mul(float4(centerL, 1.0f), gWorld).xyz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float d = distance(centerW, gEyePosW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Tessellate the patch based on distance from the eye such that</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the tessellation is 0 if d &gt;= d1 and 64 if d &lt;= d0. The interval</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// [d0, d1] defines the range we tessellate in.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float d0 = 20.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const float d1 = 100.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float tess = 64.0f*saturate( (d1-d)/(d1-d0) );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Uniformly tessellate the patch.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[0] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[1] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[2] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.EdgeTess[3] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.InsideTess[0] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pt.InsideTess[1] = tess;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return pt;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct HullOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL : POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">[domain("quad")]</span></p>
+<p class="code"><span class="code">[partitioning("integer")]</span></p>
+<p class="code"><span class="code">[outputtopology("triangle_cw")]</span></p>
+<p class="code"><span class="code">[outputcontrolpoints(4)]</span></p>
+<p class="code"><span class="code">[patchconstantfunc("ConstantHS")]</span></p>
+<p class="code"><span class="code">[maxtessfactor(64.0f)]</span></p>
+<p class="code"><span class="code">HullOut HS(InputPatch&lt;VertexOut, 4&gt; p,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint i : SV_OutputControlPointID,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;uint patchId : SV_PrimitiveID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;HullOut hout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;hout.PosL = p[i].PosL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return hout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Simply tessellating is not enough<a id="page526"/> to add detail, as the new triangles just lie on the patch that was subdivided. We must offset those extra vertices in some way to better approximate the shape of the object we are modeling. This is done in the domain shader. In this demo, we offset the <i>y</i>-coordinates by the &ldquo;hills&rdquo; function we introduced in &#x00A7;7.7.3. </p>
+<p class="code"><span class="code">struct DomainOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH : SV_POSITION;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// The domain shader is called for every vertex created by the tessellator.&nbsp;</span></p>
+<p class="code"><span class="code">// It is like the vertex shader after tessellation.</span></p>
+<p class="code"><span class="code">[domain("quad")]</span></p>
+<p class="code"><span class="code">DomainOut DS(PatchTess patchTess,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; float2 uv : SV_DomainLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; const OutputPatch&lt;HullOut, 4&gt; quad)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DomainOut dout;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bilinear interpolation.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v1 = lerp(quad[0].PosL, quad[1].PosL, uv.x);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 v2 = lerp(quad[2].PosL, quad[3].PosL, uv.x);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 p = lerp(v1, v2, uv.y);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Displacement mapping</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;p.y = 0.3f*( p.z*sin(p.x) + p.x*cos(p.z) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(p, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;dout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return dout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(DomainOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return float4(1.0f, 1.0f, 1.0f, 1.0f);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c14.6"><a href="toc.html#toc-14.6"><b>14.6 CUBIC B&#x00C9;ZIER QUAD PATCHES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In this section, we describe cubic B&#x00E9;zier quad patches to show how surfaces are constructed via a higher number of control points. Before we get to surfaces, however, it helps to first start with B&#x00E9;zier curves.<a id="page527"/></p>
+<p class="h2" id="c14.6.1"><a href="toc.html#toc-14.6.1"><b>14.6.1 B&#x00E9;zier Curves</b></a></p>
+<p class="tx1">Consider three noncollinear points <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>, and <b>p</b><sub>2</sub> which we will call the control points. These three control points define a B&#x00E9;zier curve in the following way.  A point <b>p</b>(<i>t</i>) on the curve is first found by linearly interpolating between <b>p</b><sub>0</sub> and <b>p</b><sub>1 </sub>by <i>t, </i>and <b>p</b><sub>1</sub> and <b>p</b><sub>2</sub> by <i>t </i>to get the intermediate points:</p>
+
+<p class="eq"><img src="images/eq561-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Then <b>p</b>(<i>t</i>) is found by linearly interpolating between  and by <i>t</i>:</p>
+
+<p class="eq"><img src="images/eq561-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In other words, this construction by repeated interpolation leads to the parametric formula for a quadratic (degree 2) B&#x00E9;zier curve:</p>
+
+<p class="eq"><img src="images/eq561-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">In a similar manner, four control points <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>, <b>p</b><sub>2</sub>,and <b>p</b><sub>3</sub> define a cubic (degree 3) B&#x00E9;zier curve, and a point <b>p</b>(<i>t</i>) on the curve is found again by repeated interpolation. Figure <a href="ch14.html#fig14.6">14.6</a> shows the situation. First linearly interpolate along each line segment the four given control points define to get three first generation intermediate points:</p>
+<p class="eq"><img src="images/eq561-04.jpg" alt="image" width="100%"/></p>
+<p class="caption"><img src="images/Fig14-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig14.6"><b><i>Figure 14.6.</i></b>&nbsp;&nbsp;Repeated linear interpolation defined points on the cubic B&eacute;zier curve. The figure uses <i>t </i>= 0.5. (a) The four control points and the curve they define. (b) Linearly interpolate between the control points to calculate the first generation of intermediate points. (c) Linearly interpolate between the first generation intermediate points to get the second generation intermediate points. (d) Linearly interpolate between the second generation intermediate points to get the point on the curve.</p>
+
+
+<p class="tx1">Next, linearly interpolate<a id="page528"/> along each line segment these first generation intermediate points define to get two second generation intermediate points:</p>
+
+<p class="eq"><img src="images/eq562-04.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Finally, <b>p(</b><i>t) </i>is found by linearly interpolating between these last generation intermediate pints:</p>
+
+<p class="eq"><img src="images/eq562-05.jpg" alt="image" width="100%"/></p>
+<p class="tx1">which simplifies to the parametric formula for a cubic (degree 3) B&#x00E9;zier curve:</p>
+
+
+<p class="eq" id="eq14.1"><img src="images/eq562-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Generally, people stop at cubic curves, as they give enough smoothness and degrees of freedom for controlling the curve, but you can keep going to higher-order curves with the same recursive pattern of repeated interpolation. </p>
+<p class="tx">It turns out, that the formula for B&#x00E9;zier curves of degree <i>n</i> can be written in terms of the <i>Bernstein basis functions</i>, which are defined by:</p>
+
+<p class="eq"><img src="images/eq562-05.jpg" alt="image" width="100%"/></p>
+<p class="tx1">For degree 3 curves, the Bernstein basis functions are:</p>
+
+<p class="eq"><img src="images/eq562-03.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Compare these values to the<a id="page529"/> factors in Equation <a href="ch14.html#eq14.1">14.1</a>. Therefore, we can write a cubic B&#x00E9;zier curve as:</p>
+
+<p class="eq"><img src="images/eq563-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The derivatives of the cubic Bernstein basis functions can be found by application of the power and product rules: </p>
+
+<p class="eq"><img src="images/eq563-05.jpg" alt="image" width="100%"/></p>
+<p class="tx1">And the derivative of the cubic B&#x00E9;zier curve is: </p>
+
+<p class="eq"><img src="images/eq563-02.jpg" alt="image" width="100%"/></p>
+<p class="tx">Derivatives are useful for computing the tangent vector along the curve.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>There are B&#x00E9;zier curve applets online that allow you to set and manipulate the control points to see how the curves are shaped interactively. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c14.6.2"><a href="toc.html#toc-14.6.2"><b>14.6.2 Cubic B&#x00E9;zier Surfaces</b></a></p>
+<p class="tx1">Refer to Figure <a href="ch14.html#fig14.7">14.7</a> throughout this section. Consider a patch of 4 &times; 4 control points. Each row, therefore, contains 4 control points that can be used to define cubic B&#x00E9;zier curve; the B&#x00E9;zier curve of the <i>ith row is given by:</i></p>
+
+<p class="eq"><img src="images/eq563-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If we evaluate each of these B&#x00E9;zier curves at say <i>u</i><sub>0</sub>, then we get a &ldquo;column&rdquo; of 4 points, one along each curve. We can use these 4 points to define another B&#x00E9;zier curve that lies on the <i>B&#x00E9;zier surface</i> at <i>u</i><sub>0</sub>:</p>
+
+<p class="eq"><img src="images/eq563-04.jpg" alt="image" width="100%"/></p>
+<p class="caption"><img src="images/Fig14-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.7"><b><i>Figure 14.7.</i></b>&nbsp;&nbsp;Constructing a B&eacute;zier surface. Some simplifications were made to make the figure easier to understand&mdash;the control points do not all lie in the plane, all the <b>q</b><i><sub>i</sub></i>(<i>u</i>) need not be the same as the figure suggests (they would only be the same if the control points were the same for each row to give the same curves), and <b>p</b>(<i>v</i>) generally would not be a straight line but a cubic B&eacute;zier curve.</p>
+<p class="tx1">Now, if we let <i>u</i> vary as well, we sweep out a family of<a id="page530"/> cubic B&#x00E9;zier curves that form the <i>cubic B&#x00E9;zier surface:</i></p>
+
+<p class="eq"><img src="images/eq564-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The partial derivatives of a B&#x00E9;zier surface are useful for computing tangent and normal vectors:</p>
+<p class="eq"><img src="images/eq564-02.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="c14.6.3"><a href="toc.html#toc-14.6.3"><b>14.6.3 Cubic B&#x00E9;zier Surface Evaluation Code</b></a></p>
+<p class="tx1">In this section, we give code to evaluate a cubic B&#x00E9;zier surface. To help understand the code that follows, we expand out the summation notation: </p>
+
+<p class="eq"><img src="images/eq564-03.jpg" alt="image" width="100%"/></p>
+<p class="eq"><img src="images/eq565-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">The code below maps directly<a id="page531"/> to the formulas just given: </p>
+<p class="eq"><img src="images/eq565-02.jpg" alt="image" width="110%"/></p>
+<p class="eq"><img src="images/eq566-01.jpg" alt="image" width="110%"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Observe that we pass the<a id="page532"/> evaluated basis function values to </i><span class="code">CubicBezierSum</span><i>. This enables us to use </i><span class="code">CubicBezierSum</span><i> for evaluating both </i><b>p</b><i>(u, v) and the partial derivatives, as the summation form is the same, the only differencing being the basis functions. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c14.6.4"><a href="toc.html#toc-14.6.4"><b>14.6.4 Defining the Patch Geometry</b></a></p>
+<p class="tx1">Our vertex buffer storing the sixteen control points is created like so:<a id="page533"/></p>
+<p class="code"><span class="code">void BezierPatchApp::BuildQuadPatchGeometry()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::array&lt;XMFLOAT3,16&gt; vertices =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Row 0</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-10.0f, -10.0f, +15.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-5.0f, 0.0f, +15.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+5.0f, 0.0f, +15.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+10.0f, 0.0f, +15.0f),</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Row 1</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-15.0f, 0.0f, +5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-5.0f, 0.0f, +5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+5.0f, 20.0f, +5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+15.0f, 0.0f, +5.0f),</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Row 2</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-15.0f, 0.0f, -5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-5.0f, 0.0f, -5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+5.0f, 0.0f, -5.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+15.0f, 0.0f, -5.0f),</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Row 3</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-10.0f, 10.0f, -15.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(-5.0f, 0.0f, -15.0f),&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+5.0f, 0.0f, -15.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3(+25.0f, 10.0f, -15.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::array&lt;std::int16_t, 16&gt; indices =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;0, 1, 2, 3,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;4, 5, 6, 7,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;8, 9, 10, 11,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;12, 13, 14, 15</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto geo = std::make_unique&lt;MeshGeometry&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;Name = "quadpatchGeo";</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(vbByteSize, &amp;geo-&gt;VertexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;VertexBufferCPU-&gt;GetBufferPointer(), vertices.data(), vbByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(D3DCreateBlob(ibByteSize, &amp;geo-&gt;IndexBufferCPU));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CopyMemory(geo-&gt;IndexBufferCPU-&gt;GetBufferPointer(), indices.data(), ibByteSize);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), vertices.data(), vbByteSize, geo-&gt;VertexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferGPU = d3dUtil::CreateDefaultBuffer(md3dDevice.Get(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList.Get(), indices.data(), ibByteSize, geo-&gt;IndexBufferUploader);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexByteStride = sizeof(XMFLOAT3);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;VertexBufferByteSize = vbByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexFormat = DXGI_FORMAT_R16_UINT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;IndexBufferByteSize = ibByteSize;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;SubmeshGeometry quadSubmesh;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.IndexCount = (UINT)indices.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.StartIndexLocation = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadSubmesh.BaseVertexLocation = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;geo-&gt;DrawArgs["quadpatch"] = quadSubmesh;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;mGeometries[geo-&gt;Name] = std::move(geo);</span></p>
+<p class="code"><span class="code">}</span></p>
+
+<p class="caption"><img src="images/Fig14-8.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig14.8"><b><i>Figure 14.8.</i></b>&nbsp;&nbsp;Screenshot of the B&eacute;zier surface demo.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>There is no restriction that the<a id="page534"/> control points need to be equidistant to form a uniform grid. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx">Our render-item for the quad patch is created as follows:</p>
+<p class="code"><span class="code">void BezierPatchApp::BuildRenderItems()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto quadPatchRitem = std::make_unique&lt;RenderItem&gt;();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;World = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;TexTransform = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;ObjCBIndex = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;Mat = mMaterials["whiteMat"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;Geo = mGeometries["quadpatchGeo"].get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;IndexCount = quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].IndexCount;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;StartIndexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].StartIndexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;quadPatchRitem-&gt;BaseVertexLocation =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;quadPatchRitem-&gt;Geo-&gt;DrawArgs["quadpatch"].BaseVertexLocation;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mRitemLayer[(int)RenderLayer::Opaque].push_back(quadPatchRitem.get());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mAllRitems.push_back(std::move(quadPatchRitem));</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="h1" id="c14.7"><a href="toc.html#toc-14.7"><b>14.7 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>The tessellation stages are optional stages of the rendering pipeline. They consist of the hull shader, the tessellator, and the domain shader. The hull and domain shaders are programmable, and the tessellator is completely controlled by the hardware. </li>
+<li>Hardware tessellation provides<a id="page535"/> memory benefits, as a low-poly asset can be stored and then detail can be added on the fly via tessellation. Additionally, computations such as animation and physics can be done on the low-poly mesh frequency before tessellation. Finally, continuous LOD algorithms can now be implemented completely on the GPU, which always had to be implemented on the CPU before hardware tessellation was available. </li>
+<li>New primitive types are used only with tessellation to submit control points to the rendering pipeline. Direct3D 12 supports between one and thirty-two control points, which are represented by the enumerated types  <span class="code">D3D_PRIMITIVE_1_CONTROL_POINT_PATCH&hellip; D3D_PRIMITIVE_32_CONTROL_POINT_PATCH.</span></li>
+<li>With tessellation, the vertex shader inputs control points and generally animates or performs physics computations per control point. The hull shader consists of the constant hull shader and the control point hull shader. The constant hull shader operates per patch and outputs the tessellation factors of the patch, which instruct the tessellator how much to tessellate the patch, as well as any other optional per patch data. The control point hull shader inputs a number of control points and outputs a number of control points. The control point hull shader is invoked once per control point output. Typically, the control point hull shader changes the surface representation of the input patch. For example, this stage might input a triangle with three control points, and output a B&#x00E9;zier triangle surface patch with ten control points. </li>
+<li>The domain shader is invoked for each vertex created by the tessellation stage. Whereas the vertex shader acts as a vertex shader for each control point, with tessellation enabled the hull shader is essentially the vertex shader for the tessellated patch vertices. In particular, it is here that we project the vertices of the tessellated patch to homogeneous clip space and do other per vertex work. </li>
+<li>If you are not going to tessellate an object (e.g., tessellation factors are close to 1), then do not render the object with the tessellation stages enabled, as there is overhead. Avoid tessellating so much that triangles are smaller than eight pixels. Draw all your tessellated objects together to avoid turning tessellation on and off during a frame. Use back face culling and frustum culling in the hull shader to discard patches that are not seen from being tessellated. </li>
+<li>B&#x00E9;zier curves and surfaces, specified by parametric equations, can be used to describe smooth curves and surfaces. They are &ldquo;shaped&rdquo; via control points. In addition to allowing us to draw smooth surfaces directly, B&#x00E9;zier surfaces are used in many popular hardware tessellation algorithms such as PN Triangles and Catmull-Clark approximations.<a id="page536"/></li></ol>
+<p class="h1" id="c14.8"><a href="toc.html#toc-14.8"><b>14.8 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Redo the &ldquo;Basic Tessellation&rdquo; demo, but tessellate a triangle patch instead of a quad patch.</li>
+<li>Tessellate an iscoahedron into a sphere based on distance.</li>
+<li>Modify the &ldquo;Basic Tessellation&rdquo; demo so that it does fixed tessellation of a flat quad. Experiment with different edge/interior tessellation factors until you are comfortable with how the tessellation factors work. </li>
+<li>Explore fractional tessellation. That is, try the &ldquo;Basic Tessellation&rdquo; demo with:
+<p class="code"><span class="code">[partitioning("fractional_even")]</span></p>
+<p class="code"><span class="code">[partitioning("fractional_odd")]</span></p></li>
+<li>Compute the Bernstein basis functions <img src="images/eq570-01.jpg" alt="image" width="120" height="25" style="margin-bottom:-0.5em;"/> for a quadratic B&#x00E9;zier curve, and compute the derivatives <img src="images/eq570-02.jpg" alt="image" width="120" height="25" style="margin-bottom:-0.5em;"/>. Derive the parametric equation for a quadratic B&#x00E9;zier surface.</li>
+<li>Experiment with the &ldquo;B&#x00E9;zier Patch&rdquo; demo by changing the control points to change the B&#x00E9;zier surface.</li>
+<li>Redo the &ldquo;B&#x00E9;zier Patch&rdquo; demo to use a quadratic B&#x00E9;zier surface with nine control points.</li>
+<li>Modify the &ldquo;B&#x00E9;zier Patch&rdquo; demo to light and shade the B&#x00E9;zier surface. You will need to compute vertex normals in the domain shader. A normal at a vertex position can be found by taking the cross product of the partial derivatives at the position.</li>
+<li>Research and implement B&#x00E9;zier triangle patches. </li></ol>
+</body>
+</html>

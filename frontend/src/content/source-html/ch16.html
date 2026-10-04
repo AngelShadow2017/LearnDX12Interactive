@@ -1,0 +1,800 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page557"/><a href="toc.html#toc-16" id="chap16">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">16</span></span><br/><br/><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-16"><b>I</b><span class="sc">NSTANCING</span><br/><br/><span class="sc">AND</span> <b>F</b><span class="sc">RUSTUM</span><br/><br/><b>C</b><span class="sc">ULLING</span><br/><br/><br/></a><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+
+<p class="tx1">&nbsp;<br/><br/></p>
+
+
+
+<p class="tx1">In this chapter, we study instancing and frustum culling. Instancing refers to drawing the same object more than once in a scene. Instancing can provide significant optimization, and so there is dedicated Direct3D support for instancing. Frustum culling refers to rejecting entire groups of triangles from further processing that are outside the viewing frustum with a simple test. </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn how to implement hardware instancing.</li>
+<li>To become familiar with bounding volumes, why they are useful, how to create them, and how to use them.</li>
+<li>To discover how to implement frustum culling.</li></ol>
+<p class="h1" id="c16.1"><a href="toc.html#toc-16.1"><b>16.1 HARDWARE INSTANCING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Instancing refers to drawing the same object more than once in a scene, but with different positions, orientations, scales, materials, and textures. Here are a few examples:</p>
+<ol><li>A few different tree models are drawn multiple times to build a forest.</li>
+<li>A few different asteroid models<a id="page558"/> are drawn multiple times to build an asteroid field. </li>
+<li>A few different character models are drawn multiple times to build a crowd of people.</li></ol>
+<p class="tx1">It would be wasteful to duplicate the vertex and index data for each instance. Instead, we store a single copy of the geometry (i.e., vertex and index lists) relative to the object&rsquo;s local space. Then we draw the object several times, but each time with a different world matrix and a different material if additional variety is desired. </p>
+<p class="tx">Although this strategy saves memory, it still requires per-object API overhead. That is, for each object, we must set its unique material, its world matrix, and invoke a draw command. Although Direct3D 12 was redesigned to minimize a lot of the API overhead that existed in Direct3D 11 when executing a draw call, there is still some overhead. The Direct3D instancing API allows you to instance an object multiple times with a single draw call; and moreover, with dynamic indexing (covered in the previous chapter), instancing is more flexible than in Direct3D 11. </p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Why the concern about API overhead? It was common for Direct3D 11 applications to be CPU bound due to the API overhead (this means the CPU was the bottleneck, not the GPU). The reason for this is that level designers like to draw many objects with unique materials and textures, and this requires state changes and draw calls for each object. When there is a high-level of CPU overhead for each API call, scenes would be limited to a few thousand draw calls in order to still maintain real-time rendering speeds. Graphics engines would then employ batching techniques (see [Wloka03]) to minimize the number of draw calls. Hardware instancing is one aspect where the API helps perform batching. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c16.1.1"><a href="toc.html#toc-16.1.1"><b>16.1.1 Drawing Instanced Data</b></a></p>
+<p class="tx1">Perhaps surprisingly, we have already been drawing instanced data in all the previous chapter demos. However, the instance count has always been 1 (second parameter):</p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount, 1,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;StartIndexLocation, ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="tx1">The second parameter, InstanceCount, specifies the number of times to instance the geometry we are drawing. If we specify ten, the geometry will be drawn 10 times.</p>
+<p class="tx">Drawing an object ten times<a id="page559"/> alone does not really help us, though. The object will be drawn in the same place using the same materials and textures. So the next step is to figure out how to specify additional per-instance data so that we can vary the instances by rendering them with different transforms, materials, and textures. </p>
+<p class="h2" id="c16.1.2"><a href="toc.html#toc-16.1.2"><b>16.1.2 Instance Data</b></a></p>
+<p class="tx1">The previous version of this book obtained instance data from the input assembly stage. When creating an input layout, you can specify that data streams in per-instance rather than at a per-vertex frequency by using <span class="code">D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA</span> instead of <span class="code">D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA</span>, respectively. You would then bind a secondary vertex buffer to the input stream that contained the instancing data. Direct3D 12 still supports this way of feeding instancing data into the pipeline, but we opt for a more modern approach. </p>
+<p class="tx">The modern approach is to create a structured buffer that contains the per-instance data for all of our instances. For example, if we were going to instance an object 100 times, we would create a structured buffer with 100 per-instance data elements. We then bind the structured buffer resource to the rendering pipeline, and index into it in the vertex shader based on the instance we are drawing. How do we know which instance is being drawn in the vertex shader? Direct3D provides the system value identifier <span class="code">SV_InstanceID</span> which you can use in your vertex shader. For example, vertices of the first instance will have id 0, vertices of the second instance will have id 1, and so on. So in our vertex shader, we can index into the structured buffer to fetch the per-instance data we need. The following shader code shows how this all works:</p>
+<p class="code"><span class="code">// Defaults for number of lights.</span></p>
+<p class="code"><span class="code">#ifndef NUM_DIR_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_DIR_LIGHTS 3</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_POINT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_POINT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">#ifndef NUM_SPOT_LIGHTS</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;#define NUM_SPOT_LIGHTS 0</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include structures and functions for lighting.</span><a id="page560"/></p>
+<p class="code"><span class="code">#include "LightingUtil.hlsl"</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">struct InstanceData</span></b></p>
+<p class="code"><b><span class="code">{</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 World;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 TexTransform;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MaterialIndex;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; InstPad0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; InstPad1;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; InstPad2;</span></b></p>
+<p class="code"><b><span class="code">};</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">struct MaterialData</span></b></p>
+<p class="code"><b><span class="code">{</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4&nbsp;&nbsp;DiffuseAlbedo;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float3&nbsp;&nbsp;FresnelR0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float&nbsp;&nbsp;Roughness;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 MatTransform;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; DiffuseMapIndex;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad1;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint&nbsp;&nbsp; MatPad2;</span></b></p>
+<p class="code"><b><span class="code">};</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">// An array of textures, which is only supported in shader model 5.1+.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// Unlike Texture2DArray, the textures in this array can be different&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// sizes and formats, making it more flexible than texture arrays.</span></b></p>
+<p class="code"><b><span class="code">Texture2D gDiffuseMap[7] : register(t0);</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">// Put in space1, so the texture array does not overlap with these.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">// The texture array above will occupy registers t0, t1, &hellip;, t6 in</span></b></p>
+<p class="code"><b><span class="code">// space0.&nbsp;</span></b></p>
+<p class="code"><b><span class="code">StructuredBuffer&lt;InstanceData&gt; gInstanceData : register(t0, space1);</span></b></p>
+<p class="code"><b><span class="code">StructuredBuffer&lt;MaterialData&gt; gMaterialData : register(t1, space1);</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SamplerState gsamPointWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s0);</span></p>
+<p class="code"><span class="code">SamplerState gsamPointClamp&nbsp;&nbsp;&nbsp;&nbsp;: register(s1);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearWrap&nbsp;&nbsp;&nbsp;&nbsp;: register(s2);</span></p>
+<p class="code"><span class="code">SamplerState gsamLinearClamp&nbsp;&nbsp; : register(s3);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicWrap : register(s4);</span></p>
+<p class="code"><span class="code">SamplerState gsamAnisotropicClamp : register(s5);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Constant data that varies per pass.</span></p>
+<p class="code"><span class="code">cbuffer cbPass : register(b0)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvView;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gInvViewProj;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 gEyePosW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float cbPerObjectPad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 gInvRenderTargetSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gNearZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gFarZ;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gTotalTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float gDeltaTime;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 gAmbientLight;</span></p>
+<p class="code">&nbsp;<a id="page561"/></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Indices [0, NUM_DIR_LIGHTS) are directional lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// are spot lights for a maximum of MaxLights per object.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Light gLights[MaxLights];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// nointerpolation is used so the index is not interpolated&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// across the triangle.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;nointerpolation uint MatIndex : MATINDEX;</span></b></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Fetch the instance data.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;InstanceData instData = gInstanceData[instanceID];</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 world = instData.World;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4x4 texTransform = instData.TexTransform;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint matIndex = instData.MaterialIndex;</span></b></p>
+<p class="code"><b>&nbsp;</b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;vout.MatIndex = matIndex;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[matIndex];</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), world);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosW = posW.xyz;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to use inverse-transpose</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// of world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)world);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), texTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, matData.MatTransform).xy;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float4 PS(VertexOut pin) : SV_Target</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[pin.MatIndex];</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float4 diffuseAlbedo = matData.DiffuseAlbedo;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float3 fresnelR0 = matData.FresnelR0;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;float roughness = matData.Roughness;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;uint diffuseTexIndex = matData.DiffuseMapIndex;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;// Dynamically look up the texture in the array.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;diffuseAlbedo *= gDiffuseMap[diffuseTexIndex].Sample(gsamLinearWrap, pin.TexC);</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolating normal can unnormalize it, so renormalize it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;pin.NormalW = normalize(pin.NormalW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Vector from point being lit to eye.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 toEyeW = normalize(gEyePosW - pin.PosW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Light terms.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ambient = gAmbientLight*diffuseAlbedo;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Material mat = { diffuseAlbedo, fresnelR0, roughness };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 directLight = ComputeDirectLighting(gLights, mat,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;pin.PosW, pin.NormalW, toEyeW);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 litColor = ambient + directLight;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Common convention to take alpha from diffuse albedo.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;litColor.a = diffuseAlbedo.a;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;return litColor;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Note that we no longer<a id="page562"/> have a per-object constant buffer. The per-object data comes from the instance buffer. Observe also how we use dynamic indexing to associate a different material for each instance, and a different texture. We are able to get quite a lot of per-instance variety in a single draw call! For completeness, the corresponding root signature description is shown below that corresponds to the above shader programs:</p>
+<p class="code"><span class="code">CD3DX12_DESCRIPTOR_RANGE texTable;</span></p>
+<p class="code"><span class="code">texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0, 0);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Root parameter can be a table, root descriptor or root constants.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_PARAMETER slotRootParameter[4];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Perfomance TIP: Order from most frequent to least frequent.</span></p>
+<p class="code"><span class="code">slotRootParameter[0].InitAsShaderResourceView(0, 1);</span></p>
+<p class="code"><span class="code">slotRootParameter[1].InitAsShaderResourceView(1, 1);</span></p>
+<p class="code"><span class="code">slotRootParameter[2].InitAsConstantBufferView(0);</span></p>
+<p class="code"><span class="code">slotRootParameter[3].InitAsDescriptorTable(1, &amp;texTable, D3D12_SHADER_VISIBILITY_PIXEL);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">auto staticSamplers = GetStaticSamplers();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// A root signature is an array of root parameters.</span></p>
+<p class="code"><span class="code">CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(4, slotRootParameter,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;(UINT)staticSamplers.size(), staticSamplers.data(),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);</span></p>
+<p class="tx">As in the last chapter, we bind<a id="page563"/> all the scene materials and textures once per-frame, and the only per draw call resource we need to set is the structured buffer with the instanced data: </p>
+<p class="code"><span class="code">void InstancingAndCullingApp::Draw(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bind all the materials used in this scene. For structured buffers, we</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// can bypass the heap and set as a root descriptor.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto matBuffer = mCurrFrameResource-&gt;MaterialBuffer-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootShaderResourceView(1, matBuffer-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto passCB = mCurrFrameResource-&gt;PassCB-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootConstantBufferView(2, passCB-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Bind all the textures used in this scene.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootDescriptorTable(3,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mSrvDescriptorHeap-&gt;GetGPUDescriptorHandleForHeapStart());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;DrawRenderItems(mCommandList.Get(), mOpaqueRitems);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void InstancingAndCullingApp::DrawRenderItems(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ID3D12GraphicsCommandList* cmdList,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::vector&lt;RenderItem*&gt;&amp; ritems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For each render item&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(size_t i = 0; i &lt; ritems.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto ri = ritems[i];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetVertexBuffers(0, 1, &amp;ri-&gt;Geo-&gt;VertexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetIndexBuffer(&amp;ri-&gt;Geo-&gt;IndexBufferView());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;IASetPrimitiveTopology(ri-&gt;PrimitiveType);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp; // Set the instance buffer to use for this render-item.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// For structured buffers, we can bypass&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// the heap and set as a root descriptor.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;auto instanceBuffer = mCurrFrameResource-&gt;InstanceBuffer-&gt;Resource();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCommandList-&gt;SetGraphicsRootShaderResourceView(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0, instanceBuffer-&gt;GetGPUVirtualAddress());</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;InstanceCount, ri-&gt;StartIndexLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span><a id="page564"/></p>
+<p class="h2" id="c16.1.3"><a href="toc.html#toc-16.1.3"><b>16.1.3 Creating the Instanced Buffer</b></a></p>
+<p class="tx1">The instance buffer stores the data that varies per-instance. It looks a lot like the data we previously put in our per-object constant buffer. On the CPU side, our instance data structure looks like this:</p>
+<p class="code"><span class="code">struct InstanceData</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT4X4 World = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT MaterialIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT InstancePad0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT InstancePad1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT InstancePad2;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="tx1">The per-instance data in system memory is stored as part of the render-item structure, as the render-item maintains how many times it should be instanced:</p>
+<p class="code"><span class="code">struct RenderItem</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;InstanceData&gt; Instances;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">For the GPU to consume the instance data, we need to create a structured buffer with element type <span class="code">InstanceData</span>. Moreover, this buffer will be dynamic (i.e., an upload buffer) so that we can update it every frame; in our demo, we copy the instanced data of only the <i>visible</i> instances into the structure buffer (this is related to frustum culling, see &#x00A7;16.3), and the set of visible instances will change as the camera moves/looks around. Creating a dynamic buffer is simple<a id="page565"/> with our <span class="code">UploadBuffer</span> helper class:</p>
+<p class="code"><span class="code">struct FrameResource</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource(ID3D12Device* device, UINT passCount,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;UINT maxInstanceCount, UINT materialCount);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource(const FrameResource&amp; rhs) = delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FrameResource&amp; operator=(const FrameResource&amp; rhs) = delete;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span>&tilde;<span class="code">FrameResource();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We cannot reset the allocator until the GPU is done processing the commands.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// So each frame needs their own allocator.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Microsoft::WRL::ComPtr&lt;ID3D12CommandAllocator&gt; CmdListAlloc;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We cannot update a cbuffer until the GPU is done processing the commands</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// that reference it. So each frame needs their own cbuffers.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// std::unique_ptr&lt;UploadBuffer&lt;FrameConstants&gt;&gt; FrameCB = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;PassConstants&gt;&gt; PassCB = nullptr;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;MaterialData&gt;&gt; MaterialBuffer = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// NOTE: In this demo, we instance only one render-item, so we only have</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// one structured buffer to store instancing data. To make this more</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// general (i.e., to support instancing multiple render-items), you&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// would need to have a structured buffer for each render-item, and&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// allocate each buffer with enough room for the maximum number of</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// instances you would ever draw. This sounds like a lot, but it is&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// actually no more than the amount of per-object constant data we&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// would need if we were not using instancing. For example, if we</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// were drawing 1000 objects without instancing, we would create a&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// constant buffer with enough room for a 1000 objects. With instancing,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// we would just create a structured buffer large enough to store the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// instance data for 1000 instances.&nbsp;</span></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;std::unique_ptr&lt;UploadBuffer&lt;InstanceData&gt;&gt; InstanceBuffer = nullptr;</span></b></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fence value to mark commands up to this fence point. This lets us</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// check if these frame resources are still in use by the GPU.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT64 Fence = 0;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">FrameResource::FrameResource(ID3D12Device* device,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT passCount, UINT maxInstanceCount, UINT materialCount)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ThrowIfFailed(device-&gt;CreateCommandAllocator(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;D3D12_COMMAND_LIST_TYPE_DIRECT,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;IID_PPV_ARGS(CmdListAlloc.GetAddressOf())));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;PassCB = std::make_unique&lt;UploadBuffer&lt;PassConstants&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;device, passCount, true);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialBuffer = std::make_unique&lt;UploadBuffer&lt;MaterialData&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;device, materialCount, false);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;InstanceBuffer = std::make_unique&lt;UploadBuffer&lt;InstanceData&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;device, maxInstanceCount, false);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">Note that <span class="code">InstanceBuffer</span> is not a constant buffer, so we specify false for the last parameter.<a id="page566"/></p>
+<p class="h1" id="c16.2"><a href="toc.html#toc-16.2"><b>16.2 BOUNDING VOLUMES AND FRUSTUMS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">In order to implement frustum culling, we need to become familiar with the mathematical representation of a frustum and various bounding volumes. Bounding volumes are primitive geometric objects that approximate the volume of an object&mdash;see Figure <a href="ch16.html#fig16.1">16.1</a>. The tradeoff is that although the bounding volume only approximates the object its form has a simple mathematical representation, which makes it easy to work with. </p>
+<p class="caption"><img src="images/Fig16-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.1"><b><i>Figure 16.1.</i></b>&nbsp;&nbsp;A mesh rendered with its AABB and bounding sphere.</p>
+
+<p class="h2" id="c16.2.1"><a href="toc.html#toc-16.2.1"><b>16.2.1 DirectX Math Collision</b></a></p>
+<p class="tx1">We use the <i>DirectXCollision.h</i> utility library, which is part of DirectX Math. This library provides fast implementations to common geometric primitive intersection tests such as ray/triangle intersection, ray/box intersection, box/box intersection, box/plane intersection, box/frustum, sphere/frustum, and much more. Exercise 3 asks you to explore this library to get familiar with what it offers.</p>
+<p class="h2" id="c16.2.2"><a href="toc.html#toc-16.2.2"><b>16.2.2 Boxes </b></a></p>
+<p class="tx1">The <i>axis-aligned bounding box</i> (AABB) of a mesh is a box that tightly surrounds the mesh and such that its faces are parallel to the major axes. An AABB can be described by a minimum point <b>v</b><sub>min</sub> and a maximum point <b>v</b><sub>max</sub> (see Figure <a href="ch16.html#fig16.2">16.2</a>). The minimum point <b>v</b><sub>min</sub> is found by searching through all the vertices of the mesh and finding the minimum x-, y-, and z-coordinates, and the maximum point <b>v</b><sub>max</sub> is found by searching through all the vertices of the mesh and finding the maximum x-, y-, and z-coordinates. </p>
+<p class="caption"><img src="images/Fig16-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.2"><b><i>Figure 16.2.</i></b>&nbsp;&nbsp;The AABB of a set of points using minimum and maximum point representation.</p>
+
+<p class="tx"><a id="page567"/>Alternatively, an AABB can be represented with the box center point <b>c </b>and <i>extents</i> vector <b>e</b>, which stores the distance from the center point to the sides of the box along the coordinate axes (see Figure <a href="ch16.html#fig16.3">16.3</a>). </p>
+
+<p class="caption"><img src="images/Fig16-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.3"><b><i>Figure 16.3.</i></b>&nbsp;&nbsp;The AABB of a set of points using center and extents representation.</p>
+
+<p class="tx">The DirectX collision library uses the center/extents representation:</p>
+<p class="code"><span class="code">struct BoundingBox</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static const size_t CORNER_COUNT = 8;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Center;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Center of the box.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Extents;&nbsp;&nbsp;&nbsp;&nbsp; // Distance from the center to each side.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="tx1">It is easy to convert from one representation to the other. For example, given a bounding box defined by <b>v</b><i><sub>min</sub></i> and <b>v</b><i><sub>max</sub></i>, the center/extents representation is given by:</p>
+
+<p class="eq"><img src="images/eq601-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1"><a id="page568"/>The following code shows how we compute the bounding box of the skull mesh in this chapter&rsquo;s demo:</p>
+<p class="code"><span class="code">XMFLOAT3 vMinf3(+MathHelper::Infinity, +MathHelper::Infinity, +MathHelper::Infinity);</span></p>
+<p class="code"><span class="code">XMFLOAT3 vMaxf3(-MathHelper::Infinity, -MathHelper::Infinity, -MathHelper::Infinity);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR vMin = XMLoadFloat3(&amp;vMinf3);</span></p>
+<p class="code"><span class="code">XMVECTOR vMax = XMLoadFloat3(&amp;vMaxf3);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">std::vector&lt;Vertex&gt; vertices(vcount);</span></p>
+<p class="code"><span class="code">for(UINT i = 0; i &lt; vcount; ++i)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; vertices[i].Pos.x &gt;&gt; vertices[i].Pos.y &gt;&gt; vertices[i].Pos.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; vertices[i].Normal.x &gt;&gt; vertices[i].Normal.y &gt;&gt; vertices[i].Normal.z;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR P = XMLoadFloat3(&amp;vertices[i].Pos);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Project point onto unit sphere and generate spherical texture coordinates.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 spherePos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMStoreFloat3(&amp;spherePos, XMVector3Normalize(P));</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float theta = atan2f(spherePos.z, spherePos.x);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Put in [0, 2pi].</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if(theta &lt; 0.0f)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;theta += XM_2PI;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float phi = acosf(spherePos.y);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float u = theta / (2.0f*XM_PI);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float v = phi / XM_PI;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vertices[i].TexC = { u, v };</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vMin = XMVectorMin(vMin, P);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vMax = XMVectorMax(vMax, P);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">BoundingBox bounds;</span></p>
+<p class="code"><span class="code">XMStoreFloat3(&amp;bounds.Center, 0.5f*(vMin + vMax));</span></p>
+<p class="code"><span class="code">XMStoreFloat3(&amp;bounds.Extents, 0.5f*(vMax - vMin));</span></p>
+<p class="tx">The <span class="code">XMVectorMin</span> and <span class="code">XMVectorMax</span> functions return the vectors:</p>
+
+<p class="eq"><img src="images/eq602-01.jpg" alt="image" width="100%"/></p>
+
+<p class="h3" id="c16.2.2.1"><a href="toc.html#toc-16.2.2.1"><b>16.2.2.1 Rotations and Axis-Aligned Bounding Boxes</b></a></p>
+<p class="tx1">Figure <a href="ch16.html#fig16.4">16.4</a> shows that a box axis-aligned in one coordinate system may not be axis-aligned with a different coordinate system. In particular, if we compute the AABB of a mesh in local space, it gets transformed to an <i>oriented bounding box</i> (OBB) in world space. However, we can always transform into the local space of the mesh and do the intersection there where the box is axis-aligned.<a id="page569"/> </p>
+<p class="caption"><img src="images/Fig16-4.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.4"><b><i>Figure 16.4.</i></b>&nbsp;&nbsp;The bounding box is axis aligned with the <i>xy</i>-frame, but not with the <i>XY</i>-frame.</p>
+
+<p class="tx">Alternatively, we can recompute the AABB in the world space, but this can result in a &ldquo;fatter&rdquo; box that is a poorer approximation to the actual volume (see Figure <a href="ch16.html#fig16.5">16.5</a>). </p>
+<p class="caption"><img src="images/Fig16-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.5"><b><i>Figure 16.5.</i></b>&nbsp;&nbsp;The bounding box is axis aligned with the <i>XY</i>-frame.</p>
+
+
+<p class="tx1">Yet another alternative is to abandon axis-aligned bounding boxes, and just work with oriented bounding boxes, where we maintain the orientation of the box relative to the world space. The DirectX collision library provides the following structure for representing an oriented bounding box.</p>
+<p class="code"><span class="code">struct BoundingOrientedBox</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static const size_t CORNER_COUNT = 8;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Center;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Center of the box.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Extents;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Distance from the center to each side.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4 Orientation;&nbsp;&nbsp;&nbsp;&nbsp;// Unit quaternion representing rotation (box -&gt; world).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In this chapter, you will see mention of quaternions for representing rotations/orientations. Briefly, a unit quaternion can represent a rotation just like a rotation matrix can. We cover quaternions in Chapter <a href="ch22.html#chap22">22</a>. For now, just think of it as representing a rotation like a rotation matrix.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">An AABB and OBB can also be constructed from a set of points using the DirectX collision library with the following <i>static</i> member functions:</p>
+<p class="code"><span class="code">void BoundingBox::CreateFromPoints(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_Out_ BoundingBox&amp; Out,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Count,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_reads_bytes_(sizeof(XMFLOAT3)+Stride*(Count-1)) const XMFLOAT3* pPoints,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Stride );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void BoundingOrientedBox::CreateFromPoints(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_Out_ BoundingOrientedBox&amp; Out,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Count,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_reads_bytes_(sizeof(XMFLOAT3)+Stride*(Count-1)) const XMFLOAT3* pPoints,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Stride );</span></p>
+<p class="tx">If your vertex structure looks like this:<a id="page570"/></p>
+<p class="code"><span class="code">struct Basic32</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Pos;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Normal;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT2 TexC;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx">And you have an array of vertices forming your mesh:</p>
+<p class="code"><span class="code">std::vector&lt;Vertex::Basic32&gt; vertices;</span></p>
+<p class="tx">Then you call this function like so:</p>
+<p class="code"><span class="code">BoundingBox box;</span></p>
+<p class="code"><span class="code">BoundingBox::CreateFromPoints(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;box,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vertices.size(),&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&amp;vertices[0].Pos,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;sizeof(Vertex::Basic32));</span></p>
+<p class="tx">The stride indicates how many bytes to skip to get to the next position element.</p>
+<table>
+<tbody>
+<tr>
+<td valign="top">&nbsp;</td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>In order to compute bounding volumes of your meshes, you need to have a system memory copy of your vertex list available, such as one stored in</i><span class="code">&nbsp;std::vector.&nbsp;</span><i>This is because the CPU cannot read from a vertex buffer created for rendering. Therefore, it is common for applications to keep a system memory copy around for things like this, as well as picking (Chapter <a href="ch17.html#chap17">17</a>), and collision detection.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="c16.2.3"><a href="toc.html#toc-16.2.3"><b>16.2.3 Spheres</b></a></p>
+<p class="tx1">The bounding sphere of a mesh is a sphere that tightly surrounds the mesh. A bounding sphere can be described with a center point and radius. One way to compute the bounding sphere of a mesh is to first compute its AABB. We then take the center of the AABB as the center of the bounding sphere:</p>
+
+<p class="eq"><img src="images/eq604-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The radius is then taken to be the maximum distance between any vertex <b>p</b> in the mesh from the center <b>c</b>:</p>
+
+<p class="eq"><img src="images/eq604-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Suppose we compute the bounding sphere of a mesh in local space. After the world transform, the bounding sphere may not tightly surround the mesh due to scaling. Thus the radius needs to be rescaled accordingly. To compensate for non-uniform scaling, we must scale the radius by the largest scaling component so that the sphere encapsulates the transformed mesh. Another possible strategy is to avoid scaling all together by having all your meshes modeled to the same scale of the game world. This<a id="page571"/> way, models will not need to be rescaled once loaded into the application.</p>
+<p class="tx">The DirectX collision library provides the following structure for representing a bounding sphere:</p>
+<p class="code"><span class="code">struct BoundingSphere</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Center;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Center of the sphere.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float Radius;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Radius of the sphere.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="tx1">And it provides the following <i>static</i> member function for creating one from a set of points:</p>
+<p class="code"><span class="code">void BoundingSphere::CreateFromPoints(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_Out_ BoundingSphere&amp; Out,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Count,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_reads_bytes_(sizeof(XMFLOAT3)+Stride*(Count-1)) const XMFLOAT3* pPoints,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ size_t Stride );</span></p>
+<p class="h2" id="c16.2.4"><a href="toc.html#toc-16.2.4"><b>16.2.4 Frustums</b></a></p>
+<p class="tx1">We are well familiar with frustums from Chapter <a href="ch05.html#chap05">5</a>. One way to specify a frustum mathematically is as the intersection of six planes: the left/right planes, the top/bottom planes, and the near/far planes. We assume the six frustum planes are &ldquo;inward&rdquo; facing&mdash;see Figure <a href="ch16.html#fig16.6">16.6</a>. </p>
+
+<p class="caption"><img src="images/Fig16-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.6"><b><i>Figure 16.6.</i></b>&nbsp;&nbsp;The intersection of the positive half spaces of the frustum planes defines the frustum volume.</p>
+
+<p class="tx">This six plane representation makes it easy to do frustum and bounding volume intersection tests.</p>
+<p class="h3" id="c16.2.4.1"><a href="toc.html#toc-16.2.4.1"><b>16.2.4.1 Constructing the Frustum Planes</b></a></p>
+<p class="tx1">One easy way to construct the frustum planes is in view space, where the frustum takes on a canonical form centered at the origin looking down the positive <i>z</i>-axis. Here, the near and far planes<a id="page572"/> are trivially specified by their distances along the <i>z</i>-axis, the left and right planes are symmetric and pass through the origin (see Figure <a href="ch16.html#fig16.6">16.6</a> again), and the top and bottom planes are symmetric and pass through the origin. Consequently, we do not even need to store the full plane equations to represent the frustum in view space, we just need the plane slopes for the top/bottom/left/right planes, and the <i>z</i> distances for the near and far plane. The DirectX collision library provides the following structure for representing a frustum:</p>
+<p class="code"><span class="code">struct BoundingFrustum</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static const size_t CORNER_COUNT = 8;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT3 Origin;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Origin of the frustum (and projection).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMFLOAT4 Orientation;&nbsp;&nbsp;&nbsp;&nbsp;// Quaternion representing rotation.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float RightSlope;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Positive X slope (X/Z).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float LeftSlope;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Negative X slope.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float TopSlope;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Positive Y slope (Y/Z).</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float BottomSlope;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Negative Y slope.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float Near, Far;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; // Z of the near plane and far plane.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&hellip;</span></p>
+<p class="tx1">In the local space of the frustum (e.g., view space for the camera), the <span class="code">Origin&nbsp;</span>would be zero, and the <span class="code">Orientation</span> would represent an identity transform (no rotation). We can position and orientate the frustum somewhere in the world by specifying an <span class="code">Origin</span> position and <span class="code">Orientation</span> quaternion.</p>
+<p class="tx">If we cached the frustum vertical field of view, aspect ratio, near and far planes of our camera, then we can determine the frustum plane equations in view space with a little mathematical effort. However, it is also possible to derive the frustum plane equations in view space from the projection matrix in a number of ways (see [Lengyel02] or [M&ouml;ller08] for two different ways). The XNA collision library takes the following strategy. In NDC space, the view frustum has been warped into the box [&minus;1,1] &times; [&minus;1,1] &times; [0,1]. So the eight corners of the view frustum are simply:</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Corners of the projection frustum in homogenous space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static XMVECTORF32 HomogenousPoints[6] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 1.0f, 0.0f, 1.0f, 1.0f },&nbsp;&nbsp; // right (at far plane)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ -1.0f, 0.0f, 1.0f, 1.0f },&nbsp;&nbsp;// left</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 1.0f, 1.0f, 1.0f },&nbsp;&nbsp; // top</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, -1.0f, 1.0f, 1.0f },&nbsp;&nbsp;// bottom</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 0.0f, 0.0f, 1.0f },&nbsp;&nbsp; // near</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 0.0f, 1.0f, 1.0f }&nbsp;&nbsp;&nbsp;&nbsp;// far</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="tx1">We can compute the inverse of the projection matrix (as well is invert the homogeneous divide), to transform the eight corners from NDC space back to view space. One we have<a id="page573"/> the eight corners of the frustum in view space, some simple mathematics is used to compute the plane equations (again, this is simple because in view space, the frustum is positioned at the origin, and axis aligned). The following DirectX collision code computes the frustum in view space from a projection matrix:</p>
+<p class="code"><span class="code">//----------------------------------------------------------------------------</span></p>
+<p class="code"><span class="code">// Build a frustum from a persepective projection matrix. The matrix may only</span></p>
+<p class="code"><span class="code">// contain a projection; any rotation, translation or scale will cause the</span></p>
+<p class="code"><span class="code">// constructed frustum to be incorrect.</span></p>
+<p class="code"><span class="code">//----------------------------------------------------------------------------</span></p>
+<p class="code"><span class="code">_Use_decl_annotations_</span></p>
+<p class="code"><span class="code">inline void XM_CALLCONV BoundingFrustum::CreateFromMatrix(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;BoundingFrustum&amp; Out,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;FXMMATRIX Projection )</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Corners of the projection frustum in homogenous space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;static XMVECTORF32 HomogenousPoints[6] =</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 1.0f, 0.0f, 1.0f, 1.0f },&nbsp;&nbsp;// right (at far plane)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ -1.0f, 0.0f, 1.0f, 1.0f },&nbsp;&nbsp;// left</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 1.0f, 1.0f, 1.0f },&nbsp;&nbsp;// top</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, -1.0f, 1.0f, 1.0f },&nbsp;&nbsp;// bottom</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 0.0f, 0.0f, 1.0f },&nbsp;&nbsp; // near</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{ 0.0f, 0.0f, 1.0f, 1.0f }&nbsp;&nbsp; // far</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR Determinant;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMMATRIX matInverse = XMMatrixInverse( &amp;Determinant, Projection );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute the frustum corners in world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;XMVECTOR Points[6];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;for( size_t i = 0; i &lt; 6; ++i )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Transform point.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Points[i] = XMVector4Transform( HomogenousPoints[i], matInverse );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.Origin = XMFLOAT3( 0.0f, 0.0f, 0.0f );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.Orientation = XMFLOAT4( 0.0f, 0.0f, 0.0f, 1.0f );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute the slopes.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[0] = Points[0] * XMVectorReciprocal( XMVectorSplatZ( Points[0] ) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[1] = Points[1] * XMVectorReciprocal( XMVectorSplatZ( Points[1] ) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[2] = Points[2] * XMVectorReciprocal( XMVectorSplatZ( Points[2] ) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[3] = Points[3] * XMVectorReciprocal( XMVectorSplatZ( Points[3] ) );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.RightSlope = XMVectorGetX( Points[0] );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.LeftSlope = XMVectorGetX( Points[1] );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.TopSlope = XMVectorGetY( Points[2] );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.BottomSlope = XMVectorGetY( Points[3] );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Compute near and far.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[4] = Points[4] * XMVectorReciprocal( XMVectorSplatW( Points[4] ) );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Points[5] = Points[5] * XMVectorReciprocal( XMVectorSplatW( Points[5] ) );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.Near = XMVectorGetZ( Points[4] );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;Out.Far = XMVectorGetZ( Points[5] );</span></p>
+<p class="code"><span class="code">}</span><a id="page574"/></p>
+<p class="h3" id="c16.2.4.2"><a href="toc.html#toc-16.2.4.2"><b>16.2.4.2 Frustum/Sphere Intersection</b></a></p>
+<p class="tx1">For frustum culling, one test we will want to perform is a frustum/sphere intersection test. This tells us whether a sphere intersects the frustum. Note that a sphere completely inside the frustum counts as an intersection because we treat the frustum as a volume, not just a boundary. Because we model a frustum as six inward facing planes, a frustum/sphere test can be stated as follows: If there exists a frustum plane <i>L </i>such that the sphere is in the negative half-space of<i> L</i>, then we can conclude that the sphere is completely outside the frustum. If such a plane does not exist, then we conclude that the sphere intersects the frustum.</p>
+<p class="tx">So a frustum/sphere intersection test reduces to six sphere/plane tests. Figure <a href="ch16.html#fig16.7">16.7</a>  shows the setup of a sphere/plane intersection test. Let the sphere have center point c and radius <i>r.</i> Then the signed distance from the center of the sphere to the plane is<i> k = n &#x00B7; c + d</i>(Appendix C). If |<i>k</i>| &#x2264; <i>r </i>then the sphere intersects the plane. If<i> k &lt; </i>&minus;<i>r </i>then the sphere is behind the plane. If<i> k &gt; r</i> then the sphere is in front of the plane and the sphere intersects the positive half-space of the plane. For the purposes of the frustum/sphere intersection test, if the sphere is in front of the plane, then we count it as an intersection because it intersects the positive half-space the plane defines.</p>
+<p class="caption"><img src="images/Fig16-7.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig16.7"><b><i>Figure 16.7.</i></b>&nbsp;&nbsp;Sphere/plane intersection. (a) <i>k</i> &gt; <i>r</i> and the sphere intersects the positive half-space of the plane. (b) <i>k</i> &lt; &minus;<i>r</i> and the sphere is completely behind the plane in the negative half-space. (c) |<i>k</i>| &#x2264; <i>r</i> and the sphere intersects the plane.</p>
+
+
+<p class="tx">The <span class="code">BoundingFrustum&nbsp;</span>class provides the following member function to test if a sphere intersects a frustum. Note that the sphere and frustum must be in the same coordinate system for the test to make sense. </p>
+<p class="code"><span class="code">enum ContainmentType</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The object is completely outside the frustum.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DISJOINT = 0,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The object intersects the frustum boundaries.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;INTERSECTS = 1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The object lies completely inside the frustum volume.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;CONTAINS = 2,</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code"><span class="code">ContainmentType BoundingFrustum::Contains(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ const BoundingSphere&amp; sphere ) const;</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><span class="code">BoundingSphere</span><i> contains a symmetrical member function:</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="code"><span class="code">ContainmentType BoundingSphere::Contains(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ const BoundingFrustum&amp; fr ) const;</span><a id="page575"/></p>
+<p class="h3" id="c16.2.4.3"><a href="toc.html#toc-16.2.4.3"><b>16.2.4.3 Frustum/AABB Intersection</b></a></p>
+<p class="tx1">The frustum/AABB intersection test follows the same strategy as the frustum/sphere test. Because we model a frustum as six inward facing planes, a frustum/AABB test can be stated as follows: If there exists a frustum plane <i>L</i> such that the box is in the negative half-space of <i>L</i>, then we can conclude that the box is completely outside the frustum. If such a plane does not exist, then we conclude that the box intersects the frustum.</p>
+<p class="tx">So a frustum/AABB intersection test reduces to six AABB/plane tests. The algorithm for an AABB/plane test is as follows. Find the box diagonal vector<i> v = <img src="images/eq609-01.jpg" alt="image" width="30" height="25" style="margin-bottom:-0.5em;"/>, </i>passing through the center of the box, that is most aligned with the plane normal <b>n</b>. From Figure <a href="ch16.html#fig16.8">16.8</a>, (a) if <i>P</i> is in front of the plane, then <i>Q</i> must be also in front of the plane; (b) if <i>Q</i> is behind the plane, then <i>P</i> must be also be behind the plane; (c) if <i>P</i> is behind the plane and <i>Q</i> is in front of the plane, then the box intersects the plane.</p>
+
+<p class="caption"><img src="images/Fig16-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig16.8"><b><i>Figure 16.8.</i></b>&nbsp;&nbsp;AABB/plane intersection test. The diagonal <img src="images/eq609-01.jpg" alt="image" width="30" height="25" style="margin-bottom:-0.5em;"/> is always the diagonal most directed with the plane normal.</p>
+
+
+<p class="tx">Finding <i>PQ</i> most aligned with the plane normal vector <b>n</b> can be done with the following code:</p>
+<p class="code"><span class="code">// For each coordinate axis x, y, z&hellip;</span></p>
+<p class="code"><span class="code">for(int j = 0; j &lt; 3; ++j)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Make PQ point in the same direction as</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the plane normal on this axis.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( planeNormal[j] &gt;= 0.0f )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;P[j] = box.minPt[j];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Q[j] = box.maxPt[j];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;else&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;P[j] = box.maxPt[j];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;Q[j] = box.minPt[j];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span><a id="page576"/></p>
+<p class="tx1">This code just looks at one dimension at a time, and chooses <i>P</i><sub>i </sub>and <i>Q</i><sub>i</sub> such that <i>Q</i><sub>i </sub>&minus; <i>P</i><sub>i </sub>has the same sign as the plane normal coordinate<i> n</i><sub>i</sub> (Figure <a href="ch16.html#fig16.9">16.9</a>).</p>
+<p class="caption"><img src="images/Fig16-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig16.9"><b><i>Figure 16.9.</i></b>&nbsp;&nbsp;(Top) The normal component along the ith axis is positive, so we choose <i>P<sub>i</sub></i> = <i>vMin</i>[<i>i</i>] and <i>Q<sub>i</sub></i> = <i>vMax</i>[<i>i</i>] so that <i>Q<sub>i</sub></i> &minus; <i>P<sub>i</sub></i> has the same sign as the plane normal coordinate <i>n<sub>i</sub></i>. (Bottom) The normal component along the <i>i</i>th axis is negative, so we choose <i>P<sub>i</sub></i> = <i>vMax</i>[<i>i</i>] and <i>Q<sub>i</sub></i> = <i>vMin</i>[<i>i</i>] so that <i>Q<sub>i</sub></i> &minus; <i>P<sub>i</sub></i> has the same sign as the plane normal coordinate <i>n<sub>i</sub></i>.</p>
+
+<p class="tx">The <span class="code">BoundingFrustum</span> class provides the following member function to test if an AABB intersects a frustum. Note that the AABB and frustum must be in the same coordinate system for the test to make sense. </p>
+<p class="code"><span class="code">ContainmentType BoundingFrustum::Contains(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ const BoundingBox&amp; box ) const;</span></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><span class="code">BoundingBox</span><i> contains a symmetrical member function:</i></p>
+<p class="code"><span class="code">ContainmentType BoundingBox::Contains(&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;_In_ const BoundingFrustum&amp; fr ) const;</span></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="c16.3"><a href="toc.html#toc-16.3"><b>16.3 FRUSTUM CULLING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Recall from Chapter <a href="ch05.html#chap05">5</a> that the hardware automatically discards triangles that are outside the viewing frustum in the clipping stage. However, if we have millions of triangles, all the triangles are still submitted to the rendering pipeline via draw calls (which has API overhead), and all the triangles go through the vertex shader, possibly through the tessellation stages, and possibly through the geometry shader, only to be discarded during the clipping stage. Clearly, this is wasteful inefficiency. </p>
+<p class="tx">The idea of frustum culling is for the application code to cull groups of triangles at a higher level than on a per-triangle basis. Figure <a href="ch16.html#fig16.10">16.10</a> shows a simple example. We build a bounding volume, such as a sphere or box, around each object in the scene. If the bounding volume does not intersect the frustum, then we do not need to submit the object<a id="page577"/> (which could contain thousands of triangles) to Direct3D for drawing. This saves the GPU from having to do wasteful computations on invisible geometry, at the cost of an inexpensive CPU test. Assuming a camera with a 90&deg; field of view and infinitely far away far plane, the camera frustum only occupies 1/6<sup>th</sup> of the world volume, so 5/6<sup>th</sup> of the world objects can be frustum culled, assuming objects are evenly distributed throughout the scene. In practice, cameras use smaller field of view angles than 90&deg; and a finite far plane, which means we could cull even more than 5/6<sup>th</sup> of the scene objects. </p>
+
+<p class="caption"><img src="images/Fig16-10.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.10"><b><i>Figure 16.10.</i></b>&nbsp;&nbsp;The objects bounded by volumes <i>A</i> and <i>D</i> are completely outside the frustum, and so do not need to be drawn. The object corresponding to volume <i>C</i> is completely inside the frustum, and needs to be drawn. The objects bounded by volumes <i>B</i> and <i>E</i> are partially outside the frustum and partially inside the frustum; we must draw these objects and let the hardware clip and triangles outside the frustum.</p>
+
+<p class="caption"><img src="images/Fig16-11.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="fig16.11"><b><i>Figure 16.11.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Instancing and Culling&rdquo; demo.</p>
+
+
+<p class="tx">In our demo, we render a 5 &times; 5 &times; 5 grid of skull meshes (see Figure <a href="ch16.html#fig16.11">16.11</a>) using instancing. We compute the AABB of the skull mesh in local space. In the <span class="code">UpdateInstanceData</span> method, we perform frustum culling on all of our instances. If the instance intersects the frustum, then we add it to the next available slot in our structured buffer containing the instance data and increment the <span class="code">visibleInstanceCount</span> counter. This way, the front of the structured buffer contains the data for all the visible instances. (Of course, the structured buffer is sized to match the number of instances in case all the instances are visible.) Because the AABB of the skull mesh is in local space, we must transform the view frustum into the local space of each instance in order to perform the intersection test; we could use alternative spaces, like transform the AABB to world space and the frustum to world space, for example. The frustum culling update code is given below:<a id="page578"/></p>
+<p class="code"><span class="code">XMMATRIX view = mCamera.GetView();</span></p>
+<p class="code"><span class="code">XMMATRIX invView = XMMatrixInverse(&amp;XMMatrixDeterminant(view), view);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">auto currInstanceBuffer = mCurrFrameResource-&gt;InstanceBuffer.get();</span></p>
+<p class="code"><span class="code">for(auto&amp; e : mAllRitems)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const auto&amp; instanceData = e-&gt;Instances;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;int visibleInstanceCount = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; (UINT)instanceData.size(); ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX world = XMLoadFloat4x4(&amp;instanceData[i].World);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX texTransform = XMLoadFloat4x4(&amp;instanceData[i].TexTransform);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX invWorld = XMMatrixInverse(&amp;XMMatrixDeterminant(world), world);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// View space to the object&rsquo;s local space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX viewToLocal = XMMatrixMultiply(invView, invWorld);</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Transform the camera frustum from view space to the object&rsquo;s local space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;BoundingFrustum localSpaceFrustum;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mCamFrustum.Transform(localSpaceFrustum, viewToLocal);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Perform the box/frustum intersection test in local space.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(localSpaceFrustum.Contains(e-&gt;Bounds) != DirectX::DISJOINT)</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;InstanceData data;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;data.World, XMMatrixTranspose(world));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;data.TexTransform, XMMatrixTranspose(texTransform));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data.MaterialIndex = instanceData[i].MaterialIndex;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Write the instance data to structured buffer for the visible objects.</span></b></p>
+<p class="code"><b><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;currInstanceBuffer-&gt;CopyData(visibleInstanceCount++, data);</span></b></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;e-&gt;InstanceCount = visibleInstanceCount;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// For informational purposes, output the number of instances</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// visible over the total number of instances.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::wostringstream outs;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;outs.precision(6);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;outs &lt;&lt; L"Instancing and Culling Demo" &lt;&lt;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;L"&nbsp;&nbsp;" &lt;&lt; e-&gt;InstanceCount &lt;&lt;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;L" objects visible out of " &lt;&lt; e-&gt;Instances.size();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;mMainWndCaption = outs.str();</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx">Even though our instanced buffer has room for every instance, we only draw the visible instances which correspond to instances from 0 to <span class="code">visibleInstanceCount-1</span>:</p>
+<p class="code"><span class="code">cmdList-&gt;DrawIndexedInstanced(ri-&gt;IndexCount,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ri-&gt;InstanceCount,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ri-&gt;StartIndexLocation,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;ri-&gt;BaseVertexLocation, 0);</span></p>
+<p class="tx1">Figure <a href="ch16.html#fig16.12">16.12</a> shows the performance difference between having frustum culling enabled and not. With frustum culling, we only submit eleven instances to the rendering pipeline for processing.<a id="page579"/> Without frustum culling, we submit all 125 instances to the rendering pipeline for processing. Even though the visible scene is the same, with frustum culling disabled, we waste computation power drawing over a 100 skull meshes whose geometry is eventually discarded during the clipping stage. Each skull has about 60K triangles, so that is a lot of vertices to process and a lot of triangles to clip per skull. By doing one frustum/AABB test, we can reject 60K triangles from even being sent to the graphics pipeline&mdash;this is the advantage of frustum culling and we see the difference in the frames per second. </p>
+
+<p class="caption"><img src="images/Fig16-12.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig16.12"><b><i>Figure 16.12.</i></b>&nbsp;&nbsp;(Left) Frustum culling is turned off, and we are rendering all 125 instances, and it takes about 33.33 ms to render a frame (Right) Frustum culling is turned on, and we see that 13 out of 125 instances are visible, and our frame rate doubles.</p>
+
+<p class="h1" id="c16.4"><a href="toc.html#toc-16.4"><b>16.4 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Instancing refers to drawing the same object more than once in a scene, but with different positions, orientations, scales, materials, and textures. To save memory, we can only create one mesh, and submit multiple draw calls to Direct3D with a different world matrix, material, and texture. To avoid the API overhead of issuing resource changes and multiple draw calls, we can bind an SRV to a structured buffer that contains all of our instance data and index into it in our vertex shader using the <span class="code">SV_InstancedID</span> value. Furthermore, we can use dynamic indexing to index into arrays of textures. The number of instances to draw with one draw call is specified by the second parameter, <span class="code">InstanceCount</span>, of the <span class="code">ID3D12GraphicsCommandList::DrawIndexedInstanced&nbsp;</span>method. </li>
+<li>Bounding volumes are primitive geometric objects that approximate the volume of an object. The tradeoff is that although the bounding volume only approximates the object its form has a simple mathematical representation, which makes it easy to work<a id="page580"/> with. Examples of bounding volumes are spheres, axis-aligned bounding boxes (AABB), and oriented bounding boxes (OBB). The <i>DirectXCollision.h</i> library has structures representing bounding volumes, and functions for transforming them, and computing various intersection tests. </li>
+<li>The GPU automatically discards triangles that are outside the viewing frustum in the clipping stage. However, clipped triangles are still submitted to the rendering pipeline via draw calls (which has API overhead), and all the triangles go through the vertex shader, possibly through the tessellation stages, and possibly through the geometry shader, only to be discarded during the clipping stage. To fix this inefficiency, we can implement frustum culling. The idea is to build a bounding volume, such as a sphere or box, around each object in the scene. If the bounding volume does not intersect the frustum, then we do not need to submit the object (which could contain thousands of triangles) to Direct3D for drawing. This saves the GPU from having to do wasteful computations on invisible geometry, at the cost of an inexpensive CPU test. </li></ol>
+<p class="h1" id="c16.5"><a href="toc.html#toc-16.5"><b>16.5 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Modify the &ldquo;Instancing and Culling&rdquo; demo to use bounding spheres instead of bounding boxes.</li>
+<li>The plane equations in NDC space take on a very simple form. All points inside the view frustum are bounded as follows:
+<p class="eq"><img src="images/eq614-01.jpg" alt="image" width="100%"/></p>
+In particular, the left plane equation is given by <i>x</i> = &minus;1 and the right plane equation is given by <i>x</i> = 1 in NDC space. In homogeneous clip space before the perspective divide, all points inside the view frustum are bounded as follows:
+<p class="eq"><img src="images/eq614-02.jpg" alt="image" width="100%"/></p>
+Here, the left plane is defined by <i>w = </i>&minus;<i>x</i> and the right plane is defined by  <i>w = x</i>. Let <b>M</b> = <b>VP</b> be the view-projection matrix product, and let  <b>v</b> = (<i>x</i>, <i>y</i>, <i>z</i>, 1) be a point in world space inside<a id="page581"/> the frustum. Consider <img src="images/eq615-02.jpg" alt="image" width="400" height="25" style="margin-bottom:-0.5em;"/> to show that the inward facing frustum planes in world space are given by:
+<p class="eq"><img src="images/tbl615.jpg" alt="image" width="50%"/></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>(a)  We ask for inward facing normals. That means a point inside the frustum has a positive distance from the plane; in other words,</i> <b>n &#x00B7; p</b> + <i>d</i> &#x2265; 0 <i>for a point </i><b>p</b><i> inside the frustum.</i>
+<br/><br/><i>(b)  Note that v</i><sub>w </sub>= 1<i>, so the above dot product formulas do yield plane equations of the form Ax + By + Cz + D</i> = 0.
+<br/><br/><i>(c)  The calculated plane normal vectors are not unit length; see Appendix C for how to normalize a plane.</i></p>
+</td></tr>
+</tbody>
+</table>
+</li>
+<li>Examine the DirectXCollision.h header file to get familiar with the functions it provides for intersection tests and bounding volume transformations. </li>
+<li>An OBB can be defined by a center point <b>C, </b>three orthonormal axis vectors <b>r</b><sub>0</sub>, <b>r</b><sub>1</sub>, and <b>r</b><sub>2</sub> defining the box orientation, and three extent lengths a<sub>0</sub>, a<sub>1</sub>, and a<sub>2</sub> along the box axes <b>r</b><sub>0</sub>, <b>r</b><sub>1</sub>, and <b>r</b><sub>2</sub>, respectively, that give the distance from the box center to the box sides. 
+<ol class="lc-alpha">
+<li>Consider Figure <a href="ch16.html#fig16.13">16.13</a> (which shows the situation in 2D) and conclude the projected &ldquo;shadow&rdquo; of the OBB onto the axis defined by the normal vector is 2<i>r</i>, where
+<p class="eq"><img src="images/eq615-01.jpg" alt="image" width="120%"/></p>
+
+<p class="caption"><img src="images/Fig16-13.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig16.13"><b><i>Figure 16.13.</i></b>&nbsp;&nbsp;Plane/OBB intersection setup</p>
+</li>
+<li>In the previous formula for <i>r,</i> explain why we must take the absolute values instead of just computing <img src="images/eq615-03.jpg" alt="image" width="180" height="25" style="margin-bottom:-0.5em;"/>?</li>
+<li>Derive a plane/OBB intersection test that determines if the OBB is in front of the plane, behind the plane, or intersecting the plane.</li>
+<li>An AABB is a special case of an OBB, so this test also works for<a id="page582"/> an AABB. However, the formula for r simplifies in the case of an AABB. Find the simplified formula for r for the AABB case.</li></ol></li></ol>
+</body>
+</html>

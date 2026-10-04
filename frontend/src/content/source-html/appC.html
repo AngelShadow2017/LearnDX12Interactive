@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<p class="bkcn"><a id="page789"/><a href="toc.html#toc-appC" id="appC">Appendix C</a></p>
+<p class="bkct"><a href="toc.html#toc-appC"><i><b>S</b><span class="sc">OME</span> <b>A</b><span class="sc">NALYTIC</span></i><br/><i><b>G</b><span class="sc">EOMETRY</span></i></a></p>
+
+<p class="tx1">&nbsp;<br/><br/></p>
+
+
+<p class="tx1">In this appendix, we use vectors and points as building blocks for more complicated geometry. These topics are used in the book, but not as frequently as vectors, matrices, and transformations; hence, we have put them in an appendix, rather than the main text.</p>
+<p class="h1" id="C.1"><a href="toc.html#toc-C.1"><b>C.1 RAYS, LINES, AND SEGMENTS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A line can be described by a point <b>p</b><sub>0 </sub>on the line and a vector <b>u</b><sub> </sub>that aims parallel to the line (see Figure <a href="appC.html#figC.1">C.1</a>). The vector line equation is:</p>
+
+<p class="eq"><img src="images/eq823-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">By plugging in different values for <i>t</i> (<i>t</i> can be any real number) we obtain different points on the line. </p>
+<p class="tx">If we restrict<sub> </sub><i>t</i> to nonnegative numbers, then the graph of the vector line equation is a ray with origin<sub> </sub><b>p</b><sub>0 </sub>and direction <b>u</b><sub> </sub>(see Figure <a href="appC.html#figC.2">C.2</a>).</p>
+<p class="tx">Now suppose we wish to define a line segment by the endpoints<sub> </sub><b>p</b><sub>0</sub> and<sub> </sub><b>p</b><sub>1</sub>. We first construct the vector <b>u</b> = <b>p</b><sub>1 </sub>&minus;<sub> </sub><b>p</b><sub>0</sub> from <b>p</b><sub>0 </sub>to <b>p</b><sub>1</sub>; see Figure <a href="appC.html#figC.3">C.3</a>. Then, for<sub> </sub><i>t</i><sub> </sub>&#x2208; [0, 1],  the graph of the equation <b>p</b>(<i>t</i>) = <b>p</b><sub>0</sub> + <i>t</i><b>u</b> = <b>p</b><sub>0</sub> + (<b>p</b><sub>1</sub> &minus; <b>p</b><sub>0</sub>) is the line segment defined by<sub> </sub><b>p</b><sub>0 </sub>and <b>p</b><sub>1</sub>. Note that if you go outside the range <i>t</i> &#x2208; [0, 1], then you get a point on the line that coincides with the segment, but which is not on the segment.<a id="page790"/> </p>
+
+<p class="caption"><img src="images/FigC-1.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.1"><b><i>Figure C.1.</i></b>&nbsp;&nbsp;A line described by a point p<sub>0</sub> on the line and a vector u that aims parallel to the line. We can generate points on the line by plugging in any real number <i>t</i>.</p>
+<p class="caption"><img src="images/FigC-2.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.2"><b><i>Figure C.2.</i></b>&nbsp;&nbsp;A ray described by an origin <b>p</b><sub>0</sub> and direction <b>u</b>. We can generate points on the ray by plugging in scalars for <i>t</i> that are greater than or equal to zero.</p>
+
+<p class="caption"><img src="images/FigC-3.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.3"><b><i>Figure C.3.</i></b>&nbsp;&nbsp;We generate points on the line segment by plugging in different values for <i>t</i> in [0, 1]. For example, the midpoint of the line segment is given at <i>t</i> = 0.5. Also note that if <i>t</i> = 0, we get the endpoint <b>p</b><sub>0</sub> and if <i>t</i> = 1, we get the endpoint <b>p</b><sub>1</sub>.</p>
+
+<p class="h1" id="C.2"><a href="toc.html#toc-C.2"><b>C.2 PARALLELOGRAMS</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Let <b>q</b> be a point, and <b>u</b> and <b>v</b> be two vectors that are not scalar multiples of one another (i.e., <b>u</b> &#x2260; <i>kv</i> for any scalar <i>k</i>). Then the graph of the following function is a parallelogram (see Figure <a href="appC.html#figC.4">C.4</a>):</p>
+
+<p class="eq"><img src="images/eq824-01.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/FigC-4.jpg" alt="image" width="30%"/></p>
+<p class="caption" id="figC.4"><b><i>Figure C.4.</i></b>&nbsp;&nbsp;Parallelogram. By plugging in different <i>s</i>, <i>t</i> &#x2208; [0, 1] we generate different points on the parallelogram.</p>
+
+
+<p class="tx">The reason for the<a id="page791"/> &ldquo;<b>u</b> &#x2260; <i>kv</i> for any scalar <i>k</i>&rdquo; requirement can be seen as follows: If <b>u</b> = <i>k</i><b>v</b> then we could write:</p>
+
+<p class="eq"><img src="images/eq825-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">which is just the equation of a line. In other words, we only have one degree of freedom. To get a 2D shape like a parallelogram, we need two degrees of freedom, so the vectors <b>u</b> and <b>v</b> must not be scalar multiples of each another.</p>
+<p class="h1" id="C.3"><a href="toc.html#toc-C.3"><b>C.3 TRIANGLES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">The vector equation of a triangle is similar to that of the parallelogram equation, except that we restrict the domain of the parameters further:</p>
+
+<p class="eq"><img src="images/eq825-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Observe from Figure <a href="appC.html#figC.5">C.5</a> that if any of the conditions on <i>s</i> and <i>t</i> do not hold, then <b>p</b>(<i>s</i>, <i>t</i>) will be a point &ldquo;outside&rdquo; the triangle, but on the plane of the triangle. </p>
+<p class="tx">We can obtain the above parametric equation of a triangle given three points defining a triangle. Consider a triangle defined by three vertices <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>, <b>p</b><sub>2</sub>. Then for that <i>s</i> &#x2265; 0, <i>t</i> &#x2265; 0, <i>s</i> + <i>t</i> &#x2264; 1 a point on the triangle can be given by:</p>
+
+<p class="eq"><img src="images/eq825-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We can take this further and distribute the scalars:</p>
+
+<p class="eq"><img src="images/eq825-04.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where we have let<a id="page792"/> <i>r</i> = (1 &minus; <i>s</i> &minus; <i>t</i>). The coordinates (<i>r</i>, <i>s</i>, <i>t</i>) are called <i>barycentric coordinates</i>. Note that <i>r </i>+ <i>s </i>+ <i>t</i> = 1 and the barycentric combination <b>p</b>(<i>r</i>, <i>s</i>, <i>t</i>) = <i>r</i><b>p</b><sub>0</sub> + <i>s</i><b>p</b><sub>1</sub> + <i>t</i><b>p</b><sub>2</sub> expresses the point <b>p</b><sub> </sub>as a weighted average of the vertices of the triangle. There are interesting properties of barycentric coordinates, but we do not need them for this book; the reader may wish to further research barycentric coordinates. </p>
+<p class="caption"><img src="images/FigC-5.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.5"><b><i>Figure C.5.</i></b>&nbsp;&nbsp;Triangle. By plugging in different <i>s</i>, <i>t</i> such that <i>s</i> &#x2265; 0, <i>t</i> &#x2265; 0, <i>s</i> + <i>t</i> &#x2264; 1, we generate different points on the triangle.</p>
+
+
+
+<p class="h1" id="C.4"><a href="toc.html#toc-C.4"><b>C.4 PLANES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">A plane can be viewed as an infinitely thin, infinitely wide, and infinitely long sheet of paper. A plane can be specified with a vector &#x03BD; and a point<sub> </sub><b>p</b><sub>0 </sub>on the plane. The vector <b>n</b>, not necessarily unit length, is called the plane&rsquo;s<sub> normal vector</sub> and is perpendicular to the plane; see Figure <a href="appC.html#figC.6">C.6</a>. A plane divides space into a <sub>positive half-space </sub>and a <sub>negative half-space</sub>. The positive half space is the space in front of the plane, where the<sub> </sub>front of the plane is the side the normal vector emanates from. The negative half space is the space behind the plane.</p>
+<p class="tx">By Figure <a href="appC.html#figC.6">C.6</a>, we see that the graph of a plane is all the points <b>p</b> that satisfy the<sub> </sub><i>plane equation</i>:</p>
+
+<p class="eq"><img src="images/eq826-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">When describing a particular plane, the normal <b>n</b> and a known point <b>p</b><sub>0</sub> on the plane are fixed, so it is typical to rewrite the plane equation as:</p>
+
+<p class="eq"><img src="images/eq826-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">where <i>d</i> = &minus;<b>n &#x00B7; p</b><sub>0</sub>. If <b>n</b> = (<i>a</i>, <i>b</i>, <i>c</i>) and <b>p</b> = (<i>x</i>, <i>y</i>, <i>z</i>), then the plane equation can be written as:</p>
+
+<p class="eq"><img src="images/eq826-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If the plane&rsquo;s normal vector <b>n</b> is of unit length, then <i>d</i> = &minus;<b>n &#x00B7; p</b><sub>0</sub> gives the shortest <i>signed</i> distance from the origin to the plane (see Figure <a href="appC.html#figC.7">C.7</a>).</p>
+
+<p class="caption"><img src="images/FigC-6.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.6"><b><i>Figure C.6.</i></b>&nbsp;&nbsp;A plane defined by a normal vector n and a point <b>p</b><sub>0</sub> on the plane. If <b>p</b><sub>0</sub> is a point on the plane, then the point <b>p</b> is also on the plane if and only if the vector <b>p</b> &minus; <b>p</b><sub>0</sub> is orthogonal to the plane&rsquo;s normal vector.]</p>
+
+
+<p class="caption"><img src="images/FigC-7.jpg" alt="image" width="60%"/></p>
+<p class="caption" id="figC.7"><b><i>Figure C.7.</i></b>&nbsp;&nbsp;Shortest distance from a plane to the origin.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>To make the pictures easier to draw,<a id="page793"/> we sometimes draw our figures in 2D and use a line to represent a plane. A line, with a perpendicular normal, can be thought of as a 2D plane since the line divides the 2D space into a positive half space and negative half space.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h2" id="C.4.1"><a href="toc.html#toc-C.4.1"><b>C.4.1 DirectX Math Planes</b></a></p>
+<p class="tx1">When representing a plane in code, it suffices to store only the normal vector <b>n</b> and the constant <i>d</i>. It is useful to think of this as a 4D vector, which we denote as (<b>n</b>, <i>d</i>) = (<i>a, b, c, d</i>). Therefore, because the <span class="code">XMVECTOR</span> type stores a 4-tuple of floating-point values, the DirectX Math library overloads the <span class="code">XMVECTOR</span> type to also represent planes.</p>
+<p class="h2" id="C.4.2"><a href="toc.html#toc-C.4.2"><b>C.4.2 Point/Plane Spatial Relation</b></a></p>
+<p class="tx1">Given any point <b>p</b>, observe from Figure <a href="appC.html#figC.6">C.6</a> and Figure <a href="appC.html#figC.8">C.8</a> that </p>
+<p class="tx1"><img src="images/eq827-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">These tests are useful for testing the spatial location of points relative to a plane. </p>
+<p class="tx">This next DirectX Math function evaluates <b>n &#x00B7; p</b> = <i>d</i> for a particular plane and point:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneDotCoord(// Returns <b>n &#x00B7; p</b> = <i>d</i> replicated in each coordinate</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR P, // plane</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR V); // point with w = 1</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Test the locality of a point relative to a plane.</span></p>
+<p class="code"><span class="code">XMVECTOR p = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR v = XMVectorSet(3.0f, 5.0f, 2.0f);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">float x = XMVectorGetX( XMPlaneDotCoord(p, v) );</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">if( x approximately equals 0.0f ) // v is coplanar to the plane.</span></p>
+<p class="code"><span class="code">if( x &gt; 0 )&nbsp;&nbsp; // v is in positive half-space.</span></p>
+<p class="code"><span class="code">if( x &lt; 0 )&nbsp;&nbsp; // v is in negative half-space.</span></p>
+
+<p class="caption"><img src="images/FigC-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="figC.8"><b><i>Figure C.8.</i></b>&nbsp;&nbsp;Point/plane spatial relation.</p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We say approximately equals due to floating point imprecision. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx">A similar function is:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneDotNormal(XMVECTOR Plane, XMVECTOR Vec);</span></p>
+<p class="tx1">This returns the dot<a id="page794"/> product of the plane normal vector and the given 3D vector.</p>
+<p class="h2" id="C.4.3"><a href="toc.html#toc-C.4.3"><b>C.4.3 Construction</b></a></p>
+<p class="tx1">Besides directly specifying the plane coefficients (<b>n, </b><i>d</i>) = (<i>a, b, c, d</i>), we can calculate these coefficients in two other ways. Given the normal <b>n </b>and a known point on the plane <b>p</b><sub>0 </sub>we can solve for the <i>d</i> component:</p>
+
+<p class="eq"><img src="images/eq828-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The DirectX Math library provides the following function to construct a plane from a point and normal in this way:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneFromPointNormal(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR Point,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR Normal);</span></p>
+<p class="tx1">The second way we can construct a plane is by specifying three distinct points on the plane. </p>
+<p class="tx">Given the points <b>p</b><sub>0</sub>, <b>p</b><sub>1</sub>, <b>p</b><sub>2</sub>, we can form two vectors on the plane:</p>
+
+<p class="eq"><img src="images/eq828-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">From that we can compute the normal of the plane by taking the cross product of the two vectors on the plane. (Remember the left hand thumb rule.)</p>
+
+<p class="eq"><img src="images/eq828-03.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Then, we compute <i>d</i> = &minus;<b>n &#x00B7; p</b><sub>0</sub>.</p>
+<p class="tx">The DirectX Math library provides the following function to compute a plane given three points on the plane:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneFromPoints(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR Point1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR Point2,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR Point3);</span><a id="page795"/></p>
+<p class="h2" id="C.4.4"><a href="toc.html#toc-C.4.4"><b>C.4.4 Normalizing a Plane</b></a></p>
+<p class="tx1">Sometimes we might have a plane and would like to normalize the normal vector. At first thought, it would seem that we could just normalize the normal vector as we would any other vector. But recall that the <i>d </i>component also depends on the normal vector: <i>d</i> = &minus;<b>n &#x00B7; p</b><sub>0</sub>. Therefore, if we normalize the normal vector, we must also recalculate <i>d</i>. This is done as follows:</p>
+
+<p class="eq"><img src="images/eq829-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Thus, we have the following formula to normalize the normal vector of the plane (<b>n</b>, <i>d</i>):</p>
+
+<p class="eq"><img src="images/eq829-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">We can use the following DirectX Math function to normalize a plane&rsquo;s normal vector:</p>
+     <p class="tx"><span class="code">XMVECTOR XMPlaneNormalize(XMVECTOR P);</span></p>
+<p class="h2" id="C.4.5"><a href="toc.html#toc-C.4.5"><b>C.4.5 Transforming a Plane</b></a></p>
+<p class="tx1">[Lengyel02] shows that we can transform a plane (<b>n</b>, <i>d</i>) by treating it as a 4D vector and multiplying it by the inverse-transpose of the desired transformation matrix. Note that the plane&rsquo;s normal vector must be normalized first. We use the following DirectX Math function to do this:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneTransform(XMVECTOR P, XMMATRIX M);</span></p>
+<p class="code">&nbsp;</p>
+<p class="tx1">Sample Code:</p>
+<p class="code"><span class="code">XMMATRIX T(&hellip;); // Initialize T to a desired transformation.</span></p>
+<p class="code"><span class="code">XMMATRIX invT = XMMatrixInverse(XMMatrixDeterminant(T), T);</span></p>
+<p class="code"><span class="code">XMMATRIX invTransposeT = XMMatrixTranspose(invT);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR p = (&hellip;); // Initialize Plane.</span></p>
+<p class="code"><span class="code">p = XMPlaneNormalize(p); // make sure normal is normalized.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMVECTOR transformedPlane = XMPlaneTransform(p, &amp;invTransposeT);</span></p>
+<p class="h2" id="C.4.6"><a href="toc.html#toc-C.4.6"><b>C.4.6 Nearest Point on a Plane to a Given Point</b></a></p>
+<p class="tx1">Suppose we have a point <b>p</b> in space and we would like to find the point<a id="page796"/><b> q</b> on the plane (<b>n</b>, <i>d</i>) that is closest to <b>p</b>. From Figure <a href="appC.html#figC.9">C.9</a>, we see that </p>
+
+<p class="eq"><img src="images/eq829-03.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/FigC-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="figC.9"><b><i>Figure C.9.</i></b>&nbsp;&nbsp;The nearest point on a plane to a point <b>p</b>. The point <b>p</b><sub>0</sub> is a point on the plane.</p>
+
+
+<p class="tx">Assuming <b>||</b><b>n</b><b>||</b> = 1 so that <img src="images/eq830-03.jpg" alt="image" width="220" height="25" style="margin-bottom:-0.5em;"/> we can rewrite this as:</p>
+
+<p class="eq"><img src="images/eq830-01.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="C.4.7"><a href="toc.html#toc-C.4.7"><b>C.4.7 Ray/Plane Intersection</b></a></p>
+<p class="tx1">Given a ray <b>p</b>(<i>t</i>) = <b>p</b><sub>0</sub> + <i>t</i><b>u</b> and the equation of a plane <b>n &#x00B7; p</b> + <i>d</i> = 0, we would like to know if the ray intersects the plane and also the point of intersection. To do this, we plug the ray into the plane equation and solve for the parameter <i>t</i> that satisfies the plane equation, thereby giving us the parameter that yields the intersection point:</p>
+      
+<p class="caption"><img src="images/tbl830-01.jpg" alt="image" width="100%"/></p>
+
+
+
+<p class="tx1">If <b>n</b><sub>&#x00B7;</sub><b>u</b> = 0 then the ray is parallel to the plane and there are either no solutions or infinite many solutions (infinite if the ray coincides with the plane). If <i>t</i> is not in the interval [0,<sub> </sub>&#x221E;), the ray does not intersect the plane, but the line coincident with the ray does. If <i>t</i> is in the interval [0,<sub> </sub>&#x221E;), then the ray does intersect the plane and the intersection point is found by evaluating the ray equation at <img src="images/eq830-02.jpg" alt="image" width="120" height="40" style="margin-bottom:-1.0em;"/>.</p>
+<p class="tx">The ray/plane intersection test can be modified to a segment/plane test. Given two points defining a line segment<sub> </sub><b>p</b> and <b>q</b>, then we form the ray <b>r</b>(<i>t</i>) = <b>p</b> + <i>t</i>(<b>q</b> &minus; <b>p</b>). We use this ray for the intersection test. If <i>t</i> &#x2208; [0, 1], then the segment intersects<a id="page797"/> the plane, otherwise it does not. The DirectX Math library provides the following function:</p>
+<p class="code"><span class="code">XMVECTOR XMPlaneIntersectLine(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR P,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR LinePoint1,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp; XMVECTOR LinePoint2);</span></p>
+<p class="h2" id="C.4.8"><a href="toc.html#toc-C.4.8"><b>C.4.8 Reflecting Vectors</b></a></p>
+<p class="tx1">Given a vector <b>I</b> we wish to reflect it about a plane with normal <b>n</b>. Because vectors do not have positions, only the plane normal is involved when reflecting a vector. Figure <a href="appC.html#figC.10">C.10</a> shows the geometric situation, from which we conclude the reflection vector is given by:</p>
+
+<p class="eq"><img src="images/eq831-01.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="C.4.9"><a href="toc.html#toc-C.4.9"><b>C.4.9 Reflecting Points</b></a></p>
+<p class="tx1">Points reflect differently from vectors since points have position. Figure <a href="appC.html#figC.11">C.11</a> shows that the reflected point <b>q</b> is given by:</p>
+
+<p class="eq"><img src="images/eq831-02.jpg" alt="image" width="100%"/></p>
+<p class="h2" id="C.4.10"><a href="toc.html#toc-C.4.10"><b>C.4.10 Reflection Matrix</b></a></p>
+<p class="tx1">Let (<b>n</b>, <i>d</i>) = (<i>n</i><sub>x</sub>, <i>n</i><sub>y</sub>, <i>n</i><sub>z</sub>, <i>d</i>)<sub> </sub>be the coefficients of a plane, where <i>d</i> = &minus; <b>n &#x00B7; p</b><sub>0</sub>. Then, using homogeneous coordinates, we can reflect both points and vectors about this plane using a single 4 &times; 4 reflection matrix:<a id="page798"/></p>
+
+<p class="caption"><img src="images/FigC-10.jpg" alt="image" width="50%"/></p>
+<p class="caption" id="figC.10"><b><i>Figure C.10.</i></b>&nbsp;&nbsp;Geometry of vector reflection.</p>
+
+
+<p class="caption"><img src="images/FigC-11.jpg" alt="image" width="50%"/></p>
+<p class="caption" id="figC.11"><b><i>Figure C.11.</i></b>&nbsp;&nbsp;Geometry of point reflection.</p>
+
+
+<p class="eq"><img src="images/eq832-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">This matrix assumes the plane is normalized so that </p>
+
+<p class="eq"><img src="images/eq832-02.jpg" alt="image" width="100%"/></p>
+<p class="tx1">If we multiply a point by this matrix, we get the point reflection formula:</p>
+    
+
+<p class="eq"><img src="images/eq832-03.jpg" alt="image" width="100%"/></p>
+
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>We take the transpose to turn row vectors into column vectors. This is just to make the presentation neater&mdash;otherwise, we would get very long row vectors.<a id="page799"/></i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">And similarly, if we multiply a vector by this matrix, we get the vector reflection formula:</p>
+
+<p class="eq"><img src="images/eq833-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">The following DirectX Math function can be used to construct the above reflection matrix given a plane:</p>
+<p class="code"><span class="code">XMMATRIX XMMatrixReflect(XMVECTOR ReflectionPlane);</span></p>
+<p class="h1" id="C.5"><a href="toc.html#toc-C.5"><b>C.5 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li><b>Let p</b>(<i>t</i>) = (1, 1) + <i>t</i>(2, 1) be a ray relative to some coordinate system. Plot the points on the ray at <i>t</i> = 0.0, 0.5, 1.0, 2.0, and 5.0.</li>
+<li>Let <b>p</b><sub>0</sub> and <b>p</b><sub>1</sub> define the endpoints of a line segment. Show that the equation for a line segment can also be written as<sub> </sub><b>p</b>(<i>t</i>) = (1 &minus; <i>t</i>)<b>p</b><sub>0 </sub>+ <i>t</i><b>p</b><sub>1</sub> for <i>t</i><sub> </sub>&#x2208; [0, 1].</li>
+<li>For each part, find the vector line equation of the line passing through the two points.
+<ol class="lc-alpha">
+<li><b>p</b><sub>1</sub> = (2, &minus;1), <b>p</b><sub>2</sub> = (4, 1)</li>
+<li><b>p</b><sub>1 </sub>= (4, &minus;2, 1), <b>p</b><sub>2 </sub>= (2, 3, 2)</li></ol></li>
+<li>Let <b>L</b>(<i>t</i>) = <b>p</b> + <i>t</i><b>u</b> define a line in 3-space. Let <b>q</b> be any point in 3-space. Prove that the distance from <b>q</b> to the line can be written as:<a id="page800"/>
+
+<p class="eq"><img src="images/eq833-02.jpg" alt="image" width="100%"/></p>
+
+<p class="caption"><img src="images/FigC-12.jpg" alt="image" width="50%"/></p>
+<p class="caption" id="figC.12"><b><i>Figure C.12.</i></b>&nbsp;&nbsp;Distance from <b>q</b> to the line.</p></li>
+<li>Let <b>L</b>(<i>t</i>) = (4, 2, 2) + <i>t</i>(1, 1, 1) be a line. Find the distance from the following points to the line:
+<ol class="lc-alpha">
+<li><b>q</b> = (0, 0, 0)</li>
+<li><b>q</b> = (4, 2, 0)</li>
+<li><b>q</b> = (0, 2, 2)</li></ol></li>
+<li>Let <b>p</b><sub>0</sub> = (0, 1, 0), <b>p</b><sub>1</sub> = (-1, 3, 6), and<sub> </sub><b>p</b><sub>2</sub> = (8, 5, 3) be three points. Find the plane these points define.</li>
+<li>Let <span style="line-height:3.0em"><img src="images/eq834-01.jpg" alt="image" width="180" height="40" style="margin-bottom:-1.0em;"/></span> be a plane. Define the locality of the following points relative to the plane: <span style="line-height:3.0em"><img src="images/eq834-02.jpg" alt="image" width="380" height="30" style="margin-bottom:-0.3em;"/></span>.</li>
+<li>Let <span style="line-height:3.0em"><img src="images/eq834-03.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/></span> be a plane. Find the point on the plane nearest to the point (0, 1, 0).</li>
+<li>Let <span style="line-height:3.0em"><img src="images/eq834-04.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/></span> be a plane. Find the reflection of the point (0, 1, 0) about the plane.</li>
+<li>Let <span style="line-height:3.0em"><img src="images/eq834-05.jpg" alt="image" width="150" height="40" style="margin-bottom:-1.0em;"/></span> be a plane, and let <b>r(</b><i>t</i>) = (&minus;1, 1, &minus;1) +<i> t</i>(1, 0, 0) be a ray. Find the point at which the ray intersects the plane. Then write a short program using the <span class="code">XMPlaneIntersectLine&nbsp;</span>function to verify your answer.</li></ol>
+</body>
+</html>

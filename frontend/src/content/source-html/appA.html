@@ -1,0 +1,500 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<p class="bkcn"><a id="page753"/><a href="toc.html#toc-appA" id="appA">Appendix A</a></p>
+<p class="bkct"><a href="toc.html#toc-appA"><b>I</b><span class="sc">NTRODUCTION TO</span><br/><b>W</b><span class="sc">INDOWS</span> <b>P</b><span class="sc">ROGRAMMING</span></a></p>
+
+<p class="tx1">&nbsp;<br/><br/></p>
+
+<p class="tx1">To use the Direct3D API (Application Programming Interface), it is necessary to create a Windows (Win32) application with a main window, upon which we will render our 3D scenes. This appendix serves as an introduction to writing Windows applications using the native Win32 API. Loosely, the Win32 API is a set of low-level functions and structures exposed to us in the C programming language that enables us to create Windows applications. For example, to define a window class, we fill out an instance of the Win32 API <span class="code">WNDCLASS</span> structure; to create a window, we use the Win32 API <span class="code">CreateWindow</span> function; to notify Windows to show a particular window, we use the Win32 API function <span class="code">ShowWindow</span>.</p>
+<p class="tx">Windows programming is a huge subject, and this appendix introduces only the amount necessary for us to use Direct3D. For readers interested in learning more about Windows programming with the Win32 API, the book <i>Programming Windows</i> by Charles Petzold, now in its fifth edition, is the standard text on the subject. Another invaluable resource when working with Microsoft technologies is the MSDN library, which is usually included with Microsoft&rsquo;s Visual Studio but can also be read online at <i><a href="http://www.msdn.microsoft.com">www.msdn.microsoft.com</a></i>. In general, if you come upon a Win32 function or structure that you would like to know more about, go to MSDN and search for that function or structure for its full documentation. If we mention a Win32 function or structure in this appendix and do not elaborate on it, it is an implicit suggestion that the reader look the function up in MSDN.<a id="page754"/></p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To learn and understand the event driven programming model used in Windows programming.</li>
+<li>To learn the minimal code necessary to create a Windows application that is necessary to use Direct3D.</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>To avoid confusion, we will use a capital &lsquo;W&rsquo; to refer to Windows the OS and we will use a lower case &lsquo;w&rsquo; to refer to a particular window running in Windows. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="h1" id="A.1"><a href="toc.html#toc-A.1"><b>A.1 OVERVIEW </b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">As the name suggests, one of the primary themes of Windows programming is programming windows. Many of the components of a Windows application are windows, such as, the main application window, menus, toolbars, scroll bars, buttons, and other dialog controls. Therefore, a Windows application typically consists of several windows.  These next subsections provide a concise overview of Windows programming concepts we should be familiar with before beginning a more complete discussion.</p>
+<p class="h2" id="A.1.1"><a href="toc.html#toc-A.1.1"><b>A.1.1 Resources</b></a></p>
+<p class="tx1">In Windows, several applications can run concurrently. Therefore, hardware resources such as CPU cycles, memory, and even the monitor screen must be shared amongst multiple applications. In order to prevent chaos from ensuing due to several applications accessing/modifying resources without any organization, Windows applications do not have direct access to hardware. One of the main jobs of Windows is to manage the presently instantiated applications and handle the distribution of resources amongst them. Thus, in order for our application to do something that might affect another running application, it must go through Windows. For example, to display a window you must call the Win32 API function <span class="code">ShowWindow</span>; you cannot write to video memory directly.</p>
+<p class="h2" id="A.1.2"><a href="toc.html#toc-A.1.2"><b>A.1.2 Events, the Message Queue, Messages, and the Message Loop</b></a></p>
+<p class="tx1">A Windows application follows an <i>event-driven programming model</i>. Typically, a Windows application sits and waits<sup><a href="appA.html#appaft-1" id="fnt-appa1">1</a></sup> for something to happen&mdash;an <i>event</i>. An event can be generated<a id="page755"/> in a number of ways; some common examples are key presses, mouse clicks, and when a window is created, resized, moved, closed, minimized, maximized, or becomes visible.</p>
+       
+<p class="tx1"><span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>  
+<p class="foot1"><a href="appA.html#fnt-appa1" id="appaft-1"><sup>1</sup></a> We note that an application can perform idle processing; that is, perform a certain task when no events are occurring.</p>
+
+
+<p class="tx">When an event occurs, Windows sends a <i>message</i> to the application the event occurred for, and adds the message to the application&rsquo;s <i>message queue</i>, which is simply a priority queue that stores messages for an application. The application constantly checks the message queue for messages in a <i>message loop</i> and, when it receives one, it dispatches the message to the <i>window procedure</i> of the particular window the message is for. (Remember, an application can contain several windows within it.) Every window has with it an associated function called a window procedure.<sup><a href="appA.html#appaft-2" id="fnt-appa2">2</a></sup> Window procedures are functions we implement which contain code that is to be executed in response to specific messages. For instance, we may want to destroy a window when the Escape key is pressed. In our window procedure we would write:</p>
+<p class="code"><span class="code">case WM_KEYDOWN:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if( wParam == VK_ESCAPE )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DestroyWindow(ghMainWnd);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="tx1">The messages a window does not handle should be forwarded to the default window procedure, which then handles the message. The Win32 API supplies the default window procedure, which is called <span class="code">DefWindowProc.&nbsp;</span></p>
+<p class="tx">To summarize, the user or an application does something to generate an event. The OS finds the application the event was targeted towards, and it sends that application a message in response. The message is then added to the application&rsquo;s message queue. The application is constantly checking its message queue for messages. When it receives a message, the application dispatches it to the window procedure of the window the message is targeted for. Finally, the window procedure executes instructions in response to the message.</p>
+<p class="tx">Figure (<a href="appA.html#figA.1">A.1</a>) summarizes the event driven programming model. </p>
+<p class="h2" id="A.1.3"><a href="toc.html#toc-A.1.3"><b>A.1.3 GUI</b></a></p>
+<p class="tx1">Most Windows programs present a GUI (Graphical User Interface) that users can work from. A typical Windows application has one main window, a menu, toolbar, and perhaps some other controls. Figure <a href="appA.html#figA.2">A.2</a> shows and identifies some common GUI elements. For Direct3D game programming, we do not need a fancy GUI. In fact, all we need is a main window, where the client area will be used to render our 3D worlds.<a id="page756"/></p>
+
+<p class="tx1"><span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>  
+<p class="foot1"><a href="appA.html#fnt-appa2" id="appaft-2"><sup>2</sup></a> Every window has a window procedure, but several windows can share the same window procedure; therefore, we do not necessarily have to write a unique window procedure for each window.  Two different windows would have different window procedures if we wanted them to respond to messages differently.</p>
+
+<p class="caption"><img src="images/FigA-1.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="figA.1"><b><i>A.1.</i></b>&nbsp;&nbsp;The event driven programming model.</p>
+
+<p class="caption"><img src="images/FigA-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="figA.2"><b><i>A.2.</i></b>&nbsp;&nbsp;The A typical Windows application GUI. The client area is the entire large white rectangular space of the application. Typically, this area is where the user views most of the program output. When we program our Direct3D applications, we render our 3D scenes into the client area of a window.<a id="page757"/></p>
+
+
+
+<p class="h2" id="A.1.4"><a href="toc.html#toc-A.1.4"><b>A.1.4 Unicode</b></a></p>
+<p class="tx1">Essentially, Unicode (<i><a href="http://unicode.org/">http://unicode.org/</a></i>) uses 16-bit values to represent a character. This allows us to represent a larger character set to support international characters, and other symbols. For Unicode in C++, we use the <i>wide-characters</i> type <span class="code">wchar_t</span>. In 32- and 64-bit Windows, a <span class="code">wchar_t</span> is 16-bits. When using wide characters, we must prefix a string literal with a capital L; for example:</p>
+<p class="code"><span class="code">const wchar_t* wcstrPtr = L"Hello, World!";</span></p>
+<p class="tx1">The L tells the compiler to treat the string literal as a string of wide-characters (i.e., as <span class="code">wchar_t</span> instead of <span class="code">char</span>). The other important issue is that we need to use the wide-character versions of the string functions. For example, to get the length of a string we need to use <span class="code">wcslen</span> instead of <span class="code">strlen</span>; to copy a string we need to use <span class="code">wcscpy</span> instead of <span class="code">strcpy</span>; to compare two strings we need to use <span class="code">wcscmp&nbsp;</span>instead of <span class="code">strcmp</span>. The wide-character versions of these functions work with <span class="code">wchar_t</span> pointers instead of <span class="code">char</span> pointers. The C++ standard library also provides a wide-character version of its string class: <span class="code">std::wstring</span>. The Windows header file WinNT.h also defines:</p>
+<p class="code"><span class="code">typedef wchar_t WCHAR; // wc, 16-bit UNICODE character</span></p>
+<p class="h1" id="A.2"><a href="toc.html#toc-A.2"><b>A.2 BASIC WINDOWS APPLICATION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Below is the code to a fully functional, yet simple, Windows program. Follow the code as best you can, and read the explanatory comments. The next section will<a id="page758"/> explain the code a bit at a time. It is recommended that you create a project with your development tool, type the code in by hand, compile it and execute it as an exercise. Note that for Visual C++, you must create a &ldquo;Win32 application project,&rdquo; <i>not</i> a &ldquo;Win32 console application project.&rdquo;</p>
+<p class="code"><span class="code">//=====================================================================</span></p>
+<p class="code"><span class="code">// Win32Basic.cpp by Frank Luna (C) 2008 All Rights Reserved.</span></p>
+<p class="code"><span class="code">//</span></p>
+<p class="code"><span class="code">// Illustrates the minimal amount of the Win32 code needed for</span></p>
+<p class="code"><span class="code">// Direct3D programming.&nbsp;</span></p>
+<p class="code"><span class="code">//=====================================================================</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Include the windows header file; this has all the Win32 API&nbsp;</span></p>
+<p class="code"><span class="code">// structures, types, and function declarations we need to program&nbsp;</span></p>
+<p class="code"><span class="code">// Windows.</span></p>
+<p class="code"><span class="code">#include &lt;windows.h&gt;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// The main window handle; this is used to identify a&nbsp;</span></p>
+<p class="code"><span class="code">// created window.</span></p>
+<p class="code"><span class="code">HWND ghMainWnd = 0;&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Wraps the code necessary to initialize a Windows</span></p>
+<p class="code"><span class="code">// application. Function returns true if initialization</span></p>
+<p class="code"><span class="code">// was successful, otherwise it returns false.</span></p>
+<p class="code"><span class="code">bool InitWindowsApp(HINSTANCE instanceHandle, int show);&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Wraps the message loop code.</span></p>
+<p class="code"><span class="code">int Run();&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">// The window procedure handles events our window receives.</span></p>
+<p class="code"><span class="code">LRESULT CALLBACK</span></p>
+<p class="code"><span class="code">WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">// Windows equivalant to main()</span></p>
+<p class="code"><span class="code">int WINAPI&nbsp;</span></p>
+<p class="code"><span class="code">WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;PSTR pCmdLine, int nShowCmd)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// First call our wrapper function (InitWindowsApp) to create</span></p>
+<p class="code"><span class="code">// and initialize the main application window, passing in the&nbsp;</span></p>
+<p class="code"><span class="code">// hInstance and nShowCmd values as arguments.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;if(!InitWindowsApp(hInstance, nShowCmd))&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Once our application has been created and initialized we&nbsp;</span></p>
+<p class="code"><span class="code">// enter the message loop. We stay in the message loop until</span></p>
+<p class="code"><span class="code">// a WM_QUIT mesage is received, indicating the application</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// should be terminated.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return Run();&nbsp;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">bool InitWindowsApp(HINSTANCE instanceHandle, int show)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// The first task to creating a window is to describe some of its&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// characteristics by filling out a WNDCLASS structure.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;WNDCLASS wc;&nbsp;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.style&nbsp;&nbsp; = CS_HREDRAW | CS_VREDRAW;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.lpfnWndProc = WndProc;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.cbClsExtra = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.cbWndExtra = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.hInstance&nbsp;&nbsp;= instanceHandle;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.hIcon&nbsp;&nbsp; = LoadIcon(0, IDI_APPLICATION);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.hCursor&nbsp;&nbsp;= LoadCursor(0, IDC_ARROW);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.lpszMenuName = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;wc.lpszClassName = L"BasicWndClass";</span></p>
+<p class="code">&nbsp;</p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Next, we register this WNDCLASS instance with Windows so&nbsp;</span></p>
+<p class="code"><span class="code">// that we can create a window based on it.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;if(!RegisterClass(&amp;wc))&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"RegisterClass FAILED", 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// With our WNDCLASS instance registered, we can create a</span></p>
+<p class="code"><span class="code">// window with the CreateWindow function. This function&nbsp;</span></p>
+<p class="code"><span class="code">// returns a handle to the window it creates (an HWND).&nbsp;</span></p>
+<p class="code"><span class="code">// If the creation failed, the handle will have the value</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// of zero. A window handle is a way to refer to the window,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// which is internally managed by Windows. Many of the Win32 API&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// functions that operate on windows require an HWND so that&nbsp;</span></p>
+<p class="code"><span class="code">// they know what window to act on.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;ghMainWnd = CreateWindow(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;L"BasicWndClass", // Registered WNDCLASS instance to use.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;L"Win32Basic",&nbsp;&nbsp;// window title</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WS_OVERLAPPEDWINDOW, // style flags</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT,&nbsp;&nbsp;// x-coordinate</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT,&nbsp;&nbsp;// y-coordinate</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT,&nbsp;&nbsp;// width</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT,&nbsp;&nbsp;// height</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,&nbsp;&nbsp;&nbsp;&nbsp; // parent window</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0,&nbsp;&nbsp;&nbsp;&nbsp; // menu handle</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;instanceHandle,&nbsp;&nbsp;// app instance</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0);&nbsp;&nbsp;&nbsp;&nbsp; // extra creation parameters</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;if(ghMainWnd == 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"CreateWindow FAILED", 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Even though we just created a window, it is not initially&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// shown. Therefore, the final step is to show and update the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// window we just created, which can be done with the following&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// two function calls. Observe that we pass the handle to the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// window we want to show and update so that these functions know&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// which window to show and update.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;ShowWindow(ghMainWnd, show);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;UpdateWindow(ghMainWnd);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return true;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">int Run()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;MSG msg = {0};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Loop until we get a WM_QUIT message. The function</span></p>
+<p class="code"><span class="code">// GetMessage will only return 0 (false) when a WM_QUIT message&nbsp;</span></p>
+<p class="code"><span class="code">// is received, which effectively exits the loop. The function&nbsp;</span></p>
+<p class="code"><span class="code">// returns -1 if there is an error. Also, note that GetMessage&nbsp;</span></p>
+<p class="code"><span class="code">// puts the application thread to sleep until there is a&nbsp;</span></p>
+<p class="code"><span class="code">// message.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;BOOL bRet = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;while( (bRet = GetMessage(&amp;msg, 0, 0, 0)) != 0 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(bRet == -1)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"GetMessage FAILED", L"Error", MB_OK);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TranslateMessage(&amp;msg);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DispatchMessage(&amp;msg);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return (int)msg.wParam;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">LRESULT CALLBACK&nbsp;</span></p>
+<p class="code"><span class="code">WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Handle some specific messages. Note that if we handle a&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// message, we should return 0.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;switch( msg )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// In the case the left mouse button was pressed,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// then display a message box.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;case WM_LBUTTONDOWN:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"Hello, World", L"Hello", MB_OK);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// In the case the escape key was pressed, then</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// destroy the main application window.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;case WM_KEYDOWN:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if( wParam == VK_ESCAPE )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DestroyWindow(ghMainWnd);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// In the case of a destroy message, then send a&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// quit message, which will terminate the message loop.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;case WM_DESTROY:&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PostQuitMessage(0);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// Forward any other messages we did not handle above to the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;// default window procedure. Note that our window procedure</span></p>
+<p class="code"><span class="code">// must return the return value of DefWindowProc.</span></p>
+<p class="code"><span class="code">return DefWindowProc(hWnd, msg, wParam, lParam);</span></p>
+<p class="code"><span class="code">}</span><a id="page761"/></p>
+
+<p class="caption"><img src="images/FigA-3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="figA.3"><b><i>A.3.</i></b>&nbsp;&nbsp;A screenshot of the above program. Note that the message box appears when you press the left mouse button in the window&rsquo;s client area. Also try exiting the program by pressing the Escape key.</p>
+
+
+<p class="h1" id="A.3"><a href="toc.html#toc-A.3"><b>A.3 EXPLAINING THE BASIC WINDOWS APPLICATION</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We will examine the code from top to bottom, stepping into any function that gets called along the way. Refer back to the code listing in the &ldquo;Basic Windows Application&rdquo; section throughout the following subsections.</p>
+<p class="h2" id="A.3.1"><a href="toc.html#toc-A.3.1"><b>A.3.1 Includes, Global Variables, and Prototypes</b></a></p>
+<p class="tx1">The first thing we do is include the windows.h header file. By including the windows.h file we obtain the structures, types, and function declarations needed for using the basic elements of the Win32 API. </p>
+<p class="code"><span class="code">#include &lt;windows.h&gt;</span></p>
+<p class="tx1">The second statement<a id="page762"/> is an instantiation of a global variable of type <span class="code">HWND</span>. This stands for &ldquo;handle to a window&rdquo; or &ldquo;window handle.&rdquo; In Windows programming, we often use handles to refer to objects maintained internally by Windows. In this sample, we will use an <span class="code">HWND</span> to refer to our main application window maintained by Windows. We need to hold onto the handles of our windows because many calls to the API require that we pass in the handle of the window we want the API call to act on. For example, the call <span class="code">UpdateWindow</span> takes one argument that is of type <span class="code">HWND</span> that is used to specify the window to update. If we did not pass in a handle to it, the function would not know which window to update.&nbsp;&nbsp;&nbsp; </p>
+<p class="code"><span class="code">HWND ghMainWnd = 0;</span></p>
+<p class="tx1">The next three lines are function declarations. Briefly, <span class="code">InitWindowsApp</span> creates and initializes our main application window; <span class="code">Run</span> encapsulates the message loop for our application; and <span class="code">WndProc</span> is our main window&rsquo;s window procedure. We will examine these functions in more detail when we come to the point where they are called.</p>
+<p class="code"><span class="code">bool InitWindowsApp(HINSTANCE instanceHandle, int show);&nbsp;</span></p>
+<p class="code"><span class="code">int Run();&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">LRESULT CALLBACK</span></p>
+<p class="code"><span class="code">WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="h2" id="A.3.2"><a href="toc.html#toc-A.3.2"><b>A.3.2 WinMain</b></a></p>
+         <p class="tx1"><span class="code">WinMain</span> is the Windows equivalent to the <span class="code">main</span> function in normal C++ programming. <span class="code">WinMain</span> is prototyped as follows:</p>
+<p class="code"><span class="code">int WINAPI&nbsp;</span></p>
+<p class="code"><span class="code">WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;PSTR pCmdLine, int nShowCmd)</span></p>
+<ol><li><span class="code">hInstance</span>: Handle to the current application instance. It serves as a way of identifying and referring to this application. Remember there may be several Windows applications running concurrently, so it is useful to be able to refer to each one.</li>
+<li><span class="code">hPrevInstance</span>: Not used in Win32 programming and is zero.</li>
+<li><span class="code">pCmdLine</span>: The command line argument string used to run the program.</li>
+<li><span class="code">nCmdShow</span>: Specifies how the application should be displayed. Some common commands that show the window in its current size and position, maximized, and minimized, respectively, <span class="code">are SW_SHOW, SW_SHOWMAXIMIZED</span>, and <span class="code">SW_SHOWMINIMIZED</span>. See the MSDN library for a complete list of show commands. </li></ol>
+<p class="tx1">If <span class="code">WinMain</span> succeeds, it should return the <span class="code">wParam</span> member of the <span class="code">WM_QUIT</span> message. If the function exits without entering the message loop, it should return zero. The<a id="page763"/> <span class="code">WINAPI</span> identifier is defined as:</p>
+<p class="code"><span class="code">#define WINAPI&nbsp;&nbsp;__stdcall</span></p>
+<p class="tx1">This specifies the calling convention of the function, which means how the function arguments get placed on the stack. </p>
+<p class="h2" id="A.3.3"><a href="toc.html#toc-A.3.3"><b>A.3.3 WNDCLASS and Registration</b></a></p>
+<p class="tx1">Inside <span class="code">WinMain</span> we call the function <span class="code">InitWindowsApp</span>. As you can guess, this function does all the initialization of our program. Let us take a closer look at this function and its implementation. <span class="code">InitWindowsApp</span> returns either <span class="code">true</span> or <span class="code">false: true</span> if the initialization was a success and false otherwise. In the <span class="code">WinMain</span> definition, we pass as arguments a copy of our application instance and the show command variable into <span class="code">InitWindowsApp</span>. Both are obtained from the <span class="code">WinMain</span> parameter list. </p>
+<p class="code"><span class="code">if(!InitWindowsApp(hInstance, nShowCmd))</span></p>
+<p class="tx1">The first task at hand in initialization of a window is to describe some basic properties of the window by filling out a WNDCLASS (window class) structure. Its definition is:</p>
+<p class="code"><span class="code">typedef struct _WNDCLASS {&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UINT style;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WNDPROC lpfnWndProc;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;&nbsp;cbClsExtra;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int&nbsp;&nbsp;cbWndExtra;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HANDLE hInstance;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HICON hIcon;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HCURSOR hCursor;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HBRUSH hbrBackground;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPCTSTR lpszMenuName;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPCTSTR lpszClassName;&nbsp;</span></p>
+<p class="code"><span class="code">} WNDCLASS;&nbsp;</span></p>
+<ol><li><span class="code">style</span>: Specifies the class style. In our example we use <span class="code">CS_HREDRAW</span> combined with <span class="code">CS_VREDRAW</span>. These two bit flags indicate that the window is to be repainted when either the horizontal or vertical window size is changed. For the complete list of the various styles with description, see the MSDN library.
+<p class="code"><span class="code">wc.style = CS_HREDRAW | CS_VREDRAW;</span></p></li>
+<li><span class="code">lpfnWndProc:</span> Pointer to the window procedure function to associate with this WNDCLASS instance. Windows that are created based on this <span class="code">WNDCLASS</span> instance will use this window procedure. Thus, to create two windows with the same window procedure, you just create the two windows based on the same <span class="code">WNDCLASS</span> instance. If you want to create two windows with different window procedures, you will need to fill out a different <span class="code">WNDCLASS</span> instance for each of the two windows. The window procedure function is explained in section A.3.6. <a id="page764"/>
+<p class="code"><span class="code">wc.lpfnWndProc = WndProc;</span></p></li>
+<li><span class="code">cbClsExtra</span> and <span class="code">cbWndExtra</span>: These are extra memory slots you can use for your own purpose. Our program does not require any extra space and therefore sets both of these to zero.
+<p class="code"><span class="code">wc.cbClsExtra = 0;</span></p>
+<p class="code"><span class="code">wc.cbWndExtra = 0;</span></p></li>
+<li><span class="code">hInstance</span>: This field is a handle to the application instance. Recall the application instance handle is originally passed in through <span class="code">WinMain</span>.
+<p class="code"><span class="code">wc.hInstance = instanceHandle;</span></p></li>
+<li><span class="code">hIcon</span>: Here you specify a handle to an icon to use for the windows created using this window class. You can use your own designed icon, but there are several built-in icons to choose from; see the MSDN library for details. The following uses the default application icon:
+<p class="code"><span class="code">wc.hIcon = LoadIcon(0, IDI_APPLICATION);</span></p></li>
+<li><span class="code">hCursor</span>: Similar to <span class="code">hIcon</span>, here you specify a handle to a cursor to use when the cursor is over the window&rsquo;s client area. Again, there are several built-in cursors; see the MSDN library for details. The following code uses the standard &ldquo;arrow&rdquo; cursor.
+<p class="code"><span class="code">wc.hCursor = LoadCursor(0, IDC_ARROW);</span></p></li>
+<li><span class="code">hbrBackground</span>: This field is used to specify a handle to brush which specifies the background color for the client area of the window. In our sample code, we call the Win32 function <span class="code">GetStockObject</span>, which returns a handle to a prebuilt white colored brush; see the MSDN library for other types of built in brushes.
+<p class="code"><span class="code">wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);</span></p></li>
+<li><span class="code">lpszMenuName</span>: Specifies the window&rsquo;s menu. Since we have no menu in our application so, we set this to zero.
+<p class="code"><span class="code">wc.lpszMenuName = 0;</span></p></li>
+<li><span class="code">lpszClassName</span>: Specifies the name of the window class structure we are creating. This can be anything you want. In our application, we named it &ldquo;BasicWndClass&rdquo;. The name is simply used to identify the class structure so that we can reference it later by its name.
+<p class="code"><span class="code">wc.lpszClassName = L"BasicWndClass";</span></p></li></ol>
+<p class="tx1">Once we have filled out a <span class="code">WNDCLASS</span> instance, we need to register it with Windows so that we can create windows based on it. This is done with the <span class="code">RegisterClass</span> function which takes a pointer to a <span class="code">WNDCLASS</span> structure. This function returns zero upon failure.<a id="page765"/></p>
+<p class="code"><span class="code">if(!RegisterClass(&amp;wc))&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"RegisterClass FAILED", 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="h2" id="A.3.4"><a href="toc.html#toc-A.3.4"><b>A.3.4 Creating and Displaying the Window</b></a></p>
+<p class="tx1">After we have registered a <span class="code">WNDCLASS</span> variable with Windows, we can create a window based on that class description. We can refer to a registered <span class="code">WNDCLASS</span> instance via the class name we gave it (<span class="code">lpszClassName</span>). The function we use to create a window is the <span class="code">CreateWindow</span> function, which is declared as follows:</p>
+<p class="code"><span class="code">HWND CreateWindow(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPCTSTR lpClassName,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPCTSTR lpWindowName,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DWORD dwStyle,&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int x,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int y,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int nWidth,&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;int nHeight,&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HWND hWndParent,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HMENU hMenu,&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HANDLE hInstance,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPVOID lpParam&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">);</span></p>
+<ol><li><span class="code">lpClassName</span>: The name of the registered <span class="code">WNDCLASS</span> structure that describes some of the properties of the window we want to create. </li>
+<li><span class="code">lpWindowName</span>: The name we want to give our window; this is also the name that appears in the window&rsquo;s caption bar. </li>
+<li><span class="code">dwStyle</span>: Defines the style of the window. <span class="code">WS_OVERLAPPEDWINDOW</span> is a combination of several flags: <span class="code">WS_OVERLAPPED, WS_CAPTION, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX,</span> and <span class="code">WS_MAXIMIZEBOX</span>. The names of these flags describe the characteristics of the window they produce. See the MSDN library for the complete list of styles.</li>
+<li><span class="code">x</span>: The x position at the top left corner of the window relative to the screen. You can specify <span class="code">CW_USEDEFAULT</span> for this parameter, and Windows will choose an appropriate default.<a id="page766"/></li>
+<li><span class="code">y</span>: The y position at the top left corner of the window relative to the screen. You can specify <span class="code">CW_USEDEFAULT</span> for this parameter, and Windows will choose an appropriate default.</li>
+<li><span class="code">nWidth</span>: The width of the window in pixels. You can specify <span class="code">CW_USEDEFAULT</span> for this parameter, and Windows will choose an appropriate default.</li>
+
+
+<li><span class="code">nHeight</span>: The height of the window in pixels. You can specify <span class="code">CW_USEDEFAULT</span> for this parameter, and Windows will choose an appropriate default.
+<p class="caption"><img src="images/FigA-4.jpg" alt="image" width="30%"/></p>
+<p class="caption" id="figA.4"><b><i>A.4.</i></b>&nbsp;&nbsp;Screen space.</p>
+</li>
+<li><span class="code">hWndParent</span>: Handle to a window that is to be the parent of this window. Our window has no relationship with any other windows, and therefore we set this value to zero.</li>
+<li><span class="code">hMenu</span>: A handle to a menu. Our program does not use a menu, so we specify 0 for this field.</li>
+<li><span class="code">hInstance</span>: Handle to the application the window will be associated with.</li>
+<li><span class="code">lpParam</span>: A pointer to user-defined data that you want to be available to a WM_CREATE message handler. The <span class="code">WM_CREATE</span> message is sent to a window when it is being created, but before <span class="code">CreateWindow</span> returns.  A window handles the <span class="code">WM_CREATE</span> message if it wants to do something when it is created (e.g., initialization).</li></ol>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>When we specify the (x, y) coordinates of the window&rsquo;s position, they are relative to the upper-left corner of the screen. Also, the positive x-axis runs to the right as usual but the positive y-axis runs downward. Figure (<a href="appA.html#figA.4">A.4</a>) shows this coordinate system, which is called screen coordinates, or screen space.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+         <p class="tx1"><span class="code">CreateWindow</span> returns a handle to the window it creates (an <span class="code">HWND</span>). If the creation failed, the handle will have the value of zero (null handle). Remember that the handle is a way to refer to the window, which is managed by Windows. Many of the API calls require a <span class="code">HWND</span> so that it knows what window to act on.</p>
+<p class="code"><span class="code">ghMainWnd = CreateWindow(L"BasicWndClass", L"Win32Basic",&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WS_OVERLAPPEDWINDOW,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT, CW_USEDEFAULT,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CW_USEDEFAULT, CW_USEDEFAULT,&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0, 0, instanceHandle, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;if(ghMainWnd == 0)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"CreateWindow FAILED", 0, 0);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return false;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="tx1">The last two function calls in the <span class="code">InitWindowsApp</span> function have to do with displaying the window. First we call <span class="code">ShowWindow</span> and pass in the handle of our<a id="page767"/> newly created window so that Windows knows which window to show. We also pass in an integer value that defines how the window is to be initially shown (e.g., minimized, maximized, etc.). This value should be <span class="code">nShowCmd</span>, which is a parameter of <span class="code">WinMain</span>. After showing the window, we should refresh it. <span class="code">UpdateWindow</span> does this; it takes one argument that is a handle to the window we wish to update. </p>
+<p class="code"><span class="code">ShowWindow(ghMainWnd, show);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;UpdateWindow(ghMainWnd);</span></p>
+<p class="tx1">If we made it this far in <span class="code">InitWindowsApp</span>, then the initialization is complete; we return true to indicate everything went successfully. </p>
+<p class="h2" id="A.3.5"><a href="toc.html#toc-A.3.5"><b>A.3.5 The Message Loop </b></a></p>
+<p class="tx1">Having successfully completed initialization we can begin the heart of the program&mdash;the message loop. In our Basic Windows Application, we have wrapped the message loop in a function called <span class="code">Run</span>. </p>
+<p class="code"><span class="code">int Run()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;MSG msg = {0};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;BOOL bRet = 1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;while( (bRet = GetMessage(&amp;msg, 0, 0, 0)) != 0 )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(bRet == -1)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"GetMessage FAILED", L"Error", MB_OK);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;break;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TranslateMessage(&amp;msg);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DispatchMessage(&amp;msg);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return (int)msg.wParam;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The first thing done in Run is an instantiation of a variable called <span class="code">msg</span> of type <span class="code">MSG</span>, which is the structure that represents a Windows message. Its definition is as follows:<a id="page768"/></p>
+<p class="code"><span class="code">typedef struct tagMSG {&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HWND hwnd;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;UINT message;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WPARAM wParam;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LPARAM lParam;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DWORD time;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;POINT pt;</span></p>
+<p class="code"><span class="code">} MSG;</span></p>
+<ol><li><span class="code">hwnd</span>: The handle to the window whose window procedure is to receive the message.</li>
+<li><span class="code">message</span>: A predefined constant value identifying the message (e.g., <span class="code">WM_QUIT</span>).</li>
+<li><span class="code">wParam</span>: Extra information about the message. This is dependent upon the specific message.</li>
+<li><span class="code">lParam</span>: Extra information about the message. This is dependent upon the specific message.</li>
+<li><span class="code">time</span>: The time the message was posted.</li>
+<li><span class="code">pt</span>: The (x, y) coordinates of the mouse cursor, in screen coordinates, when the message was posted.</li></ol>
+<p class="tx1">Next, we enter the message loop. The <span class="code">GetMessage</span> function retrieves a message from the message queue, and fills out the <span class="code">msg</span> argument with the details of the message. The second, third, and fourth parameters of <span class="code">GetMessage</span> may be set to zero, for our purposes. If an error occurs in <span class="code">GetMessage</span>, then <span class="code">GetMessage</span> returns -1. If a <span class="code">WM_QUIT</span> message is received, then GetMessage returns 0, thereby terminating the message loop. If <span class="code">GetMessage</span> returns any other value, then two more functions get called: <span class="code">TranslateMessage&nbsp;</span>and <span class="code">DispatchMessage</span>. <span class="code">TranslateMessage</span> has Windows perform some keyboard translations; specifically, virtual key to character messages. <span class="code">DispatchMessage</span> finally dispatches the message off to the appropriate window procedure. </p>
+<p class="tx">If the application successfully exits via a <span class="code">WM_QUIT</span> message, then the <span class="code">WinMain</span> function should return the <span class="code">wParam</span> of the <span class="code">WM_QUIT</span> message (exit code).</p>
+<p class="h2" id="A.3.6"><a href="toc.html#toc-A.3.6"><b>A.3.6 The Window Procedure </b></a></p>
+<p class="tx1">We mentioned previously that the window procedure is where we write the code that we want to execute in response to a message our window receives. In the Basic Windows Application program, we name the window procedure <span class="code">WndProc</span> and it is prototyped as:</p>
+<p class="code"><span class="code">LRESULT CALLBACK&nbsp;</span></p>
+<p class="code"><span class="code">WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);</span></p>
+<p class="tx1">This function returns a value of type <span class="code">LRESULT</span> (defined as an integer), which indicates the success or failure of the function. The <span class="code">CALLBACK</span> identifier specifies that the function is a <i>callback</i> function, which means that Windows will be calling this function outside of the code space of the program. As you can see from the Basic Windows Application source code, we never explicitly call the window procedure ourselves&mdash;Windows calls it for us when the window needs to process a message.<a id="page769"/></p>
+<p class="tx">The window procedure has four parameters in its signature:</p>
+<ol><li><span class="code">hWnd</span>: The handle to the window receiving the message.</li>
+<li><span class="code">msg</span>: A predefined value that identifies the particular message. For example, a quit message is defined as <span class="code">WM_QUIT</span>. The prefix WM stands for &ldquo;Window Message.&rdquo; There are over a hundred predefined window messages; see the MSDN library for details.</li>
+<li><span class="code">wParam</span>: Extra information about the message which is dependent upon the specific message.</li>
+<li><span class="code">lParam</span>: Extra information about the message which is dependent upon the specific message.</li></ol>
+<p class="tx1">Our window procedure handles three messages: <span class="code">WM_LBUTTONDOWN, WM_KEYDOWN,</span> and <span class="code">WM_DESTROY</span> messages. A <span class="code">WM_LBUTTONDOWN</span> message is sent when the user clicks the left mouse button on the window&rsquo;s client area. A <span class="code">WM_KEYDOWN&nbsp;</span>message is sent to a window in focus when a key is pressed.<span class="code">&nbsp;A WM_DESTROY</span> message is sent when a window is being destroyed. </p>
+<p class="tx">Our code is quite simple; when we receive a <span class="code">WM_LBUTTONDOWN</span> message we display a message box that prints out &ldquo;Hello, World&rdquo;:</p>
+<p class="code"><span class="code">case WM_LBUTTONDOWN:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MessageBox(0, L"Hello, World", L"Hello", MB_OK);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;&nbsp;</span></p>
+<p class="tx1">When our window gets a <span class="code">WM_KEYDOWN</span> message, we test if the Escape key was pressed, and if it was, we destroy the main application window using the <span class="code">DestroyWindow</span> function. The <span class="code">wParam</span> passed into the window procedure specifies the<i> virtual key code</i> of the specific key that was pressed. Think of virtual key codes as an identifier for a particular key. The Windows header files have a list of virtual key code constants we can use to then test for a particular key; for example to test if the escape key was pressed, we use the virtual key code constant <span class="code">VK_ESCAPE</span>. </p>
+<p class="code"><span class="code">case WM_KEYDOWN:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if( wParam == VK_ESCAPE )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DestroyWindow(ghMainWnd);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="tx1">Remember, the <span class="code">wParam</span> and <span class="code">lParam</span> parameters are used to specify extra information about a particular message. For the <span class="code">WM_KEYDOWN</span> message, the <span class="code">wParam</span> specifies the <i>virtual key code</i> of the specific key that was pressed. The MSDN library will specify the information the <span class="code">wParam</span> and <span class="code">lParam</span> parameters carry for each Windows message.</p>
+<p class="tx">When our window gets destroyed, we post a <span class="code">WM_QUIT</span> message with the <span class="code">PostQuitMessage</span> function (which terminates the message loop):</p>
+<p class="code"><span class="code">case WM_DESTROY:&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PostQuitMessage(0);&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;return 0;</span></p>
+<p class="tx1"><a id="page770"/>At the end of our window procedure, we call another function named <span class="code">DefWindowProc</span>. This function is the default window procedure. In our Basic Windows Application program, we only handle three messages; we use the default behavior specified in <span class="code">DefWindowProc</span> for all the other messages we receive but do not necessarily need to handle ourselves. For example, the Basic Windows Application program can be minimized, maximized, resized, and closed. This functionality is provided to us through the default window procedure, as we did not handle the messages to perform this functionality. </p>
+<p class="h2" id="A.3.7"><a href="toc.html#toc-A.3.7"><b>A.3.7 The MessageBox Function</b></a></p>
+<p class="tx1">There is one last API function we have not yet covered, and that is the <span class="code">MessageBox</span> function. This function is a very handy way to provide the user with information and to get some quick input. The declaration to the MessageBox function looks like this:</p>
+<p class="code"><span class="code">int MessageBox(</span></p>
+<p class="code"><span class="code">&nbsp;HWND hWnd,&nbsp;&nbsp;// Handle of owner window, may specify null.</span></p>
+<p class="code"><span class="code">&nbsp;LPCTSTR lpText, // Text to put in the message box.</span></p>
+<p class="code"><span class="code">&nbsp;LPCTSTR lpCaption,// Text to put for the title of the message box.</span></p>
+<p class="code"><span class="code">&nbsp;UINT uType&nbsp;&nbsp;// Style of the message box.</span></p>
+<p class="code"><span class="code">);</span></p>
+<p class="tx1">The return value for the <span class="code">MessageBox</span> function depends on the type of message box. See the MSDN library for a list of possible return values and styles; one possible style is a Yes/No message box; see Figure <a href="appA.html#figA.5">A.5</a>.</p>
+
+<p class="caption"><img src="images/FigA-5.jpg" alt="image" width="50%"/></p>
+<p class="caption" id="figA.5"><b><i>A.5.</i></b>&nbsp;&nbsp;Yes/No message box.</p>
+
+
+
+<p class="h1" id="A.4"><a href="toc.html#toc-A.4"><b>A.4 A BETTER MESSAGE LOOP</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Games are very different application than traditional Windows applications such as office type applications and web browsers. Typically, games do not sit around waiting for a message, but are constantly being updated. This presents a problem,<a id="page771"/> because if there are no messages in the message queue, the function <span class="code">GetMessage</span> puts the thread to sleep and waits for a message. For a game, we do not want this behavior; if there are no Windows messages to be processed, then we want to run our own game code. The fix is to use the <span class="code">PeekMessage</span> function instead of <span class="code">GetMessage</span>. The <span class="code">PeekFunction</span> message returns immediately if there are no messages. Our new message loop is as follows:</p>
+<p class="code"><span class="code">int Run()</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;MSG msg = {0};</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;while(msg.message != WM_QUIT)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// If there are Window messages then process them.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if(PeekMessage( &amp;msg, 0, 0, 0, PM_REMOVE ))</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;TranslateMessage( &amp;msg );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;DispatchMessage( &amp;msg );</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Otherwise, do animation/game stuff.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;else</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;return (int)msg.wParam;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">After we instantiate <span class="code">msg</span>, we enter into an endless loop. We first call the API function <span class="code">PeekMessage</span>, which checks the message queue for a message. See MSDN for the parameter descriptions. If there is a message it returns true and we handle the message. If there are no messages, <span class="code">PeekMessage</span> returns false and we execute our own specific game code.</p>
+<p class="h1" id="A.5"><a href="toc.html#toc-A.5"><b>A.5 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>To use Direct3D we must create a Windows application that has a main window onto which we can render our 3D scenes. Furthermore, for games we create a special message loop that checks for messages. If there are messages, it processes them; otherwise, it executes our game logic.</li>
+<li>Several Windows applications can be running concurrently, and therefore Windows must manage resource between them and direct messages to the applications for which they were intended. Messages are sent to an application&rsquo;s message queue when an event (key press, mouse click, timer, etc.) has occurred for that application.<a id="page772"/> </li>
+<li>Every Windows application has a message queue in which messages an application receives are stored. The application&rsquo;s message loop constantly checks the queue for messages and dispatches them off to their intended window procedure. Note that a single application can have several windows within it.</li>
+<li>The window procedure is a special callback function we implement that Windows calls when a window in our application receives a message. In the window procedure, we write the code we want to be executed when a window in our application receives a particular message. Messages we do not specifically handle are forwarded to a default window procedure for default handling.</li></ol>
+<p class="h1" id="A.6"><a href="toc.html#toc-A.6"><b>A.6 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Modify the program in &#x00A7;A.2 to use a different icon, cursor, and background color.
+<table>
+<tbody>
+<tr>
+<td><img src="images/hint.jpg" alt="image" width="50" height="50"/></td>
+<td>&nbsp;</td>
+<td><p class="hint"><i>Hint:</i><sup> </sup><i>Look up the </i><span class="code">LoadIcon</span><i>, </i><span class="code">LoadCursor</span><i>, and </i><span class="code">GetStockObject</span><i> functions in MSDN.)</i></p></td></tr>
+</tbody>
+</table>
+</li>
+<li>Modify the program in &#x00A7;A.2 by handling the <span class="code">WM_CLOSE</span> message. This message is sent to a window or application indicating that the window or application should close. Use the message box function to ask the user if they really want to exit by displaying a Yes/No styled message box. If the user chooses &ldquo;Yes,&rdquo; then destroy the window; otherwise do not destroy the window. You could also use this technique to ask the user if they want to save their work before closing. </li>
+<li>Modify the program in &#x00A7;A.2 by handling the <span class="code">WM_CREATE</span> message. This message is sent to a window when it is being created, but before <span class="code">CreateWindow</span> returns. Output a message, via the message box function, indicating that the window has been created.</li>
+<li>Look up the <span class="code">Sleep</span> function in MSDN and summarize, in your own words, what the function does.</li>
+<li>Look up the messages <span class="code">WM_SIZE</span> and <span class="code">WM_ACTIVATE</span> in MSDN and summarize, in your own words, when the messages are sent.</li></ol>
+</body>
+</html>

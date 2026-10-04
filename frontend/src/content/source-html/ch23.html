@@ -1,0 +1,756 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="la" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Introduction to 3D Game Programming with DirectX 12</title>
+<link href="template.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+</head>
+<body>
+<table width="95%">
+<col width="50%"/>
+<col width="50%"/>
+<tbody>
+<tr><td valign="middle">
+<p class="cn"><a id="page727"/><a href="toc.html#toc-23" id="chap23">Chapter&#x00A0;&#x00A0; <span class="first"><span class="cndrop">23</span></span><br/><br/><br/><br/></a></p>
+</td>
+<td valign="bottom"><p class="ct"><a href="toc.html#toc-23"><b>C</b><span class="sc">HARACTER</span><br/><br/><b>A</b><span class="sc">NIMATION</span></a><br/><br/><br/><br/></p>
+</td></tr>
+</tbody></table>
+<p class="tx1">&nbsp;<br/><br/></p>
+
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>Portions of this chapter appeared in the book by Frank D. Luna, Introduction to 3D Game Programming with DirectX 9.0c: A Shader Approach, 2006: Jones and Bartlett Learning, Burlington, MA. <a href="http://www.jblearning.com">www.jblearning.com</a>. Reprinted with permission.</i></p>
+</td></tr>
+</tbody>
+</table>
+
+
+<p class="tx1">In this chapter, we learn how to animate complex characters like a human or animal. Characters are complex because they have many moving parts that all move at the same time. Consider a human running&mdash;every bone is moving in some way. Creating such complicated animations is not practical by hand, and there are special modeling and animation tools for this task. Assuming we already have a character and its corresponding animation data created, in this chapter we will learn how to animate and render it using Direct3D. </p>
+<p class="obj"><b>Objectives:</b></p>
+<ol><li>To become familiar with the terminology of animated skinned meshes.</li>
+<li>To learn the mathematics of mesh hierarchy transformations and how to traverse tree-based mesh hierarchies.</li>
+<li>To understand the idea and mathematics of vertex blending.</li>
+<li>To find out how to load animation data from file.</li>
+<li>To discover how to implement character animation in Direct3D.<a id="page728"/></li></ol>
+<p class="h1" id="c23.1"><a href="toc.html#toc-23.1"><b>23.1 FRAME HIERARCHIES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">Many objects are composed of parts, with a parent-child relationship, where one or more child objects can move independently on their own (with possible physical motion constraints&mdash;e.g., human joints have a particular range of motion), but are also forced to move when their parent moves. For example, consider an arm divided into the parts: upper arm, forearm, and hand. The hand can rotate in isolation about its wrist joint; however, if the forearm rotates about its elbow joint, then the hand must rotate with it. Similarly, if the upper arm rotates about the shoulder joint, the forearm rotates with it, and if the forearm rotates, then the hand rotates with it (see Figure <a href="ch23.html#fig23.1">23.1</a>). Thus we see a definite object hierarchy: The hand is a child of the forearm; the forearm is a child of the upper arm, and if we extended our situation, the upper arm would be a child of the torso, and so on and so forth, until we have completed the skeleton (Figure <a href="ch23.html#fig23.2">23.2</a> shows a more complex hierarchy example).</p>
+<p class="caption"><img src="images/Fig23-1.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.1"><b><i>Figure 23.1.</i></b>&nbsp;&nbsp;Hierarchy transforms; observe that the parent transformation of a bone influences itself and all of its children.</p>
+
+<p class="caption"><img src="images/Fig23-2.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.2"><b><i>Figure 23.2.</i></b>&nbsp;&nbsp;A more complex tree hierarchy to model a bipedal humanoid character. Down arrows represent &ldquo;first child&rdquo; relationships, and right arrows represent &ldquo;sibling&rdquo; relationships. For example, &ldquo;Left Thigh,&rdquo; &ldquo;Right Thigh,&rdquo; and &ldquo;Lower Spine&rdquo; are all children of the &ldquo;Pelvis&rdquo; bone.</p>
+
+
+<p class="tx">The aim of this section is to show how to place an object in the scene based on its position, and also the position of its <i>ancestors</i> (i.e., its parent, grandparent, great-grandparent, etc.). <a id="page729"/></p>
+<p class="h2" id="c23.1.1"><a href="toc.html#toc-23.1.1"><b>23.1.1 Mathematical Formulation</b></a></p>
+<table>
+<tbody>
+<tr>
+<td valign="top"><img src="images/note.jpg" alt="image" width="60" height="25" style="margin-bottom:-2.0em"/></td>
+<td>&nbsp;</td>
+<td valign="top"><p class="note"><i>The reader may wish to review Chapter <a href="ch03.html#chap03">3</a> of this book, specifically the topic of change-of-coordinate transformations. </i></p>
+</td></tr>
+</tbody>
+</table>
+
+<p class="tx1">To keep things simple and concrete, we work with the upper arm (the root), forearm, and hand hierarchy, which we label as Bone 0, Bone 1, and Bone 2, respectively (see Figure <a href="ch23.html#fig23.3">23.3</a>). </p>
+<p class="caption"><img src="images/Fig23-3.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.3"><b><i>Figure 23.3.</i></b>&nbsp;&nbsp;A simple hierarchy.</p>
+
+
+
+<p class="tx">Once the basic concept is understood, a straightforward generalization is used to handle more complex situations. So given an object in the hierarchy, how do we correctly transform it to world space? Obviously, we cannot just transform it directly into the world space because we must also take into consideration the transformations of its ancestors since they also influence its placement in the scene. </p>
+<p class="tx">Each object in the hierarchy is modeled about its own local coordinate system with its pivot joint at the origin to facilitate rotation (see Figure <a href="ch23.html#fig23.4">23.4</a>). </p>
+
+<p class="caption"><img src="images/Fig23-4.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.4"><b><i>Figure 23.4.</i></b>&nbsp;&nbsp;The geometry of each bone is described relative to its own local coordinate system. Furthermore, because all the coordinate systems exist in the same universe, we can relate them to one another.</p>
+
+
+
+
+<p class="tx">Because all the coordinate systems exist in the same universe, we can relate them; in particular, for an arbitrary instant in time (we fix time and study a snapshot because, in general, these mesh hierarchies are animated and so these relationships change as a function of time), we describe each coordinate system relative to its parent coordinate system. (The parent coordinate system of the root frame <i>F</i><sub>0</sub> is the world space coordinate system <i>W</i>; that is, the coordinate system <i>F</i><sub>0</sub> is described relative to the world coordinate system.) Now that we have related the child and parent coordinate systems, we can transform from a child&rsquo;s space to its parent&rsquo;s space with a transformation matrix. (This is the same idea as the<a id="page730"/>  local-to-world transformation. However, instead of transforming from local space to world space, we transform from the local space to the space of the parent.) Let <b>A</b><sub>2 </sub>be a matrix that transforms geometry from frame <i>F</i><sub>2</sub> into <i>F</i><sub>1</sub>, let <b>A</b><sub>1</sub> be a matrix that transform geometry from frame <i>F</i><sub>1</sub> into <i>F</i><sub>0</sub>, and let <b>A</b><sub>0</sub> be a matrix that transform geometry from frame <i>F</i><sub>0</sub> into <i>W</i>. (We call <b>A</b><sub>i</sub> a <i>to-parent</i> matrix since it transforms geometry from a child&rsquo;s coordinate system into its parent&rsquo;s coordinate system.) Then, we can transform the <i>i</i>th object in the arm hierarchy into world space by the matrix <b>M</b><sub>i</sub> defined as follows:</p>
+
+<p class="eq" id="eq23.1"><img src="images/eq764-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Specifically, in our example, <b>M</b><sub>2</sub> = <b>A</b><sub>2</sub><b>A</b><sub>1</sub><b>A</b><sub>0</sub>, <b>M</b><sub>1</sub> = <b>A</b><sub>1</sub><b>A</b><sub>0</sub> and <b>M</b><sub>0</sub> = <b>A</b><sub>0</sub> transforms the hand into world space, the forearm into world space, and the upper arm into world space, respectively. Observe that an object inherits the transformations of its ancestors; this is what will make the hand move if the upper arm moves, for example.</p>
+<p class="tx">Figure <a href="ch23.html#fig23.5">23.5</a> illustrates what Equation <a href="ch23.html#eq23.1">23.1</a> says graphically; essentially, to transform an object in the arm hierarchy, we just apply the to-parent transform of the object and all of its ancestors (in ascending order) to percolate up the coordinate system hierarchy until the object arrives in the world space.</p>
+<p class="caption"><img src="images/Fig23-5.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.5"><b><i>Figure 23.5.</i></b>&nbsp;&nbsp;Because the coordinate systems exist in the same universe we can relate them, and therefore, transform from one to the other. In particular, we relate them by describing each bone&rsquo;s coordinate system relative to its parent&rsquo;s coordinate system. From that, we can construct a <i>to-parent </i>transformation matrix that transforms the geometry of a bone from its local coordinate system to its parent&rsquo;s coordinate system. Once in the parent&rsquo;s coordinate system, we can then transform by the parent&rsquo;s to-parent matrix to transform to the grandparent&rsquo;s coordinate system, and so on and so forth, until we have visited each ancestor&rsquo;s coordinate system and finally reached the world space.</p>
+
+
+<p class="tx">The example we have been working with is a simple linear hierarchy. But the same idea generalizes to a tree hierarchy; that being, for any object in the hierarchy, its world space transformation is found by just applying the to-parent transform of the object and all of its ancestors (in ascending order) to percolate up the coordinate system hierarchy until the object arrives in the world space<a id="page731"/> (we again stipulate that the parent coordinate system of the root is the world space). The only real difference is that we have a more complicated tree data structure to traverse instead of a linear list.</p>
+<p class="tx">As an example, consider the left clavicle in Figure <a href="ch23.html#fig23.2">23.2</a>. It is a sibling of the neck bone, and therefore a child of the upper spine. The upper spine is a child of the lower spine, and the lower spine is a child of the pelvis. Therefore, the world transform of the left clavicle it formed by concatenating the left clavicle&rsquo;s to-parent transform, followed by the upper spine&rsquo;s to-parent transform, followed by the lower spine&rsquo;s to-parent transform, followed by the pelvis&rsquo; to-parent transform.</p>
+<p class="h1" id="c23.2"><a href="toc.html#toc-23.2"><b>23.2 SKINNED MESHES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="h2" id="c23.2.1"><a href="toc.html#toc-23.2.1"><b>23.2.1 Definitions</b></a></p>
+<p class="tx1">Figure <a href="ch23.html#fig23.6">23.6</a> shows a character mesh. The highlighted chain of bones in the figure is called a <i>skeleton. </i>A skeleton provides a natural hierarchal structure for driving a character animation system. The skeleton is surrounded by an exterior <i>skin</i>, which we model as 3D geometry (vertices and polygons). Initially, the skin vertices are relative to the <i>bind space</i>, which is the local coordinate system that the entire skin is defined relative to (usually the root coordinate system). Each bone in the skeleton influences the shape and position of the subset of skin it influences (i.e., the vertices it influences), just like in real life. Thus, as we animate the skeleton, the attached skin is animated accordingly to reflect the current pose of the skeleton.<a id="page732"/> </p>
+<p class="caption"><img src="images/Fig23-6.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.6"><b><i>Figure 23.6.</i></b>&nbsp;&nbsp;A character mesh. The highlighted bone chain represents the character&rsquo;s skeleton. The dark colored polygons represent the character&rsquo;s skin. The skin vertices are relative to the <i>bind space</i>, which is the coordinate system the mesh was modeled in.</p>
+
+
+
+
+<p class="h2" id="c23.2.2"><a href="toc.html#toc-23.2.2"><b>23.2.2 Reformulating the Bones To-Root Transform</b></a></p>
+<p class="tx1">One difference from &#x00A7;23.1 is that here we will transform from the root coordinate system to the world coordinate system in a separate step. So rather than finding the to-world matrix for each bone, we find the <i>to-root </i>(i.e., the transformation that transforms from the bone&rsquo;s local coordinate system to the root bone&rsquo;s coordinate system) matrix for each bone.  </p>
+<p class="tx">A second difference is that in &#x00A7;23.1, we traversed the ancestry of a node in a bottom-up fashion, where we started at a bone and moved up its ancestry. However, it is actually more efficient to take a top-down approach (see Equation <a href="ch23.html#eq23.2">23.2</a>), where we start at the root and move down the tree. Labeling the <i>n</i> bones with an integer number 0, 1, &hellip;, <i>n </i>&minus; 1, we have the following formula for expressing the ith bone&rsquo;s to-root transformation:</p>
+
+<p class="eq" id="eq23.2"><img src="images/eq766-01.jpg" alt="image" width="100%"/></p>
+
+<p class="tx1">Here, <i>p </i>is the bone label of the parent of bone<i> i</i>. Does this make sense? Indeed, <i> toRoot</i><sub>p</sub> gives us a direct map that sends geometry from the coordinate system of bone <i>p</i> to the coordinate system of the root. So to get to the root coordinate system, it follows that we just need to get geometry from the coordinate system of bone <i>i</i> to the coordinate system of its parent bone <i>p</i>, and <i>toParent</i><sub>i</sub> does that job.</p>
+<p class="tx">The only issue is that for this to work, when we go to process the <i>i</i>th bone, we must have already computed the to-root transformation of its parent. However, if we traverse the tree top-down, then a parent&rsquo;s to-root transformation will always be computed before its children&rsquo;s to-root transformation. </p>
+<p class="tx">We can also see why this is more efficient. With the top-down approach, for any bone<i> i</i>, we already have the to-root transformation matrix of its parent; thus, we are only <i>one</i> step away from the to-root transformation for bone <i>i</i>. With a bottoms-up technique, we&rsquo;d traverse the entire ancestry for each bone, and many matrix multiplications would be duplicated when bones share common ancestors. </p>
+<p class="h2" id="c23.2.3"><a href="toc.html#toc-23.2.3"><b>23.2.3 The Offset Transform</b></a></p>
+<p class="tx1">There is a small subtlety that comes from the fact that the vertices influenced by a bone are not relative to the coordinate system of the bone (they are relative to the <i>bind space</i>, which is the coordinate system the mesh was modeled in). So before we apply Equation 15.2, we first need to transform the vertices from bind space to the space of the bone that influences the vertices. A so-called <i>offset transformation </i>does this; see Figure <a href="ch23.html#fig23.7">23.7</a>.</p>
+
+<p class="caption"><img src="images/Fig23-7.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.7"><b><i>Figure 23.7.</i></b>&nbsp;&nbsp;We first transform the vertices influenced by a bone from bind space to the space of the influencing bone via the offset transform. Then, once in the space of the bone, we apply the bone&rsquo;s to-root transformation to transform the vertices from the space of the bone to the space of the root bone. The final transformation is the combination of the offset transform, followed by the to-root transform.</p>
+
+
+<p class="tx">Thus, by transforming the vertices by the offset matrix of some arbitrary bone <i>B</i>, we move the vertices from the bind space to the bone space of <i>B</i>. Then, once we have the vertices in bone space of <i>B</i>, we can use <i>B&rsquo;</i>s to-root transform to position it back in character space in its current animated pose.<a id="page733"/> </p>
+<p class="tx">We now introduce a new transform, call it the <i>final transform</i>, which combines a bone&rsquo;s offset transform with its to-root transform. Mathematically, the final transformation matrix of the ith bone <b>F</b><sub>i</sub> is given by:</p>
+
+<p class="eq" id="eq23.3"><img src="images/eq767-01.jpg" alt="image" width="100%"/></p>
+
+<p class="h2" id="c23.2.4"><a href="toc.html#toc-23.2.4"><b>23.2.4 Animating the Skeleton</b></a></p>
+<p class="tx1">In the demo of the last chapter, we showed how to animate a single object. We defined that a <i>key frame</i> specifies the position, orientation, and scale of an object at an instance in time, and that an <i>animation</i> is a list of key frames sorted by time, which roughly define the look of the overall animation. We then showed how to interpolate between key frames to calculate the placement of the object at times between key frames. We now extend our animation system to animating skeletons. These animation classes are defined in <i>SkinnedData.h/.cpp</i> in the &ldquo;Skinned Mesh&rdquo; demo of this chapter. </p>
+<p class="tx">Animating a skeleton is not much harder than animating a single object. Whereas we can think of a single object as a single bone, a skeleton is just a collection of connected bones. We will assume that each bone can move independently. Therefore, to animate a skeleton, we just animate each bone locally. Then after each bone has done its local animation, we take into consideration the movement of its ancestors, and transform it to the root space. </p>
+<p class="tx">We define an <i>animation clip</i> to be a list of animations (one for each bone in the skeleton) that work together to form a specific animation of the skeleton. For example, &ldquo;walking,&rdquo; &ldquo;running,&rdquo; &ldquo;fighting,&rdquo; &ldquo;ducking,&rdquo; and &ldquo;jumping&rdquo; are examples of animation clips. </p>
+<p class="code"><span class="code">///&lt;summary&gt;</span></p>
+<p class="code"><span class="code">/// Examples of AnimationClips are "Walk", "Run", "Attack", "Defend".</span></p>
+<p class="code"><span class="code">/// An AnimationClip requires a BoneAnimation for every bone to form</span></p>
+<p class="code"><span class="code">/// the animation clip.&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">///&lt;/summary&gt;</span></p>
+<p class="code"><span class="code">struct AnimationClip</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Smallest end time over all bones in this clip.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float GetClipStartTime()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Largest end time over all bones in this clip.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float GetClipEndTime()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Loops over each BoneAnimation in the clip and interpolates</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// the animation.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;void Interpolate(float t, std::vector&lt;XMFLOAT4X4&gt;&amp; boneTransforms)const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Animation for each bone.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;BoneAnimation&gt; BoneAnimations; &nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1"><a id="page734"/>A character will generally have several animation clips for all the animations the character needs to perform in the application. All the animation clips work on the same skeleton, however, so they use the same number of bones (although some bones may be stationary for a particular animation). We can use an <span class="code">unordered_map</span> data structure to store all the animation clips and to refer to an animation clip by a readable name:</p>
+<p class="code"><span class="code">std::unordered_map&lt;std::string, AnimationClip&gt; mAnimations;</span></p>
+<p class="code"><span class="code">AnimationClip&amp; clip = mAnimations["attack"];</span></p>
+<p class="tx1">Finally, as already mentioned, each bone needs an offset transform to transform the vertices from bind space to the space of the bone; and additionally, we need a way to represent the skeleton hierarchy (we use an array&mdash;see the next section for details). This gives us our final data structure for storing our skeleton animation data:</p>
+<p class="code"><span class="code">class SkinnedData</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">public:</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT BoneCount()const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float GetClipStartTime(const std::string&amp; clipName)const;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float GetClipEndTime(const std::string&amp; clipName)const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;void Set(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;int&gt;&amp; boneHierarchy,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;DirectX::XMFLOAT4X4&gt;&amp; boneOffsets,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::unordered_map&lt;std::string, AnimationClip&gt;&amp; animations);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// In a real project, you&rsquo;d want to cache the result if there was a</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// chance that you were calling this several times with the same&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// clipName at the same timePos.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;void GetFinalTransforms(const std::string&amp; clipName, float timePos,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;DirectX::XMFLOAT4X4&gt;&amp; finalTransforms)const;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">private:</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Gives parentIndex of ith bone.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;int&gt; mBoneHierarchy;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;DirectX::XMFLOAT4X4&gt; mBoneOffsets;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unordered_map&lt;std::string, AnimationClip&gt; mAnimations;</span></p>
+<p class="code"><span class="code">};</span><a id="page735"/></p>
+<p class="h2" id="c23.2.5"><a href="toc.html#toc-23.2.5"><b>23.2.5 Calculating the Final Transform</b></a></p>
+<p class="tx1">Our frame hierarchy for a character will generally be a tree, similar to the one in Figure <a href="ch23.html#fig23.2">23.2</a>. We model the hierarchy with an array of integers such that the <i>i</i>th array entry gives the parent index of the <i>i</i>th bone. Moreover, the <i>i</i>th entry corresponds to the <i>i</i>th <span class="code">BoneAnimation</span> in the working animation clip and the <i>i</i>th entry corresponds to the <i>i</i>th offset transform. The root bone is always at element 0 and it has no parent. So for example, the animation and offset transform of the grandparent of bone <i>i</i> is obtained by:</p>
+<p class="code"><span class="code">int parentIndex = mBoneHierarchy[i];</span></p>
+<p class="code"><span class="code">int grandParentIndex = mBoneHierarchy[parentIndex];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">XMFLOAT4X4 offset = mBoneOffsets[grandParentIndex];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">AnimationClip&amp; clip = mAnimations["attack"];</span></p>
+<p class="code"><span class="code">BoneAnimation&amp; anim = clip.BoneAnimations[grandParentIndex];</span></p>
+<p class="tx1">We can therefore compute the final transform for each bone like so:</p>
+<p class="code"><span class="code">void SkinnedData::GetFinalTransforms(const std::string&amp; clipName,&nbsp;</span></p>
+<p class="code"><span class="code">float timePos, std::vector&lt;XMFLOAT4X4&gt;&amp; finalTransforms)const</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numBones = mBoneOffsets.size();</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;XMFLOAT4X4&gt; toParentTransforms(numBones);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Interpolate all the bones of this clip at the given time instance.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto clip = mAnimations.find(clipName);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;clip-&gt;second.Interpolate(timePos, toParentTransforms);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Traverse the hierarchy and transform all the bones to the&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// root space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;//</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;XMFLOAT4X4&gt; toRootTransforms(numBones);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// The root bone has index 0. The root bone has no parent, so</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// its toRootTransform is just its local bone transform.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;toRootTransforms[0] = toParentTransforms[0];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Now find the toRootTransform of the children.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 1; i &lt; numBones; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX toParent = XMLoadFloat4x4(&amp;toParentTransforms[i]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;int parentIndex = mBoneHierarchy[i];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX parentToRoot = XMLoadFloat4x4(&amp;toRootTransforms[parentIndex]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX toRoot = XMMatrixMultiply(toParent, parentToRoot);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;toRootTransforms[i], toRoot);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Premultiply by the bone offset transform to get the final transform.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; numBones; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX offset = XMLoadFloat4x4(&amp;mBoneOffsets[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMMATRIX toRoot = XMLoadFloat4x4(&amp;toRootTransforms[i]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMStoreFloat4x4(&amp;finalTransforms[i], XMMatrixMultiply(offset, toRoot));</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1"><a id="page736"/>There is one requirement needed to make this work. When we traverse the bones in the loop, we look up the to-root transform of the bone&rsquo;s parent:</p>
+<p class="code"><span class="code">int parentIndex = mBoneHierarchy[i];</span></p>
+<p class="code"><span class="code">XMMATRIX parentToRoot = XMLoadFloat4x4(&amp;toRootTransforms[parentIndex]);</span></p>
+<p class="tx1">This only works if we are guaranteed that the parent bone&rsquo;s to-root transform has already been processed earlier in the loop. We can, in fact, make this guarantee if we ensure that the bones are always ordered in the arrays such that a parent bone always comes before a child bone. Our sample 3D data has been generated such that this is the case. Here is some sample data of the first ten bones in the hierarchy array of some character model:</p>
+<p class="code"><span class="code">ParentIndexOfBone0: -1</span></p>
+<p class="code"><span class="code">ParentIndexOfBone1: 0</span></p>
+<p class="code"><span class="code">ParentIndexOfBone2: 0</span></p>
+<p class="code"><span class="code">ParentIndexOfBone3: 2</span></p>
+<p class="code"><span class="code">ParentIndexOfBone4: 3</span></p>
+<p class="code"><span class="code">ParentIndexOfBone5: 4</span></p>
+<p class="code"><span class="code">ParentIndexOfBone6: 5</span></p>
+<p class="code"><span class="code">ParentIndexOfBone7: 6</span></p>
+<p class="code"><span class="code">ParentIndexOfBone8: 5</span></p>
+<p class="code"><span class="code">ParentIndexOfBone9: 8</span></p>
+<p class="tx1">So take Bone9. Its parent is Bone8, the parent of Bone8 is Bone5, the parent of Bone5 is Bone4, the parent of Bone4 is Bone3, the parent of Bone3 is Bone2, and the parent of Bone2 is the root node Bone0. Notice that a child bone never comes before its parent bone in the ordered array.<a id="page737"/> </p>
+<p class="h1" id="c23.3"><a href="toc.html#toc-23.3"><b>23.3 VERTEX BLENDING</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We have showed how to animate the skeleton. In this section we will focus on animating the skin of vertices that cover the skeleton. The algorithm for doing this is called <i>vertex blending</i>. </p>
+<p class="tx">The strategy of vertex blending is as follows. We have an underlying bone hierarchy, but the skin itself is one continuous mesh (i.e., we do not break the mesh up into parts to correspond with each bone and animate them individually). Moreover, one or more bones can influence a vertex of the skin; the net result being determined by a weighted average of the influencing bones&rsquo; final transforms (the weights are specified by an artist when the model is being made and saved to file). With this setup, a smooth transitional blend can be achieved at joints (which are typically the troubled areas), thereby making the skin feel elastic; see Figure <a href="ch23.html#fig23.8">23.8</a>. </p>
+
+
+<p class="caption"><img src="images/Fig23-8.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.8"><b><i>Figure 23.8.</i></b>&nbsp;&nbsp;The skin is one continuous mesh that covers both bones. Observe that the vertices near the joint are influenced by both bone <i>A</i> and bone <i>B</i> to create a smooth transitional blend to simulate a flexible skin.</p>
+
+
+
+
+<p class="tx">In practice, [M&ouml;ller08] notes that we usually do not need more than four bone influences per vertex. Therefore, in our design we will consider a maximum of four influential bones per vertex. So to implement vertex blending, we model the character mesh&rsquo;s skin as one continuous mesh. Each vertex contains up to four indices that index into a <i>bone matrix palette</i>, which is the array of final transformation matrices (one entry for each bone in the skeleton). Additionally, each vertex also has up to four weights that describe the respective amount of influence each of the four influencing bones has on that vertex. Thus we have the following vertex structure for vertex blending (Figure <a href="ch23.html#fig23.9">23.9</a>):</p>
+<p class="tx">A continuous mesh whose vertices have this format is ready for vertex blending, and we call it a <i>skinned mesh.</i></p>
+
+<p class="caption"><img src="images/Fig23-9.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.9"><b><i>Figure 23.9.</i></b>&nbsp;&nbsp;The matrix palette stores the final transformation for each bone. Observe how the four bone indices index into the matrix palette. The bone indices identify the bones of the skeleton that influence the vertex. Note that the vertex is not necessarily influenced by four bones; for instance, only two of the four indices might be used, thereby indicating that only two bones influence the vertex. We can set a bone weight to zero to effectively remove the bone from influencing the vertex.</p>
+
+
+<p class="tx"><i>The vertex-blended position </i><b>v</b>&prime; of any vertex <b>v</b>, relative to the root frame (remember we perform the world transformation as a last step once we have everything in the root coordinate system), can be calculated with the following<a id="page738"/> weighted average formula:</p>
+
+<p class="eq"><img src="images/eq771-01.jpg" alt="image" width="100%"/></p>
+<p class="tx">Where <i>w</i><sub>0</sub> + <i>w</i><sub>1</sub> + <i>w</i><sub>2</sub> + <i>w</i><sub>3</sub> = 1; that is, the sum of the weights sums to one.</p>
+<p class="tx">Observe that in this equation, we transform a given vertex v individually by all of the final bone transforms that influence it (i.e., matrices <b>F</b><sub>0</sub>, <b>F</b><sub>1</sub>, <b>F</b><sub>2</sub>, <b>F</b><sub>3</sub>). We then take a weighted average of these individually transformed points to compute the final vertex blended position <b>v</b>&prime;. </p>
+<p class="tx">Transforming normals and tangents are done similarly: </p>
+
+<p class="eq"><img src="images/eq772-01.jpg" alt="image" width="100%"/></p>
+<p class="tx1">Here we <i>assume</i> that the transformation matrices <b>F</b><sub>i</sub> do not contain any nonuniform scaling. Otherwise, we need to use the inverse-transpose  when transforming the normals (see &#x00A7;8.2.2). </p>
+<p class="tx">The following vertex shader fragment shows the key code that does vertex blending with a maximum of four bone influences per vertex:<a id="page739"/></p>
+<p class="code"><span class="code">cbuffer cbSkinned : register(b1)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Max support of 96 bones per character.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4x4 gBoneTransforms[96];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexIn</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosL&nbsp;&nbsp;: POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalL : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 TangentL : TANGENT;</span></p>
+<p class="code"><span class="code">#ifdef SKINNED</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 BoneWeights : WEIGHTS;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;uint4 BoneIndices : BONEINDICES;</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">struct VertexOut</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 PosH&nbsp;&nbsp;: SV_POSITION;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 ShadowPosH : POSITION0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 SsaoPosH&nbsp;&nbsp;: POSITION1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 PosW&nbsp;&nbsp;: POSITION2;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 NormalW : NORMAL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 TangentW : TANGENT;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float2 TexC&nbsp;&nbsp;: TEXCOORD;</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">VertexOut VS(VertexIn vin)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;VertexOut vout = (VertexOut)0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Fetch the material data.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;MaterialData matData = gMaterialData[gMaterialIndex];</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">#ifdef SKINNED</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;weights[0] = vin.BoneWeights.x;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;weights[1] = vin.BoneWeights.y;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;weights[2] = vin.BoneWeights.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;weights[3] = 1.0f - weights[0] - weights[1] - weights[2];</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 posL = float3(0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 normalL = float3(0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float3 tangentL = float3(0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(int i = 0; i &lt; 4; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Assume no nonuniform scaling when transforming normals, so&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// that we do not have to use the inverse-transpose.</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;posL += weights[i] * mul(float4(vin.PosL, 1.0f),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; gBoneTransforms[vin.BoneIndices[i]]).xyz;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;normalL += weights[i] * mul(vin.NormalL,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (float3x3)gBoneTransforms[vin.BoneIndices[i]]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;tangentL += weights[i] * mul(vin.TangentL.xyz,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (float3x3)gBoneTransforms[vin.BoneIndices[i]]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;vin.PosL = posL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vin.NormalL = normalL;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vin.TangentL.xyz = tangentL;</span></p>
+<p class="code"><span class="code">#endif</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to world space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosW = posW.xyz;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Assumes nonuniform scaling; otherwise, need to&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// use inverse-transpose of world matrix.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.NormalW = mul(vin.NormalL, (float3x3)gWorld);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TangentW = mul(vin.TangentL, (float3x3)gWorld);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Transform to homogeneous clip space.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.PosH = mul(posW, gViewProj);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Generate projective tex-coords to project SSAO map onto scene.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.SsaoPosH = mul(posW, gViewProjTex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Output vertex attributes for interpolation across triangle.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float4 texC = mul(float4(vin.TexC, 0.0f, 1.0f), gTexTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.TexC = mul(texC, matData.MatTransform).xy;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Generate projective tex-coords to project shadow map onto scene.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;vout.ShadowPosH = mul(posW, gShadowTransform);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return vout;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1"><a id="page740"/>If the above vertex shader does vertex blending with a maximum of four bone influences per vertex, then why do we only input three weights per vertex instead of four? Well, recall that the total weight must sum to one; thus, for four weights we have: <img src="images/eq774-01.jpg" alt="image" width="350" height="25" style="margin-bottom:-0.3em;"/>. </p>
+<p class="h1" id="c23.4"><a href="toc.html#toc-23.4"><b>23.4 LOADING ANIMATION DATA FROM FILE</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">We use a text file to store a 3D skinned mesh with animation data. We call this an .m3d file for &ldquo;model 3D.&rdquo; The format has been designed for simplicity in loading and readability&mdash;not for performance&mdash;and the format is just used for this book. </p>
+<p class="h2" id="c23.4.1"><a href="toc.html#toc-23.4.1"><b>23.4.1 Header</b></a></p>
+<p class="tx1">At the beginning, the .m3d format defines a header which specifies the number of materials, vertices, triangles, bones, and animations that make up the model:</p>
+<p class="tx"><span class="code">***************m3d-File-Header***************</span></p>
+<p class="tx"><span class="code">#Materials 3</span></p>
+<p class="tx"><span class="code">#Vertices 3121</span></p>
+<p class="tx"><span class="code">#Triangles 4062</span></p>
+<p class="tx"><span class="code">#Bones 44</span></p>
+<p class="tx"><span class="code">#AnimationClips 15</span></p>
+<ol><li><span class="code">#Materials</span>: The number of distinct materials the mesh uses.</li>
+<li><span class="code">#Vertices</span>: The number of vertices of the mesh.</li>
+<li><span class="code">#Triangles</span>: The number of triangles in the mesh.</li>
+<li><span class="code">#Bones</span>: The number of bones in the mesh.<a id="page741"/></li>
+<li><span class="code">#AnimationClips</span>: The number of animation clips in the mesh.</li></ol>
+<p class="h2" id="c23.4.2"><a href="toc.html#toc-23.4.2"><b>23.4.2 Materials</b></a></p>
+<p class="tx1">The next &ldquo;chunk&rdquo; in the .m3d format is a list of materials. Below is an example of the first two materials in the soldier.m3d file:</p>
+     <p class="tx"><span class="code">***************Materials*********************</span></p>
+     <p class="tx"><span class="code">Name: soldier_head</span></p>
+     <p class="tx"><span class="code">Diffuse: 1 1 1</span></p>
+     <p class="tx"><span class="code">Fresnel0: 0.05 0.05 0.05</span></p>
+     <p class="tx"><span class="code">Roughness: 0.5</span></p>
+     <p class="tx"><span class="code">AlphaClip: 0</span></p>
+     <p class="tx"><span class="code">MaterialTypeName: Skinned</span></p>
+     <p class="tx"><span class="code">DiffuseMap: head_diff.dds</span></p>
+     <p class="tx"><span class="code">NormalMap: head_norm.dds</span></p>
+     <p class="code">&nbsp;</p>
+     <p class="tx"><span class="code">Name: soldier_jacket</span></p>
+     <p class="tx"><span class="code">Diffuse: 1 1 1</span></p>
+     <p class="tx"><span class="code">Fresnel0: 0.05 0.05 0.05</span></p>
+     <p class="tx"><span class="code">Roughness: 0.8</span></p>
+     <p class="tx"><span class="code">AlphaClip: 0</span></p>
+     <p class="tx"><span class="code">MaterialTypeName: Skinned</span></p>
+     <p class="tx"><span class="code">DiffuseMap: jacket_diff.dds</span></p>
+     <p class="tx"><span class="code">NormalMap: jacket_norm.dds</span></p>
+<p class="tx1">The file contains the material data we are familiar with (diffuse, roughness, etc.), but also contains additional information such as the textures to apply, whether alpha clipping needs to be applied, and the material type name. The material type name is used to indicate which shader programs are needed for the given material. In the example above, the &ldquo;Skinned&rdquo; type indicates that the material will need to be rendered with shader programs that support skinning. </p>
+<p class="h2" id="c23.4.3"><a href="toc.html#toc-23.4.3"><b>23.4.3 Subsets</b></a></p>
+<p class="tx1">A mesh consists of one or more subsets. A <i>subset</i> is a group of triangles in a mesh that can all be rendered using the same material. Figure <a href="ch23.html#fig23.10">23.10</a> illustrates how a mesh representing a car may be divided into several subsets.</p>
+
+<p class="caption"><img src="images/Fig23-10.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.10"><b><i>Figure 23.10.</i></b>&nbsp;&nbsp;A car broken up by subset. Here only the materials per subset differ, but we could also imagine textures being added and differing as well. In addition, the render states may differ; for example, the glass windows may be rendered with alpha blending for transparency.</p>
+
+
+
+<p class="tx">There is a subset corresponding to each material and the <i>i</i>th subset corresponds to the <i>i</i>th material. The ith subset defines a contiguous block of geometry that should be rendered with the ith material.<a id="page742"/> </p>
+<p class="code"><span class="code">***************SubsetTable*******************</span></p>
+<p class="code"><span class="code">SubsetID: 0 VertexStart: 0 VertexCount: 3915 FaceStart: 0 FaceCount: 7230</span></p>
+<p class="code"><span class="code">SubsetID: 1 VertexStart: 3915 VertexCount: 2984 FaceStart: 7230 FaceCount: 4449</span></p>
+<p class="code"><span class="code">SubsetID: 2 VertexStart: 6899 VertexCount: 4270 FaceStart: 11679 FaceCount: 6579</span></p>
+<p class="code"><span class="code">SubsetID: 3 VertexStart: 11169 VertexCount: 2305 FaceStart: 18258 FaceCount: 3807</span></p>
+<p class="code"><span class="code">SubsetID: 4 VertexStart: 13474 VertexCount: 274 FaceStart: 22065 FaceCount: 442</span></p>
+<p class="tx1">In the above example, the first 7230 triangles of the mesh (which reference vertices [0, 3915)) should be rendered with material 0, and the next 4449 triangles of the mesh (which reference vertices [3915, 6899)) should be rendered with material 1. </p>
+<p class="h2" id="c23.4.4"><a href="toc.html#toc-23.4.4"><b>23.4.4 Vertex Data and Triangles</b></a></p>
+<p class="tx1">The next two chunks of data are just lists of vertices and indices (3 indices per triangle):<a id="page743"/></p>
+<p class="code"><span class="code">***************Vertices**********************</span></p>
+<p class="code"><span class="code">Position: -14.34667 90.44742 -12.08929</span></p>
+<p class="code"><span class="code">Tangent: -0.3069077 0.2750875 0.9111171 1</span></p>
+<p class="code"><span class="code">Normal: -0.3731041 -0.9154652 0.150721</span></p>
+<p class="code"><span class="code">Tex-Coords: 0.21795 0.105219</span></p>
+<p class="code"><span class="code">BlendWeights: 0.483457 0.483457 0.0194 0.013686</span></p>
+<p class="code"><span class="code">BlendIndices: 3 2 39 34</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">Position: -15.87868 94.60355 9.362272</span></p>
+<p class="code"><span class="code">Tangent: -0.3069076 0.2750875 0.9111172 1</span></p>
+<p class="code"><span class="code">Normal: -0.3731041 -0.9154652 0.150721</span></p>
+<p class="code"><span class="code">Tex-Coords: 0.278234 0.091931</span></p>
+<p class="code"><span class="code">BlendWeights: 0.4985979 0.4985979 0.002804151 0</span></p>
+<p class="code"><span class="code">BlendIndices: 39 2 3 0</span></p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">***************Triangles*********************</span></p>
+<p class="code"><span class="code">0 1 2</span></p>
+<p class="code"><span class="code">3 4 5</span></p>
+<p class="code"><span class="code">6 7 8</span></p>
+<p class="code"><span class="code">9 10 11</span></p>
+<p class="code"><span class="code">12 13 14</span></p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="h2" id="c23.4.5"><a href="toc.html#toc-23.4.5"><b>23.4.5 Bone Offset Transforms</b></a></p>
+<p class="tx1">The bone offset transformation chunk, just stores a list of 4 &times; 4 matrices, one for each bone.</p>
+<p class="code"><span class="code">***************BoneOffsets*******************</span></p>
+<p class="code"><span class="code">BoneOffset0 -0.8669753 0.4982096 0.01187624 0&nbsp;</span></p>
+<p class="code"><span class="code">0.04897417 0.1088907 -0.9928461 0</span></p>
+<p class="code"><span class="code">-0.4959392 -0.8601914 -0.118805 0&nbsp;</span></p>
+<p class="code"><span class="code">-10.94755 -14.61919 90.63506 1</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">BoneOffset1 1 4.884964E-07 3.025227E-07 0&nbsp;</span></p>
+<p class="code"><span class="code">-3.145564E-07 2.163151E-07 -1 0&nbsp;</span></p>
+<p class="code"><span class="code">4.884964E-07 0.9999997 -9.59325E-08 0&nbsp;</span></p>
+<p class="code"><span class="code">3.284225 7.236738 1.556451 1</span></p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="h2" id="c23.4.6"><a href="toc.html#toc-23.4.6"><b>23.4.6 Hierarchy</b></a></p>
+<p class="tx1">The hierarchy chunk stores the hierarchy array&mdash;an array of integers such that the <i>i</i>th array entry gives the parent index of the <i>i</i>th bone. </p>
+<p class="code"><span class="code">***************BoneHierarchy*****************</span></p>
+<p class="code"><span class="code">ParentIndexOfBone0: -1</span></p>
+<p class="code"><span class="code">ParentIndexOfBone1: 0</span></p>
+<p class="code"><span class="code">ParentIndexOfBone2: 1</span></p>
+<p class="code"><span class="code">ParentIndexOfBone3: 2</span></p>
+<p class="code"><span class="code">ParentIndexOfBone4: 3</span></p>
+<p class="code"><span class="code">ParentIndexOfBone5: 4</span></p>
+<p class="code"><span class="code">ParentIndexOfBone6: 5</span></p>
+<p class="code"><span class="code">ParentIndexOfBone7: 6</span></p>
+<p class="code"><span class="code">ParentIndexOfBone8: 7</span></p>
+<p class="code"><span class="code">ParentIndexOfBone9: 7</span></p>
+<p class="code"><span class="code">ParentIndexOfBone10: 7</span></p>
+<p class="code"><span class="code">ParentIndexOfBone11: 7</span></p>
+<p class="code"><span class="code">ParentIndexOfBone12: 6</span></p>
+<p class="code"><span class="code">ParentIndexOfBone13: 12</span></p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="h2" id="c23.4.7"><a href="toc.html#toc-23.4.7"><b>23.4.7 Animation Data</b></a></p>
+<p class="tx1">The last chunk we need to read are the animation clips. Each animation has a readable name and a list of key frames for each bone in the skeleton. Each key frame stores the time position, the translation vector specifying the position of the<a id="page744"/> bone, the scaling vector specifying the bone scale, and the quaternion specifying the orientation of the bone.</p>
+<p class="code"><span class="code">***************AnimationClips****************</span></p>
+<p class="code"><span class="code">AnimationClip run_loop</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Bone0 #Keyframes: 18</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0 Pos: 2.538344 101.6727 -0.52932&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 1 1 1&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.4042651 0.3919331 -0.5853591 0.5833637</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0.0666666&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: 0.81979 109.6893 -1.575387&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 0.9999998 0.9999998 0.9999998&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.4460441 0.3467651 -0.5356012 0.6276384</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Bone1 #Keyframes: 18</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: 36.48329 1.210869 92.7378&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 1 1 1&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.126642 0.1367731 0.69105 0.6983587</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0.0666666&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: 36.30672 -2.835898 93.15854&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 1 1 1&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.1284061 0.1335271 0.6239273 0.7592083</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">AnimationClip walk_loop</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Bone0 #Keyframes: 33</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: 1.418595 98.13201 -0.051082&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 0.9999985 0.999999 0.9999991&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.3164562 0.6437552 -0.6428624 0.2686314</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0.0333333&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: 0.956079 96.42985 -0.047988&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 0.9999999 0.9999999 0.9999999&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: 0.3250651 0.6395872 -0.6386833 0.2781091&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;Bone1 #Keyframes: 33</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: -5.831432 2.521564 93.75848&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 0.9999995 0.9999995 1&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: -0.033817 -0.000631005 0.9097761 0.4137191</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Time: 0.0333333&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pos: -5.688324 2.551427 93.71078&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Scale: 0.9999998 0.9999998 1&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Quat: -0.033202 -0.0006390021 0.903874 0.426508</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&hellip;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&hellip;</span></p>
+<p class="code"><a id="page745"/>The following code shows how we read the animation clips from file:</p>
+<p class="code"><span class="code">void M3DLoader::ReadAnimationClips(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::ifstream&amp; fin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numBones,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numAnimationClips,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::unordered_map&lt;std::string,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;AnimationClip&gt;&amp; animations)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string ignore;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; ignore; // AnimationClips header text</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT clipIndex = 0; clipIndex &lt; numAnimationClips; ++clipIndex)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::string clipName;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; clipName;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore; // {</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;AnimationClip clip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;clip.BoneAnimations.resize(numBones);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;for(UINT boneIndex = 0; boneIndex &lt; numBones; ++boneIndex)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ReadBoneKeyframes(fin, numBones, clip.BoneAnimations[boneIndex]);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore; // }</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;animations[clipName] = clip;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">void M3DLoader::ReadBoneKeyframes(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::ifstream&amp; fin,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numBones,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;BoneAnimation&amp; boneAnimation)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string ignore;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numKeyframes = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; ignore &gt;&gt; numKeyframes;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; ignore; // {</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;boneAnimation.Keyframes.resize(numKeyframes);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;for(UINT i = 0; i &lt; numKeyframes; ++i)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;float t&nbsp;&nbsp;= 0.0f;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3 p(0.0f, 0.0f, 0.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT3 s(1.0f, 1.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;XMFLOAT4 q(0.0f, 0.0f, 0.0f, 1.0f);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; t;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; p.x &gt;&gt; p.y &gt;&gt; p.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; s.x &gt;&gt; s.y &gt;&gt; s.z;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; q.x &gt;&gt; q.y &gt;&gt; q.z &gt;&gt; q.w;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;boneAnimation.Keyframes[i].TimePos&nbsp;&nbsp; = t;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;boneAnimation.Keyframes[i].Translation = p;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;boneAnimation.Keyframes[i].Scale&nbsp;&nbsp;&nbsp;&nbsp;= s;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;boneAnimation.Keyframes[i].RotationQuat = q;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;fin &gt;&gt; ignore; // }</span></p>
+<p class="code"><span class="code">}</span><a id="page746"/></p>
+<p class="h2" id="c23.4.8"><a href="toc.html#toc-23.4.8"><b>23.4.8 M3DLoader</b></a></p>
+<p class="tx1">The code to load the data from an .m3d file is contained in <i>LoadM3D.h/.cpp</i>, in particular, the <span class="code">LoadM3d function:</span></p>
+<p class="code"><span class="code">bool M3DLoader::LoadM3d(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;const std::string&amp; filename,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;SkinnedVertex&gt;&amp; vertices,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;USHORT&gt;&amp; indices,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;Subset&gt;&amp; subsets,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;M3dMaterial&gt;&amp; mats,</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;SkinnedData&amp; skinInfo)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::ifstream fin(filename);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numMaterials = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numVertices = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numTriangles = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numBones&nbsp;&nbsp; = 0;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT numAnimationClips = 0;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string ignore;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;if( fin )</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore; // file header text</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; numMaterials;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; numVertices;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; numTriangles;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; numBones;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;fin &gt;&gt; ignore &gt;&gt; numAnimationClips;</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;XMFLOAT4X4&gt; boneOffsets;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::vector&lt;int&gt; boneIndexToParentIndex;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::unordered_map&lt;std::string, AnimationClip&gt; animations;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadMaterials(fin, numMaterials, mats);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadSubsetTable(fin, numMaterials, subsets);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadSkinnedVertices(fin, numVertices, vertices);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadTriangles(fin, numTriangles, indices);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadBoneOffsets(fin, numBones, boneOffsets);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadBoneHierarchy(fin, numBones, boneIndexToParentIndex);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ReadAnimationClips(fin, numBones, numAnimationClips, animations);</span></p>
+<p class="code"><span class="code">&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;skinInfo.Set(boneIndexToParentIndex, boneOffsets, animations);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;return true;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;return false;</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="tx1">The helper functions<a id="page747"/> <span class="code">ReadMaterials</span>, and etc., are straightforward text file parsing using <span class="code">std::ifstream</span>. We leave it to the read to examine the source code for the implementation details.</p>
+<p class="h1" id="c23.5"><a href="toc.html#toc-23.5"><b>23.5 CHARACTER ANIMATION DEMO</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<p class="tx1">As we saw in the skinned mesh shader code, the final bone transforms are stored in a constant buffer where they are accessed in the vertex shader to do the animation transformations.</p>
+     <p class="tx"><span class="code">cbuffer cbSkinned : register(b1)</span></p>
+     <p class="tx"><span class="code">{</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;// Max support of 96 bones per character.</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;float4x4 gBoneTransforms[96];</span></p>
+     <p class="tx"><span class="code">};</span></p>
+<p class="tx1">We therefore need to add these new constant buffers, one for each skinned mesh object, to our frame resources:</p>
+<p class="code"><span class="code">struct SkinnedConstants</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;DirectX::XMFLOAT4X4 BoneTransforms[96];</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">std::unique_ptr&lt;UploadBuffer&lt;SkinnedConstants&gt;&gt; SkinnedCB = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">SkinnedCB = std::make_unique&lt;UploadBuffer&lt;SkinnedConstants&gt;&gt;(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;device, skinnedObjectCount, true);</span></p>
+<p class="tx1">We will need one <span class="code">SkinnedConstants</span> for each instance of an animated character. An animated character instance will generally be composed of multiple render-items (one per material), but all render-items for the same character instance can share the same <span class="code">SkinnedConstants</span> since they all use the same underlying animated skeleton. </p>
+<p class="tx">To represent an animated character instance at an instance in time, we define the following structure:<a id="page748"/></p>
+<p class="code"><span class="code">struct SkinnedModelInstance</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;SkinnedData* SkinnedInfo = nullptr;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Storage for final transforms at the given time position.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::vector&lt;DirectX::XMFLOAT4X4&gt; FinalTransforms;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Current animation clip.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::string ClipName;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Animation time position.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;float TimePos = 0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Call every frame to increment the animation.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;void UpdateSkinnedAnimation(float dt)</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;TimePos += dt;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Loop animation</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;if(TimePos &gt; SkinnedInfo-&gt;GetClipEndTime(ClipName))</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TimePos = 0.0f;</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// Called every frame and increments the time position,&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// interpolates the animations for each bone based on&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// the current animation clip, and generates the final&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// transforms which are ultimately set to the effect</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;// for processing in the vertex shader.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;SkinnedInfo-&gt;GetFinalTransforms(ClipName, TimePos, FinalTransforms);</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;}</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Then we add the following data members to our render-item structure:</p>
+<p class="code"><span class="code">struct RenderItem</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Index to bone transformation constant buffer.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Only applicable to skinned render-items.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;UINT SkinnedCBIndex = -1;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// Pointer to the animation instance associated with this render item.&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// nullptr if this render-item is not animated by skinned mesh.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;SkinnedModelInstance* SkinnedModelInst = nullptr;&nbsp;&nbsp;[&hellip;]</span></p>
+<p class="code"><span class="code">};</span></p>
+<p class="tx1">Every frame we update the animated character instances (in our demo we only have one):<a id="page749"/></p>
+<p class="code"><span class="code">void SkinnedMeshApp::UpdateSkinnedCBs(const GameTimer&amp; gt)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;auto currSkinnedCB = mCurrFrameResource-&gt;SkinnedCB.get();</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;// We only have one skinned model being animated.</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;mSkinnedModelInst-&gt;UpdateSkinnedAnimation(gt.DeltaTime());</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;SkinnedConstants skinnedConstants;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;std::copy(</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::begin(mSkinnedModelInst-&gt;FinalTransforms),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;std::end(mSkinnedModelInst-&gt;FinalTransforms),</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&amp;skinnedConstants.BoneTransforms[0]);</span></p>
+<p class="code">&nbsp;</p>
+<p class="code"><span class="code">&nbsp;&nbsp;currSkinnedCB-&gt;CopyData(0, skinnedConstants);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">And when we draw the render-items, we bind the associated final bone transforms if the render-item is animated by a skinned mesh:</span></p>
+<p class="code"><span class="code">if(ri-&gt;SkinnedModelInst != nullptr)</span></p>
+<p class="code"><span class="code">{</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;D3D12_GPU_VIRTUAL_ADDRESS skinnedCBAddress =&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;skinnedCB-&gt;GetGPUVirtualAddress() +&nbsp;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;ri-&gt;SkinnedCBIndex*skinnedCBByteSize;</span></p>
+<p class="code"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(1, skinnedCBAddress);</span></p>
+<p class="code"><span class="code">}</span></p>
+<p class="code"><span class="code">else</span></p>
+     <p class="tx"><span class="code">{</span></p>
+     <p class="tx"><span class="code">&nbsp;&nbsp;cmdList-&gt;SetGraphicsRootConstantBufferView(1, 0);</span></p>
+     <p class="tx"><span class="code">}</span></p>
+<p class="tx1">Figure <a href="ch23.html#fig23.10">23.10</a> shows a screenshot or our demo. The original animated model and textures were taken from the DirectX SDK and converted to the .m3d format for demoing purposes. This sample model only has one animation clip called <i>Take1. </i></p>
+<p class="caption"><img src="images/Fig23-11.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.10a"><b><i>Figure 23.10.</i></b>&nbsp;&nbsp;Screenshot of the &ldquo;Skinned Mesh&rdquo; demo.<a id="page750"/></p>
+
+
+
+<p class="h1" id="c23.6"><a href="toc.html#toc-23.6"><b>23.6 SUMMARY</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Many real world objects we wish to model graphically in a computer program consist of parts with a parent-children relationship, where a child object can move independently on its own, but is also forced to move when its parent moves. For example, a tank turret can rotate independently of the tank, but it is still fixed to the tank and moves with the tank. Another classic example is skeletons, in which bones are attached to other bones and must move when they move. Consider game characters on a train. The characters can move independently inside the train, but they also move as the train moves. This example illustrates how, in a game, the hierarchy can change dynamically and must be updated. That is, before a character enters a train, the train is not part of the character&rsquo;s hierarchy, but once the player does enter a train, the train does become part of the character&rsquo;s hierarchy (the character inherits the train transformation). </li>
+<li>Each object in a mesh hierarchy is modeled about its own local coordinate system with its pivot joint at the origin to facilitate rotation. Because the coordinate systems exist in the same universe we can relate them, and therefore, transform from one to the other. In particular, we relate them by describing each object&rsquo;s coordinate system relative to its parent&rsquo;s coordinate system. From that, we can construct a <i>to-parent</i> transformation matrix that transforms the geometry of an object from its local coordinate system to its parent&rsquo;s coordinate system. Once in the parent&rsquo;s coordinate system, we can then transform by the parent&rsquo;s to-parent matrix to transform to the grandparent&rsquo;s coordinate system, and so on and so forth, until we have visited each ancestor&rsquo;s coordinate system and finally reach the world space. Stated in other words, to transform an object in a mesh hierarchy from its local space to world space, we apply the to-parent transform of the object and all of its ancestors (in ascending order) to percolate up the coordinate system hierarchy until the object arrives in the world space. In this way, the object inherits the transformations of its parents and moves when they move.</li>
+<li>We can express the to-root transformation of the ith bone with the recurrence relation: <i>toRoot</i><sub>i</sub> = <i>toParent</i><sub>i&#x00B7;</sub><i>toRoot</i><sub>p</sub> where <i>p </i>refers to the parent bone of the <i>i</i>th bone.</li>
+<li>The bone-offset transformation transforms vertices from bind space to the space of the bone. There is an offset transformation for each bone in the skeleton.</li>
+<li>In vertex blending, we have an underlying bone hierarchy, but the skin itself is one continuous mesh, and one or more bones can influence a vertex. The magnitude in which a bone<a id="page751"/> influences a vertex is determined by a bone weight. For four bones, the transformed vertex <b>v</b>&prime;, relative to the root of the skeleton, is given by the weighted averaging formula <b>v</b>&prime; = <i>w</i><sub>0</sub><b>vF</b><sub>0</sub> + <i>w</i><sub>1</sub><b>vF</b><sub>1</sub> + <i>w</i><sub>2</sub><b>vF</b><sub>2</sub> + <i>w</i><sub>3</sub><b>vF</b><sub>3</sub>, where <i>w</i><sub>0</sub> + <i>w</i><sub>1</sub> + <i>w</i><sub>2</sub> + <i>w</i><sub>3</sub> = 1. By using a continuous mesh, and several weighted bone influences per vertex, a more natural elastic skin effect is achieved.</li>
+<li>To implement vertex blending, we store an array of final transformation matrices for each bone (the array is called a <i>matrix palette</i>). (The ith bone&rsquo;s final transformation is defined as F<i><sub>i</sub> = offset<sub>i</sub> &#x00B7; toRoot<sub>i</sub></i> &mdash;that is, the bone&rsquo;s offset transformation followed by its to-root transformation.) Then, for each vertex, we store a list of vertex weights and matrix palette indices. The matrix palette indices of a vertex identify the final transformations of the bones that influence the vertex.</li></ol>
+<p class="h1" id="c23.7"><a href="toc.html#toc-23.7"><b>23.7 EXERCISES</b></a></p>
+<p class="h1-rule">&#x00A0;</p>
+<ol><li>Model and render an animated linear hierarchy by hand. For example, you might model a simple robot arm built from sphere and cylinder meshes; the sphere could model a joint and the cylinder an arm. </li>
+<li>Model and render an animated tree hierarchy by hand such as the one shown in Figure <a href="ch23.html#fig23.11">23.11</a>. You can again use spheres and cylinders. 
+
+<p class="caption"><img src="images/Fig23-12.jpg" alt="image" width="80%"/></p>
+<p class="caption" id="fig23.11"><b><i>Figure 23.11.</i></b>&nbsp;&nbsp;Simple mesh hierarchy.</p>
+</li>
+<li>If you have access to an animation package (<i>Blender <a href="http://www.blender.org">http://www.blender.org</a></i>/ is free), try learning how to model a simple animated character using bones and blend weights. Export your data to the .x file format which supports vertex blending, and try to convert the file data to the .m3d format for rendering in the &ldquo;Skinned Mesh&rdquo; demo. This is not a short project. </li></ol>
+</body>
+</html>

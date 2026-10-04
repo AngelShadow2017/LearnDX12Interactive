@@ -56,7 +56,7 @@ import { MatrixInverseActivity } from '@/activities/ch02/MatrixInverseActivity';
 
 <p>转置有一个会在后面反复出现的性质：<b>(AB)<sup>T</sup> = B<sup>T</sup>A<sup>T</sup></b>——乘积的转置要<b>倒过来</b>写。第 8 章变换法线时用的「逆转置」就建立在这条性质上。</p>
 
-<p>DirectXMath 里对应 <code>XMMatrixTranspose</code>。注意它不只是「换个写法」：把行主序矩阵转置之后，配合列向量使用才等价。</p>
+<p>DirectXMath 里对应 <code>XMMatrixTranspose</code>。这里要区分<b>向量约定</b>和<b>内存存放顺序</b>：同一个线性变换若从行向量写法 <code>vM</code> 改成列向量写法 <code>M′v</code>，数学矩阵要取转置（<code>M′ = Mᵀ</code>）；这不等于单纯改变矩阵在内存里的行主序或列主序。</p>
 </section>
 
 <section className="lesson-section" id="s24">

@@ -8,7 +8,7 @@ import { BezierPatchActivity } from '@/activities/ch14/BezierPatchActivity';
 
 <Figure src="images/Fig14-1.jpg" alt="渲染管线中曲面细分三个阶段的示意" figureNumber="图 14.1" caption="渲染管线中曲面细分三个阶段的示意。" />
 
-<p>绘制时要使用 patch 拓扑：<code>D3D_PRIMITIVE_TOPOLOGY_N_CONTROL_POINT_PATCHLIST</code>，并指定每个 patch 有几个控制点。常用的是 3 控制点（三角形 patch）与 4 控制点（四边形 patch）。</p>
+<p>绘制时要使用 patch 拓扑，并指定每个 patch 有几个控制点。常用的枚举是 <code>D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST</code>（三角形 patch）与 <code>D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST</code>（四边形 patch）；PSO 的 <code>PrimitiveTopologyType</code> 也要设为 <code>D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH</code>。</p>
 </section>
 
 <section className="lesson-section" id="s142">
@@ -34,9 +34,8 @@ PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_Primitive
                            + patch[2].PosW + patch[3].PosW);
     float d = distance(center, gEyePosW);
 
-    // 距离越近细分越密：在 [20, 100] 之间从 64 降到 1
-    float tess = saturate((100.0f - d) / (100.0f - 20.0f));
-    tess = lerp(1.0f, 64.0f, tess);
+    // 距离越近细分越密：d <= 20 时为 64，d >= 100 时为 0（剔除 patch）
+    float tess = 64.0f * saturate((100.0f - d) / (100.0f - 20.0f));
 
     pt.EdgeTess[0] = tess; pt.EdgeTess[1] = tess;
     pt.EdgeTess[2] = tess; pt.EdgeTess[3] = tess;
@@ -45,17 +44,22 @@ PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_Primitive
 }`}
   input={<>四个控制点与相机世界坐标 <code>gEyePosW</code>。</>}
   keyLines={[
-    { code: 'SV_TessFactor / SV_InsideTessFactor', note: '边缘因子控制四条边，内部因子控制内部区域；两者要匹配，否则相邻 patch 之间会裂开。' },
-    { code: 'saturate((100 − d) / 80)', note: '把距离映射到 0—1 再插值到因子范围，这就是距离 LOD 的核心。' },
+    { code: 'SV_TessFactor / SV_InsideTessFactor', note: '边缘因子控制各条边，内部因子控制内部区域。相邻 patch 的共享边必须采用一致的边缘因子；内部因子不要求与边缘因子相等。' },
+    { code: '64.0f * saturate((100 − d) / 80)', note: '把距离映射到 0—64：d≤20 时取 64，d≥100 时取 0 并剔除该 patch。' },
     { code: 'distance(center, gEyePosW)', note: '常用 patch 中心到相机的距离；也可以用包围盒最近点，更精确。' },
   ]}
   output={<>图 14.5：离相机越近网格越密、越远越疏。</>}
   pitfalls={[
-    '边缘因子与内部因子不一致：相邻 patch 边界细分程度不同，会出现可见裂缝。',
+    '相邻 patch 对同一条共享边给出不同的边缘因子：边界顶点不一致，会出现裂缝。内部因子与边缘因子不同本身不会造成这类裂缝。',
     '因子设成 0：该 patch 会被整个剔除（这正是剔除看不见的 patch 的手段，但也可能是 bug）。',
-    '忘记声明拓扑为 N_CONTROL_POINT_PATCHLIST：细分阶段不会生效。',
+    '忘记设置 3 或 4 控制点 patch 拓扑，或把 PSO 的拓扑类型漏设为 PATCH：细分阶段不会按预期工作。',
   ]}
 />
+
+<Callout tone="note">
+  <b>跨 patch 的共享边要单独保证一致</b>
+  <p>上面的距离 LOD 按每个 patch 的中心算一个值，便于说明原理。真实相邻 patch 不能各自独立给共享边不同的细分因子，否则边界顶点不一致会产生裂缝；可用共享边端点/中点等相同数据计算两侧的边缘因子。</p>
+</Callout>
 
 <TessFactorActivity />
 </section>
@@ -112,8 +116,8 @@ PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_Primitive
 
 <ul>
   <li>曲面细分三阶段：HS（输出控制点与因子）→ 镶嵌器（按因子切分，固定功能）→ DS（算每个新顶点的位置）。</li>
-  <li>拓扑必须用 <code>N_CONTROL_POINT_PATCHLIST</code>；常用 3 或 4 控制点。</li>
-  <li>边缘因子与内部因子要匹配，否则相邻 patch 之间会裂缝；因子为 0 会剔除整个 patch。</li>
+  <li>输入拓扑使用 <code>D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST</code> 或 <code>D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST</code>；PSO 的拓扑类型设为 <code>D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH</code>。</li>
+  <li>相邻 patch 的共享边缘因子要一致，避免边界裂缝；内部因子控制 patch 内部细分，不必等于边缘因子。因子为 0 会剔除整个 patch。</li>
   <li>距离 LOD 是它最有价值的应用：patch 中心到相机的距离映射到因子范围。</li>
   <li>三次贝塞尔只保证经过首末控制点；4 × 4 控制点网格构成贝塞尔曲面。</li>
 </ul>

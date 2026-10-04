@@ -4,23 +4,23 @@ import { Choice, Readout } from '@/activities/controls';
 import { CodeSample } from '@/components/CodeSample';
 
 const MATERIALS = [
-  { name: '材质 0 · 木板', color: '#a87b4a' },
-  { name: '材质 1 · 金属', color: '#8f9aa6' },
-  { name: '材质 2 · 玻璃', color: '#6fa8b8' },
+  { name: '材质 0 · 木板', color: '#a87b4a', diffuseMapIndex: 0 },
+  { name: '材质 1 · 金属', color: '#8f9aa6', diffuseMapIndex: 1 },
+  { name: '材质 2 · 石材', color: '#9c8e7b', diffuseMapIndex: 2 },
 ];
 
-const COUNT = 6;
+const ITEM_COUNT = 6;
 
-/** 15.5 后的推演：切换材质索引，观察动态索引如何选择资源。 */
+/** 15.5 后的推演：逐项追踪 MaterialIndex → MaterialData → DiffuseMapIndex → 纹理描述符。 */
 export function DynamicIndexActivity() {
-  const [indices, setIndices] = useState<number[]>([0, 1, 0, 1, 0, 1]);
+  const [materialIndices, setMaterialIndices] = useState<number[]>([0, 1, 0, 1, 0, 1]);
   const [selected, setSelected] = useState(3);
 
   const target = 2;
-  const solved = indices[3] === target;
+  const solved = materialIndices[3] === target;
 
   function reset() {
-    setIndices([0, 1, 0, 1, 0, 1]);
+    setMaterialIndices([0, 1, 0, 1, 0, 1]);
     setSelected(3);
   }
 
@@ -28,87 +28,100 @@ export function DynamicIndexActivity() {
     <ActivityFrame
       id="ch15-dynamic-index"
       chapterId="ch15"
-      title="让第 4 个实例用上材质 2"
-      prompt="每个实例的数据里带一个材质索引，像素着色器用它去纹理数组里选一张贴图。点选实例，再切换它的材质索引。"
+      title="沿索引链给绘制项换材质"
+      prompt="每个绘制项的物体常量带 MaterialIndex；材质表里的 DiffuseMapIndex 再指向纹理描述符数组。选中一个绘制项并改它的 MaterialIndex。"
       predict={{
-        question: '用「根常量」传材质索引数组，和用「描述符表 + 动态偏移」传纹理数组，各有什么取舍？',
-        options: ['两者完全一样', '根常量简单但每实例要一份数据；描述符表一次绑定整张数组，靠偏移选资源', '根常量更快', '描述符表只能选整数常量，不能选纹理'],
+        question: '书中的动态索引示例怎样从绘制项找到漫反射贴图？',
+        options: [
+          '把所有贴图合成一个 Texture2DArray，直接用 MaterialIndex 选层',
+          '用 MaterialIndex 查结构化材质表，再用 DiffuseMapIndex 查 Texture2D 资源数组',
+          '把 MaterialIndex 当成纹理坐标',
+          '每种材质创建一个 PSO',
+        ],
         answer: 1,
-        correctNote: '根常量适合小而每实例不同的数据；描述符表一次绑定整张资源数组，靠偏移选资源。',
-        wrongNote: '描述符表当然能选纹理——它绑的是 SRV 描述符，动态偏移决定取哪一张。',
+        correctNote: '绘制项选材质，材质记录贴图索引，着色器再动态选择资源数组里的纹理。',
+        wrongNote: '本例用的是 Texture2D 资源描述符数组和结构化材质缓冲，不是 Texture2DArray 的纹理层索引。',
       }}
       onReset={reset}
       check={() => {
-        if (!solved) return { passed: false, feedback: `第 4 个实例现在用的是「${MATERIALS[indices[3]].name}」。目标是材质 2。` };
+        if (!solved) return { passed: false, feedback: `绘制项 3 当前的 MaterialIndex 是 ${materialIndices[3]}；把它改为材质 2，再沿材质表找到对应贴图。` };
+        const material = MATERIALS[materialIndices[3]];
         return {
           passed: true,
-          feedback: '正确。着色器里用 gMatIndex[gInstanceID] 取到索引，再用它采样纹理数组的对应层；根描述符表只需要绑定一次，偏移随实例变化。',
+          feedback: `正确：绘制项 3 的 MaterialIndex=${materialIndices[3]}，材质表给出 DiffuseMapIndex=${material.diffuseMapIndex}，最终选到纹理描述符 ${material.diffuseMapIndex}。`,
         };
       }}
       explanation={<>
-        <p>多个实例想用不同材质时，常见做法是把所有材质放进<b>纹理数组</b>，在实例数据里放一个索引。着色器读出索引后用它采样：</p>
+        <p>本书把材质数据放进结构化缓冲，把可用贴图放进 HLSL 的 <code>Texture2D</code> 资源数组。每个绘制项单独带一个材质索引；材质中的 <code>DiffuseMapIndex</code> 再指出要采样的纹理。</p>
         <CodeSample
-          title="动态索引选材质"
+          title="从绘制项索引到纹理资源"
           language="hlsl"
-          code={`Texture2DArray gTextureArray : register(t0);
-
-// 实例数据里带索引
-StructuredBuffer<InstanceData> gObjects;
-uint gMatIndex[MAX_INSTANCES];
-
-float4 PS(VertexOut pin) : SV_Target
+          code={`struct MaterialData
 {
-    uint matIndex = gMatIndex[pin.InstanceID];
-    // float3(uv, arrayIndex) 三维坐标里最后一位就是选哪一张
-    float4 c = gTextureArray.Sample(gSampler, float3(pin.TexC.xy, matIndex));
-    return c;
+    uint DiffuseMapIndex;
+};
+
+Texture2D gDiffuseMaps[NUM_TEXTURES] : register(t0, space0);
+StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
+
+cbuffer ObjectConstants : register(b0)
+{
+    uint gMaterialIndex;
+};
+
+float4 PS(float2 texC : TEXCOORD) : SV_Target
+{
+    MaterialData mat = gMaterialData[gMaterialIndex];
+    return gDiffuseMaps[mat.DiffuseMapIndex].Sample(gSampler, texC);
 }`}
-          input={<>一张纹理数组（每个实例一层）与一份实例数据（包含材质索引）。</>}
+          input={<>每帧绑定材质结构化缓冲和纹理 SRV 描述符数组；每个绘制项提供自己的 MaterialIndex。</>}
           keyLines={[
-            { code: 'float3(pin.TexC.xy, matIndex)', note: '纹理数组的采样用三维坐标，第三分量就是层索引。' },
-            { code: 'gMatIndex[pin.InstanceID]', note: '索引从实例数据里取，所以一次绘制就能让不同实例用不同材质。' },
+            { code: 'gMaterialData[gMaterialIndex]', note: '用物体常量选择材质记录。' },
+            { code: 'mat.DiffuseMapIndex', note: '材质记录再给出要用的纹理资源索引。' },
+            { code: 'gDiffuseMaps[index]', note: '这是 Texture2D 资源描述符数组；元素可引用不同尺寸或格式的纹理。' },
           ]}
-          output={<>6 个实例分别显示不同材质，但只绑定了一次描述符表。</>}
+          output={<>改变某个绘制项的 MaterialIndex 后，它沿两级索引切换到对应贴图；纹理数组和材质缓冲无需逐项重新绑定。</>}
           pitfalls={[
-            '索引越界：gMatIndex 里没有对应值时采样会返回黑色或未定义。',
-            '忘记用 SV_InstanceID 区分实例：所有实例会共用同一份材质索引。',
-            '根描述符表与着色器里的数组大小不一致：调试层会报根签名不匹配。',
+            '把 Texture2D 资源数组误写成 Texture2DArray：前者是一组独立资源，后者要求数组层共享兼容的尺寸和格式。',
+            '把 MaterialIndex 与 DiffuseMapIndex 混为一谈：它们分别索引材质记录和纹理资源。',
+            '忘记让根签名、寄存器空间和描述符表范围与着色器声明一致。',
           ]}
         />
-        <p>用<b>根常量</b>传索引数组最直观：它在每个线程组的常量缓冲里，索引访问很便宜。规模变大时根签名会超出 64 DWORD 的上限，那时才改用描述符表加动态偏移。</p>
+        <p>本书的策略是每帧绑定材质与纹理资源数组，而每个绘制项仍设置自己的物体常量（其中含 <code>MaterialIndex</code>）。动态索引减少逐项切换材质数据和纹理 SRV 的需要。</p>
       </>}
-      apply={<p>对应 HLSL 里 <code>Texture2DArray</code> 与 <code>Sample(samp, float3(uv, index))</code>；C++ 侧用 <code>ID3D12ShaderResourceView::CreateView(..., D3D12_SRV_DIMENSION_TEXTURE2DARRAY, ...)</code> 建数组视图。</p>}
+      apply={<p>纹理资源数组声明为 <code>Texture2D gDiffuseMaps[N]</code>，使用 Shader Model 5.1 动态索引；C++ 侧通过 SRV 描述符数组和根签名描述符表绑定资源。它与要求数组纹理元素尺寸/格式兼容的 <code>Texture2DArray</code> 是不同机制。</p>}
     >
-      <svg className="svg-stage" viewBox="0 0 320 200" role="img"
-        aria-label={`6 个实例，第 4 个被选中，材质索引为 ${indices[3]}`}>
-        <rect x={0} y={0} width={320} height={200} fill="#f4f7f0" />
-        {Array.from({ length: COUNT }, (_unused, index) => {
+      <svg className="svg-stage" viewBox="0 0 320 220" role="img"
+        aria-label={`6 个绘制项，当前选中第 ${selected + 1} 项，MaterialIndex 为 ${materialIndices[selected]}`}>
+        <rect x={0} y={0} width={320} height={220} fill="#f4f7f0" />
+        {Array.from({ length: ITEM_COUNT }, (_unused, index) => {
           const x = 18 + index * 49;
-          const material = MATERIALS[indices[index]];
+          const material = MATERIALS[materialIndices[index]];
           return <g key={index} style={{ cursor: 'pointer' }} onClick={() => setSelected(index)}>
-            <rect x={x} y={40} width={40} height={70} rx={5} fill={material.color}
+            <rect x={x} y={38} width={40} height={64} rx={5} fill={material.color}
               stroke={selected === index ? '#2f6b8f' : '#c9d2c5'} strokeWidth={selected === index ? 2.4 : 1} />
-            <text x={x + 20} y={128} textAnchor="middle">实例 {index}</text>
-            <text x={x + 20} y={144} textAnchor="middle">索引 {indices[index]}</text>
+            <text x={x + 20} y={119} textAnchor="middle">绘制项 {index}</text>
+            <text x={x + 20} y={135} textAnchor="middle">MaterialIndex {materialIndices[index]}</text>
           </g>;
         })}
-        <text x={12} y={24}>纹理数组的 3 层材质</text>
+        <text x={12} y={20}>MaterialIndex → MaterialData → DiffuseMapIndex → Texture2D[]</text>
         {MATERIALS.map((material, index) => <g key={material.name}>
-          <rect x={12 + index * 104} y={162} width={14} height={14} fill={material.color} stroke="#c9d2c5" />
-          <text x={32 + index * 104} y={174}>{material.name}</text>
+          <rect x={12} y={166 + index * 16} width={11} height={11} fill={material.color} stroke="#c9d2c5" />
+          <text x={30} y={176 + index * 16} style={{ fontSize: 10 }}>{material.name.split('·')[1].trim()} → 纹理 {material.diffuseMapIndex}</text>
         </g>)}
       </svg>
 
       <Readout items={[
-        ['当前选中', `实例 ${selected}`],
-        ['它的材质索引', String(indices[selected])],
-        ['目标', '第 4 个实例用材质 2'],
+        ['当前选中', `绘制项 ${selected}`],
+        ['MaterialIndex', String(materialIndices[selected])],
+        ['DiffuseMapIndex', String(MATERIALS[materialIndices[selected]].diffuseMapIndex)],
+        ['目标', '绘制项 3 使用材质 2'],
         ['是否达成', solved ? '是' : '否'],
       ]} />
 
-      <Choice label={`把实例 ${selected} 的材质设为`} options={MATERIALS.map((material, index) => ({ value: String(index), label: material.name }))}
-        value={String(indices[selected])}
-        onChange={(value) => setIndices((current) => current.map((item, at) => (at === selected ? Number(value) : item)))} />
+      <Choice label={`把绘制项 ${selected} 的 MaterialIndex 设为`} options={MATERIALS.map((material, index) => ({ value: String(index), label: material.name }))}
+        value={String(materialIndices[selected])}
+        onChange={(value) => setMaterialIndices((current) => current.map((item, at) => (at === selected ? Number(value) : item)))} />
     </ActivityFrame>
   );
 }

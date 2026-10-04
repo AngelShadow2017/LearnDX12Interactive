@@ -181,8 +181,8 @@ commandList->SetGraphicsRootDescriptorTable(0, gpuSrvHandle);`}
       id: 'ch09-a3',
       question: '纹理宽度 4、u = 1.2，Wrap 模式下采样到哪个纹素（从 0 开始）？',
       options: ['第 0 个', '第 1 个', '第 3 个', '边框色'],
-      answer: 2,
-      explanation: 'Wrap 是对 u × width 取模：1.2 × 4 = 4.8，模 4 得 0.8，落在第 3 个纹素。',
+      answer: 0,
+      explanation: 'Wrap 先把 u = 1.2 折回 0.2；乘以宽度 4 得到 0.8，点采样落在从 0 开始的第 0 个纹素。',
     },
     {
       id: 'ch09-a4',

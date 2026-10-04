@@ -4,7 +4,7 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <section className="lesson-section lesson-section--intro" id="s191">
 <h2>19.1 动机</h2>
 
-<p>光滑球面的高光是一个干净的圆盘；真实表面往往凹凸不平，高光会碎得多（图 19.1 对比图 19.2）。</p>
+<p>第 18 章示例里的砖柱网格本身很光滑，所以砖纹表面的高光看起来也过于平顺（图 19.1）。法线贴图扰动着色时使用的法线后，高光便能反映砖面的细节（图 19.2），而动态光照仍可随光源变化。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig19-1.jpg" alt="平滑的高光" figureNumber="图 19.1" caption="平滑的高光。" />
@@ -17,15 +17,15 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <section className="lesson-section" id="s192">
 <h2>19.2 法线图</h2>
 
-<p>法线图和普通颜色贴图一样是 RGB 纹理，只是每个像素存的是一条<b>法线</b>。它存的是三个 [−1, 1] 的分量，采样后要做 <code>2·c − 1</code> 的解包。</p>
+<p>法线图和普通颜色贴图一样是 RGB 纹理，只是每个像素编码了一条<b>法线</b>。常见 8 位格式先把法线的 [−1, 1] 分量映射到 [0, 1] 存进 RGB；采样后要做 <code>2·c − 1</code>，才能还原到 [−1, 1]。</p>
 
 <p>关键点：这条法线是<b>相对表面</b>的，不是相对世界坐标系的（图 19.3）。</p>
 
 <Figure src="images/Fig19-3.jpg" alt="法线图中的法线相对切线空间存储" figureNumber="图 19.3" caption="法线图中的法线相对切线空间（T 为 u 轴、B 为 v 轴、N 为法线）存储。" />
 
 <Callout tone="tip">
-  <b>一个额外通道</b>
-  <p>法线贴图的 alpha 通道常被复用来存「光泽度」之类的遮罩（图 19.7），这样一张贴图就能同时控制凹凸与反光。</p>
+  <b>原书示例把 alpha 用作光泽度遮罩</b>
+  <p>RGB 用于解码法线，alpha 则单独存逐像素 shininess：白色表示 1、黑色表示 0（图 19.7）。把 alpha 改存其他标量属于资源打包方案的选择，不是本书示例的设置。</p>
 </Callout>
 
 <Figure src="images/Fig19-7.jpg" alt="地砖法线图的 alpha 通道表示光泽度" figureNumber="图 19.7" caption="地砖法线图的 alpha 通道：alpha 值表示该处的光泽度。" />
@@ -38,7 +38,7 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 
 <ul>
   <li><b>T（切线）</b>：沿纹理 u 方向；</li>
-  <li><b>B（双切线）</b>：沿纹理 v 方向，<code>B = cross(N, T) × handedness</code>；</li>
+  <li><b>B（双切线）</b>：沿纹理 v 方向；本书在正交基中用 <code>B = cross(N, T)</code> 重建；</li>
   <li><b>N（法线）</b>：几何法线。</li>
 </ul>
 
@@ -54,15 +54,15 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <p>由于每个面的切线空间都不同（图 19.5），切线必须作为<b>逐顶点属性</b>存进顶点缓冲。顶点着色器里用 <code>float3x3(T, B, N)</code> 打包传给像素着色器。</p>
 
 <Callout tone="warning">
-  <b>手性（handedness）</b>
-  <p>镜像 UV 会让 TBN 变成左手系，着色结果会左右颠倒。用 <code>cross(N, T)</code> 的 z 分量的符号判断手性，必要时翻转 B 或整个基。</p>
+  <b>工程补充：镜像 UV 的手性</b>
+  <p>原书的示例网格直接用 <code>cross(N, T)</code> 重建 B。对带镜像 UV 的通用网格，切线基可能翻转；可将 UV 导出的副切线 B 与 <code>cross(N, T)</code> 比较，以 <code>sign(dot(cross(N, T), B))</code> 保存手性，并在重建时乘回该符号。</p>
 </Callout>
 </section>
 
 <section className="lesson-section" id="s195">
 <h2>19.5 切线空间与物体空间</h2>
 
-<p>贴图法线 (x, y, z) 还原到世界空间就是一次线性组合：<b>n = T·x + B·y + N·z</b>，再归一化。</p>
+<p>贴图法线 (x, y, z) 还原到世界空间就是一次线性组合：<b>n = T·x + B·y + N·z</b>。原书先把 T 对 N 正交化，再构造 TBN 基；法线贴图样本经线性转换后用于后续光照和环境反射。</p>
 
 <p>图 19.6 说明 T 里平行于 N 的分量必须先减掉（正交化），否则组合出来的法线不严格垂直于表面。</p>
 
@@ -75,42 +75,41 @@ import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity
 <h2>19.6 法线贴图着色器代码</h2>
 
 <CodeSample
-  title="法线贴图着色器"
+  title="原书的法线贴图变换（省略常规 VS/PS 输入输出）"
   language="hlsl"
-  code={`// 顶点着色器：把 TBN 打包传下去
-out VSOut
+  code={`struct VertexOut
 {
-    float3 PosW  : POSITION;
-    float2 TexC  : TEXCOORD;
-    float3 Normal : NORMAL;
+    float2 TexC : TEXCOORD;
+    float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
-    float3 BitangentW : BINORMAL;
+};
+
+float3 NormalSampleToWorldSpace(float3 sample, float3 normalW, float3 tangentW)
+{
+    float3 normalT = 2.0f * sample - 1.0f;
+    float3 N = normalW;
+    float3 T = normalize(tangentW - dot(tangentW, N) * N);
+    float3 B = cross(N, T);
+    float3x3 TBN = float3x3(T, B, N);
+    return mul(normalT, TBN);
 }
 
-// 像素着色器：采样 → 解包 → 缩放 → 组合
-float4 PS(VSOut pin) : SV_Target
+float4 PS(VertexOut pin) : SV_Target
 {
-    float3 n = normalize(pin.Normal);
-    float3 t = normalize(pin.TangentW);
-    float3 b = cross(n, t);
-
-    float3 packedN = gNormalMap.Sample(gSampler, pin.TexC).rgb;
-    packedN = 2.0f * packedN - 1.0f;          // 解包到 [-1, 1]
-    packedN.xy *= gNormalMapStrength;         // 法线强度
-
-    n = normalize(t * packedN.x + b * packedN.y + n * packedN.z);
-    // ... 用 n 继续第 8 章的光照
+    float3 sample = gNormalMap.Sample(gSampler, pin.TexC).rgb;
+    float3 bumpedNormalW = NormalSampleToWorldSpace(sample, pin.NormalW, pin.TangentW);
+    // 用 bumpedNormalW 做光照，也可用于环境贴图反射
+    return float4(bumpedNormalW * 0.5f + 0.5f, 1.0f);
 }`}
   input={<>一张切线空间法线贴图，以及逐顶点的 N / T。</>}
   keyLines={[
     { code: '2.0f * packedN - 1.0f', note: '解包：[0,1] → [−1,1]。漏掉这步，法线全都偏向 (0,0,1)。' },
-    { code: 'packedN.xy *= gNormalMapStrength', note: '强度为 0 等于关闭；过大时高光会「浮」在表面上。' },
-    { code: 't * packedN.x + b * packedN.y + n * packedN.z', note: '用 TBN 基把切线空间法线还原到世界空间，最后归一化。' },
+    { code: 'T = normalize(tangentW - dot(tangentW, N) * N)', note: 'Gram–Schmidt 正交化，去掉 T 沿 N 的分量。' },
+    { code: 'mul(normalT, TBN)', note: '按行向量约定，用 TBN 基把切线空间法线变换到世界空间。' },
   ]}
   output={<>几何完全没变，但表面出现凹凸细节，高光也随之碎裂。</>}
   pitfalls={[
     '忘记解包 2·c−1：凹凸方向整体偏移，画面像「贴反了」。',
-    '法线强度开得过大：高光与真实几何对不上，看起来像浮在表面。',
     'T 没有逐顶点传入：整个网格共用一条切线，弯曲表面上会明显出错。',
   ]}
 />
@@ -123,10 +122,10 @@ float4 PS(VSOut pin) : SV_Target
 
 <ul>
   <li>法线贴图不移动任何顶点，只扰动光照使用的法线——用一张 2D 纹理换来源表面细节。</li>
-  <li>贴图里存的是切线空间法线，必须先 <code>2·c−1</code> 解包。</li>
-  <li>每个顶点要带切线 T（沿 u），双切线 B = cross(N, T) × handedness。</li>
+  <li>RGB 以 [0,1] 编码切线空间法线，采样后先用 <code>2·c−1</code> 解包。</li>
+  <li>每个顶点要带切线 T（沿 u）；本书用 B = cross(N, T) 构造切线空间基。</li>
   <li>还原到世界空间：<code>n = normalize(T·x + B·y + N·z)</code>；T 需先正交化。</li>
-  <li>手性标志处理镜像 UV；法线强度要适中，过大会让高光「浮」在表面上。</li>
+  <li>工程补充：镜像 UV 的通用网格可额外携带手性标志；本页交互的法线强度滑块也是教学扩展，数值过大时会使高光与几何细节不协调。</li>
 </ul>
 
 <div className="figure-pair">

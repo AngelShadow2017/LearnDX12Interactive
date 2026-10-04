@@ -24,8 +24,8 @@ export function SkinWeightActivity() {
     const b = keyframes[index + 1];
     const span = b.time - a.time || 1;
     const u = Math.min(1, Math.max(0, (timeValue - a.time) / span));
-    // 关键帧之间用平滑插值
-    const blend = u * u * (3 - 2 * u);
+    // 同轴旋转时，线性插值角度与四元数 SLERP 等价
+    const blend = u;
     return { boneA: a.boneA + (b.boneA - a.boneA) * blend, boneB: a.boneB + (b.boneB - a.boneB) * blend, index, u };
   };
 
@@ -36,11 +36,12 @@ export function SkinWeightActivity() {
   // 关节附近的顶点：绑定空间里在两根骨骼之间
   const bind = [0, 2.4, 0] as const;
   const offsetFromA: [number, number, number] = [0, 1.1, 0];
-  const inA: [number, number, number] = [bind[0] + offsetFromA[0], bind[1] + offsetFromA[1], bind[2] + offsetFromA[2]];
-  const inB: [number, number, number] = [bind[0], bind[1] - offsetFromA[1], bind[2]];
-
-  const posA = transformPoint(matrixA, inA);
-  const posB = transformPoint(matrixB, inB);
+  const offsetA = translation(offsetFromA[0], offsetFromA[1], offsetFromA[2]);
+  const offsetB = translation(-offsetFromA[0], -offsetFromA[1], -offsetFromA[2]);
+  const paletteA = multiply(offsetA, matrixA);
+  const paletteB = multiply(offsetB, matrixB);
+  const posA = transformPoint(paletteA, bind);
+  const posB = transformPoint(paletteB, bind);
   const final = [0, 1, 2].map((index) => (1 - weightB) * posA[index] + weightB * posB[index]) as [number, number, number];
 
   const UNIT = 30;
@@ -78,13 +79,13 @@ export function SkinWeightActivity() {
         };
       }}
       explanation={<>
-        <p>角色网格跨在骨骼上，关节附近的顶点同时受两根骨骼影响（图 23.8）。每个顶点存 4 个骨骼索引和 4 个权重（权重之和为 1）。</p>
-        <p>关键是<b>偏移变换</b>（图 23.7）：顶点按绑定姿势存在骨骼的本地空间里，所以要先用偏移变换把顶点从绑定空间变到骨骼本地空间，再乘当前的 <code>toRoot</code>：</p>
-        <div className="math-block">p<sub>skinned</sub> = Σ<sub>i</sub> w<sub>i</sub> · toRoot<sub>i</sub> · offsetTransform<sub>i</sub> · p<sub>bind</sub></div>
-        <p>「矩阵调色板」（图 23.9）就是每根骨骼算好的 <code>toRoot · offsetTransform</code>，顶点按索引查表加权即可。</p>
+        <p>角色网格跨在骨骼上，关节附近的顶点同时受多根骨骼影响（图 23.8）。原书每个顶点至多关联 4 个骨骼；权重之和为 1。</p>
+        <p>网格顶点在绑定空间中。<b>偏移变换</b>（图 23.7）先把它变到骨骼局部空间，再乘当前 <code>toRoot</code> 得到根空间位置。按 DirectXMath 的行向量顺序：</p>
+        <div className="math-block">p<sub>skinned</sub> = Σ<sub>i</sub> w<sub>i</sub> · p<sub>bind</sub> · offsetTransform<sub>i</sub> · toRoot<sub>i</sub></div>
+        <p>「矩阵调色板」（图 23.9）存每根骨骼的 <code>offsetTransform · toRoot</code>，顶点按索引查表加权即可。</p>
         <p>第 23.5 节把这些结果按时间播放：关键帧定义「关键姿势」（图 23.11），帧间用插值得到每一帧的骨骼姿态。</p>
       </>}
-      apply={<p>HLSL 片段是一个四重循环：<code>for (i in 0..3) p += w[i] * mul(pal[i], p);</code>，最后再乘世界矩阵。</p>}
+      apply={<p>HLSL 片段按行向量顺序执行：<code>for (i in 0..3) skinned += w[i] * mul(pBind, palette[i]);</code>，其中 <code>palette[i] = offset[i] * toRoot[i]</code>；最后再乘世界矩阵。</p>}
     >
       <svg className="svg-stage" viewBox="0 0 320 320" role="img"
         aria-label={`蒙皮结果：骨 A 角度 ${format(pose.boneA, 0)} 度，权重 B ${format(weightB, 2)}`}>
@@ -120,7 +121,7 @@ export function SkinWeightActivity() {
         ['权重和', format(1, 1)],
         ['所在关键帧区间', `${pose.index + 1} → ${pose.index + 2}`],
       ]} />
-      <p className="draggable-note">矩阵调色板里存的就是每根骨骼的 toRoot · offsetTransform；这里只演示两根骨骼的简化版。</p>
+      <p className="draggable-note">矩阵调色板存每根骨骼的 offsetTransform · toRoot；这里只演示两根骨骼的简化版。</p>
     </ActivityFrame>
   );
 }

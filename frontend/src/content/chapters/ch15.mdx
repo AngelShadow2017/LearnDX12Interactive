@@ -8,57 +8,61 @@ import { DynamicIndexActivity } from '@/activities/ch15/DynamicIndexActivity';
 
 <Figure src="images/Fig15-1.jpg" alt="相机坐标系：相机位于原点、朝 +z 看" figureNumber="图 15.1" caption="相机坐标系：相对自身坐标系，相机位于原点、朝 +z 看（坐标轴为右/上/前）。" />
 
-<div className="math-block">gView = XMMatrixLookAtLH(eye, focus, up)<small>z 轴 = normalize(focus − eye)；x 轴 = normalize(cross(up, z))；最后一行放 −eye</small></div>
+<div className="math-block">gView = XMMatrixLookAtLH(eye, focus, up)<small>z = normalize(focus − eye)；x = normalize(cross(up, z))；平移项为 (−dot(eye,x), −dot(eye,y), −dot(eye,z))</small></div>
 
 <Callout tone="tip">
   <b>矩阵里能读出相机轴</b>
-  <p>视图矩阵前三行（行向量约定下是前三个行向量）正是相机 right / up / look 三条轴在世界坐标中的方向描述。想做「屏幕空间特效」或调试时，可以直接把相机轴画出来。</p>
+  <p>在行向量约定下，视图矩阵左上角的 3×3 旋转块，其三列分别是相机 right / up / look 轴在世界坐标中的方向分量；相机世界矩阵（视图矩阵的逆）的对应三行则直接存着这三条轴。想调试时，可以把这些轴画出来。</p>
 </Callout>
 </section>
 
 <section className="lesson-section" id="s152">
 <h2>15.2 Camera 类</h2>
 
-<p>相机类需要维护三类状态：位置（<code>mPos</code>）、一组基轴（<code>mRight</code>、<code>mUp</code>、<code>mLook</code>）、以及偏航俯仰角（<code>mYawPitch</code>）。</p>
+<p>相机类维护位置（<code>mPosition</code>）、一组基轴（<code>mRight</code>、<code>mUp</code>、<code>mLook</code>）和镜头参数。<code>Walk</code>/<code>Strafe</code> 沿 look/right 轴平移；<code>Pitch</code> 绕 right 轴旋转 look/up；<code>RotateY</code> 绕世界 y 轴旋转三条基轴。</p>
 
-<p>关键设计是<b>不用三角函数矩阵</b>：移动时直接用基轴当作坐标系，旋转时先旋转基轴。这样每帧只有少量向量运算。</p>
+<p>相机直接维护位置与基轴，而不是反复累乘整块相机变换矩阵。多次旋转后，<code>UpdateViewMatrix</code> 会重新正交化三条基轴，再据此构造视图矩阵。</p>
 
 <CodeSample
-  title="更新相机基轴"
+  title="旋转基轴并重新正交化"
   language="cpp"
-  code={`void Camera::UpdateCameraVectors()
+  code={`void Camera::Pitch(float angle)
 {
-    // 偏航角绕世界 y 轴；俯仰角只在水平面前转动
-    XMVECTOR cp = XMVectorCos(mYawPitch.x);   // cos(pitch), cos(yaw)
-    XMVECTOR sp = XMVectorSin(mYawPitch.x);   // sin(pitch), sin(yaw)
-
-    XMVECTOR look = XMVectorSet(cp.y * sp.x, -sp.y, cp.x * sp.x, 0.0f);
-    mLook = XMVector3Normalize(look);
-
-    XMVECTOR right = XMVector3Normalize(XMVector3Cross(mUp, mLook));
-    mRight = right;
-
-    // 用重建后的 up 更新上向量
-    mUp = XMVector3Cross(mLook, mRight);
+    XMMATRIX R = XMMatrixRotationAxis(XMLoadFloat3(&mRight), angle);
+    XMStoreFloat3(&mUp, XMVector3TransformNormal(XMLoadFloat3(&mUp), R));
+    XMStoreFloat3(&mLook, XMVector3TransformNormal(XMLoadFloat3(&mLook), R));
 }
 
-DirectX::XMMATRIX Camera::GetView() const
+void Camera::RotateY(float angle)
 {
-    XMVECTOR eye = XMVectorSet(mPos.x, mPos.y, mPos.z, 0.0f);
-    XMVECTOR lookAt = XMVectorAdd(eye, mLook, 0.0f);
-    return XMMatrixLookAtLH(eye, lookAt, mUp);
+    XMMATRIX R = XMMatrixRotationY(angle);
+    XMStoreFloat3(&mRight, XMVector3TransformNormal(XMLoadFloat3(&mRight), R));
+    XMStoreFloat3(&mUp, XMVector3TransformNormal(XMLoadFloat3(&mUp), R));
+    XMStoreFloat3(&mLook, XMVector3TransformNormal(XMLoadFloat3(&mLook), R));
+}
+
+void Camera::Reorthonormalize()
+{
+    XMVECTOR R = XMLoadFloat3(&mRight);
+    XMVECTOR U = XMLoadFloat3(&mUp);
+    XMVECTOR L = XMVector3Normalize(XMLoadFloat3(&mLook));
+    U = XMVector3Normalize(XMVector3Cross(L, R));
+    R = XMVector3Cross(U, L);
+    XMStoreFloat3(&mRight, R);
+    XMStoreFloat3(&mUp, U);
+    XMStoreFloat3(&mLook, L);
 }`}
-  input={<>当前偏航俯仰角 <code>mYawPitch</code> 与位置 <code>mPos</code>。</>}
+  input={<>相机当前位置以及单位正交基轴 <code>mRight</code>、<code>mUp</code>、<code>mLook</code>。</>}
   keyLines={[
-    { code: 'XMVectorSet(cp.y * sp.x, -sp.y, cp.x * sp.x, 0)', note: '偏航绕 y 轴、俯仰只绕水平面前旋转，保证「抬头时不会翻滚」。' },
-    { code: 'XMVector3Cross(mUp, mLook)', note: '用叉乘从 look 推出 right，避免累积误差。' },
-    { code: 'mUp = XMVector3Cross(mLook, mRight)', note: '上向量用重建结果，可以消除长期累加的漂移。' },
+    { code: 'XMMatrixRotationAxis(mRight, angle)', note: '俯仰绕相机 right 轴旋转 look 与 up。' },
+    { code: 'XMMatrixRotationY(angle)', note: '偏航绕世界 y 轴旋转三条相机基轴。' },
+    { code: 'U = normalize(cross(L, R))', note: '旋转误差会慢慢累积；重建正交基可把三条轴恢复为单位且互相垂直。' },
   ]}
   output={<>每帧得到一份 <code>gView</code>，与投影矩阵相乘就是视投影矩阵。</>}
   pitfalls={[
-    '每帧直接用 sin/cos 构造旋转矩阵再累乘：会累积漂移，相机长时间运行会歪。',
+    '多次旋转后不重新正交化：浮点误差会让基轴逐渐不再垂直或单位化。',
     '忘记归一化 mLook：移动速度会随时间变化。',
-    '俯仰角没有限制在 ±90°：会翻转，矩阵失去意义。',
+    '若应用希望采用传统 FPS 视角，可在输入层限制俯仰角；书中的相机类直接应用 Pitch，不做这个限制。越过竖直方向后相机会倒转，但基轴和视图矩阵仍然有效。',
   ]}
 />
 
@@ -66,7 +70,7 @@ DirectX::XMMATRIX Camera::GetView() const
 
 <Callout tone="note">
   <b>典型输入映射</b>
-  <p>W/S 沿 look 前后移动，A/D 沿 right 左右平移，鼠标移动累加到 yaw/pitch，Shift 按住时乘一个加速系数（图 15.2）。</p>
+  <p>W/S 沿 look 前后移动，A/D 沿 right 左右平移，鼠标输入分别调用俯仰与偏航旋转，Shift 按住时乘一个加速系数（图 15.2）。实际工程也可以选择用 yaw/pitch 参数驱动另一种相机实现。</p>
 </Callout>
 </section>
 
@@ -74,11 +78,10 @@ DirectX::XMMATRIX Camera::GetView() const
 <h2>15.3 关键方法实现</h2>
 
 <ul>
-  <li><code>GetView()</code>：用当前 eye 与 look 调 <code>XMMatrixLookAtLH</code>。</li>
-  <li><code>GetWorld()</code>：视图矩阵的逆——拾取（第 17 章）要用它把射线送回世界空间。</li>
+  <li><code>GetView()</code>/<code>GetProj()</code>：读取缓存的视图/投影矩阵；相机位置或朝向变化后调用 <code>UpdateViewMatrix()</code> 更新视图。</li>
   <li><code>Walk(d)</code>：沿 mLook 前进 d。</li>
   <li><code>Strafe(d)</code>：沿 mRight 平移 d。</li>
-  <li><code>UpdateCameraVectors()</code>：移动或旋转后重建基轴。</li>
+  <li><code>Pitch(angle)</code>/<code>RotateY(angle)</code>：分别绕相机 right 轴和世界 y 轴旋转基轴；<code>SetLens()</code> 设置视锥参数并更新投影矩阵。</li>
 </ul>
 
 <Callout tone="warning">
@@ -90,7 +93,7 @@ DirectX::XMMATRIX Camera::GetView() const
 <section className="lesson-section" id="s155">
 <h2>15.5 动态索引</h2>
 
-<p>相机演示里，相同几何体的不同实例要用不同材质。做法是把材质放进<b>纹理数组</b>，实例数据里带一个索引。</p>
+<p>动态索引让着色器能按数据选择一组独立纹理资源；这种着色器资源数组用法是 Shader Model 5.1 引入的。与 <code>Texture2DArray</code> 不同，<code>Texture2D</code> 资源数组中的纹理可以有不同尺寸和格式。书中的示例把材质数据放进 <code>StructuredBuffer&lt;MaterialData&gt;</code>，每个绘制项的物体常量带 <code>MaterialIndex</code>；材质再用 <code>DiffuseMapIndex</code> 指向纹理描述符数组中的贴图。材质缓冲和纹理数组每帧绑定一次，绘制项仍各自选择对应材质。</p>
 
 <DynamicIndexActivity />
 </section>
@@ -99,11 +102,11 @@ DirectX::XMMATRIX Camera::GetView() const
 <h2>本章小结</h2>
 
 <ul>
-  <li>视图变换把相机放到原点、沿 +z 观察；视图矩阵的行向量就是相机三轴在世界中的描述。</li>
-  <li>相机类维护位置、基轴与偏航俯仰；靠基轴移动、用叉乘重建，避免三角函数矩阵累乘的漂移。</li>
-  <li>俯仰要限制在 ±90°，并且只在水平面前旋转，防止翻转与翻滚。</li>
-  <li>视图矩阵的逆就是相机世界矩阵，拾取与法线变换都要用。</li>
-  <li>动态索引用纹理数组 + 实例索引，一次绑定即可让不同实例用不同材质。</li>
+  <li>视图变换把相机放到原点、沿 +z 观察；行向量约定下，视图矩阵左上角 3×3 的列对应相机三轴在世界中的方向。</li>
+  <li>相机类维护位置与基轴；Walk/Strafe 沿基轴移动，Pitch/RotateY 旋转基轴，更新视图时重新正交化以纠正浮点漂移。</li>
+  <li>书中的 Pitch 围绕相机 right 轴旋转，RotateY 围绕世界 y 轴旋转；若应用不希望视角越过竖直方向，可另在输入层限制俯仰角。</li>
+  <li>视图矩阵的逆就是相机世界矩阵；行向量约定下，视图矩阵的旋转块列向量表示相机的 right / up / look 轴。</li>
+  <li>动态索引通过物体常量中的 <code>MaterialIndex</code> 查材质缓冲，再通过材质的 <code>DiffuseMapIndex</code> 查纹理资源描述符数组。</li>
 </ul>
 
 <Figure src="images/Fig15-2.jpg" alt="相机演示截图" figureNumber="图 15.2" caption="相机演示截图：W/S/A/D 移动，鼠标环视，Shift 加速。" />
@@ -121,24 +124,24 @@ DirectX::XMMATRIX Camera::GetView() const
     },
     {
       id: 'ch15-a2',
-      question: '为什么相机类要维护基轴（right / up / look）而不是每帧构造旋转矩阵？',
-      options: ['为了代码更短', '避免三角函数矩阵反复累乘导致的数值漂移', '为了支持正交投影', '为了减少内存'],
+      question: '相机多次旋转后，为什么要在 UpdateViewMatrix 中重新正交化基轴？',
+      options: ['为了代码更短', '纠正旋转计算积累的数值误差，保持基轴单位且互相垂直', '为了支持正交投影', '为了减少内存'],
       answer: 1,
-      explanation: '反复累乘旋转矩阵会累积误差，相机长时间运行会逐渐歪掉。基轴法每帧重新叉乘重建，误差不会累积。',
+      explanation: 'Pitch 和 RotateY 会变换相机基轴；多次旋转后浮点误差会累积，所以书中在更新视图时重新正交化并归一化这些轴。',
     },
     {
       id: 'ch15-a3',
       question: '视图矩阵的逆矩阵是什么？',
       options: ['投影矩阵', '相机的世界矩阵', '单位矩阵', '视锥平面'],
       answer: 1,
-      explanation: '视图矩阵把世界坐标变到相机坐标，其逆（相机世界矩阵）负责把相机坐标变回世界。拾取与法线变换都会用到。',
+      explanation: '视图矩阵把世界坐标变到相机坐标，其逆（相机世界矩阵）负责把相机坐标变回世界；拾取时可用它把相机空间射线变到世界空间。',
     },
     {
       id: 'ch15-a4',
-      question: '要让同一绘制调用里的不同实例使用不同材质，常用做法是？',
-      options: ['为每个实例创建一个 PSO', '把材质放进纹理数组，实例数据里带索引', '把材质塞进顶点缓冲', '用深度值区分材质'],
+      question: '书中的动态索引示例怎样从绘制项找到漫反射贴图？',
+      options: ['直接把材质贴图放进 Texture2DArray', '用 MaterialIndex 查材质，再用 DiffuseMapIndex 查 Texture2D 资源数组', '用 SV_InstanceID 直接当 UV', '用深度值区分材质'],
       answer: 1,
-      explanation: '纹理数组用一次绑定覆盖全部材质，实例数据里的索引决定采样哪一层，避免逐实例切换资源绑定。',
+      explanation: '每个绘制项的物体常量带 MaterialIndex；材质数据记录 DiffuseMapIndex；着色器据此动态索引到已绑定的纹理描述符数组。',
     },
   ]}
 />
@@ -150,14 +153,14 @@ DirectX::XMMATRIX Camera::GetView() const
   steps={[
     '打开 Chapter 15 First Person Camera and Dynamic Indexing/CameraAndDynamicIndexing 的 .sln，生成并运行（图 15.2）。',
     '把移动/旋转速度调成原来的两倍，确认相机移动更快。',
-    '（可选）改变某几个实例的材质索引，确认它们换了贴图但只绑定了一次描述符表。',
-    '打印一次 gView 的前三行，确认它们确实是相机三轴的世界方向。',
+    '（可选）改变某个绘制项的 MaterialIndex，沿 MaterialData.DiffuseMapIndex 确认它换用了另一张贴图。',
+    '检查 gView 左上角 3×3 的三列，确认它们对应相机三轴在世界坐标中的方向分量。',
   ]}
-  expected="速度参数改大后相机移动更快；材质索引改变后对应实例换了贴图；gView 的前几行给出相机基轴的世界方向。"
+  expected="速度参数改大后相机移动更快；绘制项的 MaterialIndex 改变后会沿材质表选择另一张贴图；gView 左上角 3×3 的列对应相机基轴。"
   verify={[
     '我跑通了 CameraAndDynamicIndexing 示例。',
     '我改了速度或材质参数并看到画面变化。',
-    '我能解释 gView 前三行的几何含义。',
+    '我能解释 gView 旋转块各列的几何含义。',
   ]}
 />
 </section>

@@ -10,7 +10,7 @@ const H = 24;
 export function SsaoTuningActivity() {
   const [radius, setRadius] = useState(0.6);
   const [samples, setSamples] = useState(8);
-  const [blurPasses, setBlurPasses] = useState(1);
+  const [blurRadius, setBlurRadius] = useState(1);
   const [touched, setTouched] = useState(false);
 
   // 一个确定性的「深度场」：中间有一道凹槽（缝隙）
@@ -38,17 +38,24 @@ export function SsaoTuningActivity() {
   const blur = (x: number, y: number): number => {
     let sum = 0;
     let count = 0;
-    const reach = blurPasses;
+    const reach = blurRadius;
+    const centerDepth = depth(x, y);
+    let totalWeight = 0;
     for (let dx = -reach; dx <= reach; dx += 1) {
       for (let dy = -reach; dy <= reach; dy += 1) {
         const sx = x + dx * 0.02;
         const sy = y + dy * 0.03;
         if (Math.abs(sx) > 1 || Math.abs(sy) > 1) continue;
-        sum += aoRaw(sx, sy);
+        const spatialWeight = Math.exp(-(dx * dx + dy * dy) / 2);
+        const depthDelta = depth(sx, sy) - centerDepth;
+        const edgeWeight = Math.exp(-(depthDelta * depthDelta) / 0.01);
+        const weight = spatialWeight * edgeWeight;
+        sum += aoRaw(sx, sy) * weight;
+        totalWeight += weight;
         count += 1;
       }
     }
-    return count === 0 ? 1 : sum / count;
+    return count === 0 || totalWeight === 0 ? 1 : sum / totalWeight;
   };
 
   const cells: Array<{ x: number; y: number; raw: number; blurred: number; noisy: boolean }> = [];
@@ -68,7 +75,7 @@ export function SsaoTuningActivity() {
   function reset() {
     setRadius(0.6);
     setSamples(8);
-    setBlurPasses(1);
+    setBlurRadius(1);
     setTouched(false);
   }
 
@@ -93,28 +100,28 @@ export function SsaoTuningActivity() {
         if (!touched) return { passed: false, feedback: '先调整「样本数」或「半径」，观察噪点与漏光的变化，再检查。' };
         return {
           passed: true,
-          feedback: `当前 ${samples} 个样本、${blurPasses} 遍模糊：${noisyCount} / ${cells.length} 个像素的原始值与模糊值差异超过 0.12，也就是噪点明显的区域。样本少 → 噪点多；半径大 → 缝隙外出现假遮挡。`,
+          feedback: `当前 ${samples} 个样本、模糊范围 ${blurRadius}：${noisyCount} / ${cells.length} 个像素的原始值与模糊值差异超过 0.12，也就是噪点明显的区域。样本少 → 噪点多；半径大 → 缝隙外出现假遮挡。`,
         };
       }}
       explanation={<>
-        <p>SSAO 用<b>深度缓冲</b>近似射线法：它不需要知道场景几何，只需要每个像素的深度。</p>
-        <p>做法（图 21.5）：取当前像素 p，在其半球内随机采一个方向 r，在深度缓冲里查出沿这个方向的表面点 s，然后比较 <code>|p.z − s.z|</code>：如果足够小，说明 r 方向上没有东西挡着（图 21.6）；否则说明被挡。</p>
-        <p>图 21.6 还说明了一个陷阱：当 r 与 p 大致共面时，它会通过第一重判定，所以需要<b>第二重判定</b>把这种情况排除。</p>
+        <p>书中的 SSAO pass 使用<b>视空间法线和深度</b>：先由深度重建当前像素位置 p，在法线半球和遮蔽半径内生成随机样本点 q，再投影 q 到屏幕，读取深度并重建该视线上的可见点 r。</p>
+        <p>若 <code>|p.z − r.z|</code> 在有效范围内，再用 <code>dot(n, r − p)</code> 的方向关系评估遮挡贡献。仅看深度距离会把同一平面上的邻近点误认为遮挡，因此还要用法线方向测试（图 21.6）。</p>
+        <p><b>互动模型说明：</b>下方用合成的二维深度场演示样本数、半径和边缘保持模糊带来的趋势；它不是原书完整的三维 SSAO 着色器实现。</p>
         <p>三个参数各自的问题（图 21.7、21.10）：</p>
         <ul>
           <li><b>采样数</b>太少 → 噪点（需要第 13 章的模糊来平滑）；</li>
           <li><b>半径</b>太大 → 漏光与假遮挡：本该照亮的缝隙外侧也变暗；</li>
-          <li><b>模糊</b>要<b>边缘保持</b>（图 21.8），否则会把物体边界糊掉。</li>
+          <li><b>模糊</b>要<b>边缘保持</b>（图 21.8），否则会把物体边界糊掉；本互动用深度差权重做简化的边缘保持。</li>
         </ul>
         <p>SSAO 只影响<b>环境光</b>项（图 21.9）——效果微妙，但能让缝隙、角落立刻变暗。</p>
       </>}
-      apply={<p>第 21 章用计算着色器做 AO pass（配合第 13 章的模糊思路），再把 AO 乘到环境光上。要注意 AO pass 的输入是深度缓冲，所以需要用 SRV 读深度。</p>}
+      apply={<p>第 21 章把视空间法线与深度作为 SRV 输入，用计算着色器生成 AO 图并做边缘保持模糊，再把 AO 乘到环境光项上。</p>}
     >
       <svg className="svg-stage" viewBox="0 0 320 320" role="img"
         aria-label={`SSAO 对比：左为原始值，右为模糊后，${samples} 个样本`}>
         <rect x={0} y={0} width={320} height={320} fill="#f4f7f0" />
         <text x={10} y={16} style={{ fontSize: 10 }}>原始 AO（未模糊）</text>
-        <text x={162} y={16} style={{ fontSize: 10 }}>模糊后（{blurPasses} 遍）</text>
+        <text x={162} y={16} style={{ fontSize: 10 }}>边缘保持模糊（范围 {blurRadius}）</text>
         {cells.map((cell, index) => {
           const i = index % W;
           const j = Math.floor(index / W);
@@ -126,13 +133,13 @@ export function SsaoTuningActivity() {
           </g>;
         })}
         <text x={10} y={192} style={{ fontSize: 10 }}>
-          噪点像素 {noisyCount} / {cells.length}　|　半径 {format(radius)}　样本 {samples}　模糊 {blurPasses} 遍
+          噪点像素 {noisyCount} / {cells.length}　|　半径 {format(radius)}　样本 {samples}　模糊范围 {blurRadius}
         </text>
       </svg>
 
       <Slider label="SSAO 半径" min={0.1} max={1.5} step={0.05} value={radius} onChange={(value) => { setRadius(value); setTouched(true); }} />
       <Slider label="采样数" min={2} max={24} step={2} value={samples} onChange={(value) => { setSamples(value); setTouched(true); }} />
-      <Slider label="模糊遍数" min={0} max={3} step={1} value={blurPasses} onChange={(value) => { setBlurPasses(value); setTouched(true); }} />
+      <Slider label="边缘保持模糊范围" min={0} max={3} step={1} value={blurRadius} onChange={(value) => { setBlurRadius(value); setTouched(true); }} />
 
       <Readout items={[
         ['噪点像素', `${noisyCount} / ${cells.length}`],

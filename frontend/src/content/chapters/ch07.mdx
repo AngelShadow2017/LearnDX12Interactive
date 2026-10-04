@@ -110,7 +110,7 @@ import { GridMeshActivity } from '@/activities/GridMeshActivity';
 <p>这一节把根签名从「一个 CBV」扩展成多参数版本，并引入<b>描述符表</b>（descriptor table）与根描述符、根常量的区别。</p>
 
 <ul>
-  <li><b>根常量</b>（root constant）：直接内联在命令里，最便宜，容量很小。</li>
+  <li><b>根常量</b>（root constant）：把少量 32 位值直接放进根签名参数，不需要描述符堆；每个值占 1 DWORD，适合少量数据，整体仍受 64 DWORD 上限约束。</li>
   <li><b>根描述符</b>（root CBV/SRV/UAV）：直接放一个 GPU 虚拟地址，无需描述符堆，但数量受限。</li>
   <li><b>描述符表</b>：指向描述符堆里的一段连续范围，适合一批纹理/材质（第 15 章动态索引会用到）。</li>
 </ul>

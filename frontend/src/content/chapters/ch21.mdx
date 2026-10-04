@@ -4,13 +4,13 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 <section className="lesson-section lesson-section--intro" id="s211">
 <h2>21.1 射线法环境光遮蔽</h2>
 
-<p>局部光照模型只用直达光，接触区域因此缺少「变暗」的线索，画面会显得很平（图 21.1）。</p>
+<p>局部光照模型用简化的环境光项近似间接光，但这个项不会随周围几何遮挡而变化。接触区域因此缺少「变暗」的线索，画面会显得很平（图 21.1）。</p>
 
 <Figure src="images/Fig21-1.jpg" alt="只用环境光渲染的网格是一团纯色" figureNumber="图 21.1" caption="只用环境光渲染的网格是一团纯色——看不出立体细节。" />
 
 <p><b>射线法</b>的思路很直观：从表面点 p 向<b>上半球</b>均匀发射 N 根射线，被其他几何挡住的那些对应「这里接收不到的环境光」（图 21.2、21.3）。</p>
 
-<div className="math-block">AO(p) = 1 − 被挡射线数 / 总射线数</div>
+<div className="math-block">遮蔽率(p) = 被挡射线数 / 总射线数；环境可见度(p) = 1 − 遮蔽率(p)</div>
 
 <div className="figure-pair">
   <Figure src="images/Fig21-2.jpg" alt="完全无遮挡与部分被遮挡的半球采样" figureNumber="图 21.2" caption="(a) 完全无遮挡：上半球所有入射光都能到达 p；(b) 部分被遮挡：角落变暗。" />
@@ -30,13 +30,13 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 <section className="lesson-section" id="s212">
 <h2>21.2 屏幕空间环境光遮蔽</h2>
 
-<p>SSAO 用<b>深度缓冲</b>近似射线法：它不需要知道场景几何，只需要每个像素的深度。</p>
+<p>SSAO 用<b>视空间法线缓冲和深度缓冲</b>近似射线法：它不读取完整场景网格，但需要由深度重建表面位置，并用法线判断候选点是否位于表面朝向的一侧。</p>
 
-<p>做法（图 21.5）：取当前像素 p，在其半球内随机采一个方向 r，在深度缓冲里查出沿这个方向的表面点 s，然后比较 <code>|p.z − s.z|</code>——足够小说明 r 方向没东西挡着，否则说明被挡。</p>
+<p>做法（图 21.5）：从深度重建当前像素的视空间位置 p，在其法线半球和设定半径内生成随机样本点 q；把 q 投影到屏幕，读取该视线方向上最近可见点 r 的深度并重建 r。若 <code>|p.z − r.z|</code> 在有效范围内，再根据 <code>dot(n, r − p)</code> 判断方向，估计 r 是否遮挡 p；多个样本的结果汇总成可见度。</p>
 
 <div className="figure-pair">
-  <Figure src="images/Fig21-5.jpg" alt="SSAO 涉及的各点" figureNumber="图 21.5" caption="SSAO 涉及的各点：当前像素对应 p，r 是 p 上半球的采样方向，s 是深度缓冲读到的表面点。" />
-  <Figure src="images/Fig21-6.jpg" alt="共面情况会通过第一重判定" figureNumber="图 21.6" caption="若 r 与 p 同平面，它会通过 |pz−rz| 足够小的第一重判定——需要第二重判定排除。" />
+  <Figure src="images/Fig21-5.jpg" alt="SSAO 涉及的各点" figureNumber="图 21.5" caption="SSAO 涉及的各点：p 是当前像素对应的视空间表面点，q 是半球内的随机采样点，r 是从眼睛经过 q 的射线上最近可见的表面点。" />
+  <Figure src="images/Fig21-6.jpg" alt="共面情况会通过深度距离判定，但要由法线方向测试排除" figureNumber="图 21.6" caption="若候选点 r 与 p 共面，它可能通过深度距离测试；根据法线与 r−p 的夹角做第二重测试，避免把共面点误算成遮挡。" />
 </div>
 
 <div className="figure-pair">
@@ -58,9 +58,9 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
 <h2>本章小结</h2>
 
 <ul>
-  <li>局部光照缺少接触变暗的线索；遮蔽正是补上这一条。</li>
-  <li>射线法：向上半球均匀发射 N 根射线，AO = 1 − 被挡比例；准确但昂贵。</li>
-  <li>SSAO 用深度缓冲近似射线法：比较沿采样方向的表面点深度差。</li>
+  <li>简化环境光项不随几何遮挡变化；环境光遮蔽为接触区域补上空间变化。</li>
+  <li>射线法：向上半球均匀发射 N 根射线；遮蔽率是被挡比例，环境可见度是 1 减去遮蔽率。它准确但昂贵。</li>
+  <li>SSAO 由深度重建视空间位置，并结合视空间法线，对投影到屏幕的随机样本做深度与方向测试。</li>
   <li>共面情况会通过第一重判定，需要第二重判定排除（图 21.6）。</li>
   <li>样本少 → 噪点；半径大 → 假遮挡；模糊要边缘保持。AO 只乘到环境光上。</li>
 </ul>
@@ -83,7 +83,7 @@ import { SsaoTuningActivity } from '@/activities/ch21/SsaoTuningActivity';
       question: 'SSAO 用什么近似射线相交？',
       options: ['场景几何的 BVH', '深度缓冲', '法线缓冲', '模板缓冲'],
       answer: 1,
-      explanation: 'SSAO 完全依赖深度缓冲：沿采样方向查到的深度就是「最近的表面」，比较深度差即可判断是否被挡。',
+      explanation: '示例把视空间法线和深度写入贴图/缓冲，由深度重建当前位置与候选遮挡点，再结合深度距离和法线方向进行判断。',
     },
     {
       id: 'ch21-a3',

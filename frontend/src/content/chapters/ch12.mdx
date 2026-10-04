@@ -4,7 +4,7 @@ import { BillboardA2CActivity } from '@/activities/ch12/BillboardA2CActivity';
 <section className="lesson-section lesson-section--intro" id="s121">
 <h2>12.1 编写几何着色器</h2>
 
-<p>几何着色器（GS）是渲染管线里唯一能<b>增删图元</b>的可编程阶段：它以整个图元为输入，可以输出 0 个、1 个或多个顶点。</p>
+<p>几何着色器（GS）是一个能<b>扩展或丢弃图元</b>的可编程阶段：它以整个图元为输入，可以输出 0 个、1 个或多个顶点。本书也在曲面细分阶段讲如何生成更细的几何；这里聚焦 GS 逐图元处理的方式。</p>
 
 <Figure src="images/Fig12-1.jpg" alt="把一个三角形细分成四个等大三角形" figureNumber="图 12.1" caption="把一个三角形细分成四个等大三角形：三个新顶点是各边中点。" />
 
@@ -88,7 +88,7 @@ void GS(point VertexOut gin[1],
 <section className="lesson-section" id="s123">
 <h2>12.3 纹理数组</h2>
 
-<p>纹理数组（<code>Texture2DArray</code>）把多张同尺寸、同格式的纹理放进一个资源，用一个索引选择（图 12.7）。这样一次绘制就能画出多种树。</p>
+<p>纹理数组（<code>Texture2DArray</code>）把多张同尺寸、同格式、mip 级数一致的纹理放进一个资源，用一个索引选择（图 12.7）。这样一次绘制就能画出多种树。</p>
 
 <Figure src="images/Fig12-7.jpg" alt="树广告牌用的贴图" figureNumber="图 12.7" caption="树广告牌用的贴图。" />
 
@@ -106,7 +106,7 @@ void GS(point VertexOut gin[1],
 <section className="lesson-section" id="s124">
 <h2>12.4 Alpha-to-Coverage</h2>
 
-<p>A2C 把像素的 alpha 转换成 MSAA 的<b>子采样覆盖率</b>：alpha = 0.5 的像素会让一半子样本被覆盖，于是镂空边缘获得抗锯齿，而且不需要深度排序。</p>
+<p>A2C 把像素着色器输出的 alpha 转换成 MSAA 的<b>子采样覆盖掩码</b>：alpha 越大，通常覆盖的样本越多。样本掩码是离散的，具体映射取决于 MSAA 样本数和实现；例如 4× MSAA 下 alpha = 0.5 可近似对应 4 个样本中的 2 个。这样能平滑树叶等镂空边缘，也不需要为这些裁切纹理做透明混合排序。</p>
 
 <Callout tone="warning">
   <b>必须同时启用 MSAA</b>

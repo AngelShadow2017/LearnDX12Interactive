@@ -33,15 +33,15 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 
 <p>其中 i² = j² = k² = ijk = −1，乘法规则可以在图 22.5 那样的示意里建立直觉：<b>虚数部分之间的乘法等价于叉积</b>，实数部分与虚数部分相乘等价于点积。</p>
 
-<p>平行四边形恒等式是四元数最重要的性质：</p>
+<p>四元数范数满足乘法性质：</p>
 
-<div className="math-block">‖q₁ ⊗ q₂‖ = ‖q₁‖ ‖q₂‖<small>范数可乘，这正是它不丢长度、不退化的原因</small></div>
+<div className="math-block">‖q₁ ⊗ q₂‖ = ‖q₁‖ ‖q₂‖<small>因此，精确算术下两个单位四元数的乘积仍为单位四元数</small></div>
 </section>
 
 <section className="lesson-section" id="s223">
 <h2>22.3 单位四元数与旋转</h2>
 
-<p><b>单位四元数</b>（‖q‖ = 1）与「绕单位轴 n 转 θ」一一对应：</p>
+<p><b>单位四元数</b>（‖q‖ = 1）可以表示「绕单位轴 n 转 θ」：</p>
 
 <div className="math-block">q = (n·sin(θ/2), cos(θ/2))<small>前三个分量是 (x, y, z)，第四个是 w；n 必须是单位向量</small></div>
 
@@ -63,8 +63,12 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 <ul>
   <li><b>LERP + 归一化</b>：最简单，但球面上并非匀速（图 22.8）。</li>
   <li><b>SLERP</b>：沿单位球面的大圆匀速走，是标准做法（图 22.6）。</li>
-  <li><b>SQUAD</b>：需要控制点，能保证角速度连续，代价更高。</li>
 </ul>
+
+<Callout tone="note">
+  <b>延伸：SQUAD</b>
+  <p>原书这里重点推导 LERP 与 SLERP。另一种常见的关键帧旋转插值是 SQUAD，它使用控制四元数构造更平滑的曲线；具体连续性取决于控制点的构造。</p>
+</Callout>
 
 <div className="figure-pair">
   <Figure src="images/Fig22-6.jpg" alt="在 4D 单位球上从 a 到 b 的球面插值" figureNumber="图 22.6" caption="在 4D 单位球上从 a 到 b 走 tθ 的球面插值（θ 是 a、b 的夹角）。" />
@@ -122,7 +126,7 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
 <ul>
   <li>复数乘法 = 平面内旋转 + 缩放；四元数把它推广到 3D。</li>
   <li>单位四元数 q = (n·sin(θ/2), cos(θ/2)) 与「绕单位轴 n 转 θ」一一对应。</li>
-  <li>平行四边形恒等式保证 ‖q‖ 不漂移，所以没有万向锁；代价是四元数乘法不可交换。</li>
+  <li>范数满足 ‖pq‖ = ‖p‖‖q‖，所以精确算术下单位四元数复合后仍为单位长度；浮点误差仍可能需要重新归一化。单位四元数表示旋转不会遇到欧拉角的万向锁，四元数乘法则不可交换。</li>
   <li>SLERP 沿球面大圆匀速插值；LERP 归一化简单但速度不均。</li>
   <li><b>q 与 −q 表示同一旋转</b>：插值前必须判断点积并取反，否则会走长弧。</li>
 </ul>
@@ -140,10 +144,10 @@ import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
     },
     {
       id: 'ch22-a2',
-      question: '四元数相比欧拉角最主要的优势是？',
-      options: ['可以表示缩放', '始终保持单位长度，不会出现万向锁与数值漂移', '运算更快', '分量更少'],
+      question: '精确算术中，两个单位四元数相乘后会怎样？',
+      options: ['结果一般不再是单位四元数', '结果仍为单位四元数；浮点计算可能因舍入误差需要归一化', '结果可以表示缩放', '乘法满足交换律'],
       answer: 1,
-      explanation: '平行四边形恒等式保证范数可乘，旋转矩阵始终正交，因此没有万向锁、也不会累积漂移。四元数不能表示缩放。',
+      explanation: '四元数范数满足 ‖pq‖ = ‖p‖‖q‖，所以精确算术中单位四元数相乘仍为单位四元数；实际计算可能累积舍入误差。',
     },
     {
       id: 'ch22-a3',

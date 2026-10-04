@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityFrame } from '@/activities/ActivityFrame';
 import { Readout, Slider } from '@/activities/controls';
-import { add, format, normalize, scale, vec3, type Vec3 } from '@/activities/math';
+import { dot, format, normalize, sub, vec3, type Vec3 } from '@/activities/math';
 
 const blockers: Array<{ center: Vec3; radius: number; color: string }> = [
   { center: vec3(0.9, 0.9, 0.2), radius: 0.55, color: '#b1712f' },
@@ -10,11 +10,15 @@ const blockers: Array<{ center: Vec3; radius: number; color: string }> = [
 ];
 
 function occluded(point: Vec3, dir: Vec3): boolean {
-  const t = blockers.find((blocker) => {
-    const closest = add(point, scale(dir, 1.2));
-    return Math.hypot(closest[0] - blocker.center[0], closest[1] - blocker.center[1], closest[2] - blocker.center[2]) < blocker.radius;
+  return blockers.some((blocker) => {
+    const toCenter = sub(blocker.center, point);
+    const distanceSquared = dot(toCenter, toCenter);
+    if (distanceSquared <= blocker.radius * blocker.radius) return true;
+    const alongRay = dot(toCenter, dir);
+    if (alongRay <= 0) return false;
+    const closestDistanceSquared = distanceSquared - alongRay * alongRay;
+    return closestDistanceSquared <= blocker.radius * blocker.radius;
   });
-  return Boolean(t);
 }
 
 /** 21.1 后的推演：向半球发射采样射线，显示被挡比例就是遮蔽度。 */
@@ -27,15 +31,15 @@ export function HemisphereOcclusionActivity() {
 
   const point: Vec3 = [pX, pY, pZ];
 
-  // 用一个固定的球面方向序列，保证结果是确定性的
-  const directions = Array.from({ length: 32 }, (_unused, index) => {
-    const y = 1 - (index / 31) * 1.2;
-    const radius = Math.sqrt(Math.max(0, 1 - y * y));
+  // 用黄金角在 +z 上半球生成可复现的均匀样本。
+  const directions = Array.from({ length: samples }, (_unused, index) => {
+    const z = (index + 0.5) / samples;
+    const radius = Math.sqrt(1 - z * z);
     const theta = index * 2.399963; // 黄金角，避免方向聚集
-    return normalize(vec3(Math.cos(theta) * radius, y, Math.sin(theta) * radius));
+    return normalize(vec3(Math.cos(theta) * radius, Math.sin(theta) * radius, z));
   });
 
-  const used = directions.slice(0, samples);
+  const used = directions;
   const blocked = used.filter((dir) => occluded(point, dir));
   const ao = used.length === 0 ? 1 : (used.length - blocked.length) / used.length;
   const plain = 1;
@@ -61,7 +65,7 @@ export function HemisphereOcclusionActivity() {
         question: '射线法估计环境光遮蔽时，遮蔽度是怎么算出来的？',
         options: ['被挡射线数 / 总射线数', '总射线数 / 被挡射线数', '最远那根射线的长度', '遮挡物的面积'],
         answer: 0,
-        correctNote: '被挡射线数 / 总射线数就是遮蔽度，AO = 1 − 遮蔽度。',
+        correctNote: '遮蔽率 = 被挡射线数 / 总射线数；环境可见度 = 1 − 遮蔽率。',
         wrongNote: '遮蔽度是被挡的比例（AO = 1 − 遮蔽度），不是反过来；采样只在上半球发射。',
       }}
       onReset={reset}
@@ -73,9 +77,9 @@ export function HemisphereOcclusionActivity() {
         };
       }}
       explanation={<>
-        <p>局部光照模型只用直达光，接触区域因此缺少「变暗」的线索，画面会显得很平（图 21.1）。</p>
+        <p>局部光照模型用简化的环境光项近似间接光，但它不会随周围几何遮挡而变化；接触区域因此缺少「变暗」的线索，画面会显得很平（图 21.1）。</p>
         <p><b>射线法</b>的思路很直观（图 21.2、21.3）：从表面点 p 向<b>上半球</b>均匀发射 N 根射线，被其他几何挡住的那些对应「这里接收不到的环境光」。</p>
-        <div className="math-block">AO(p) = 1 − 被挡射线数 / 总射线数</div>
+        <div className="math-block">遮蔽率(p) = 被挡射线数 / 总射线数；环境可见度(p) = 1 − 遮蔽率(p)</div>
         <p>只在<b>上半球</b>发射：下半球的表面本身挡着，没有意义。</p>
         <p>图 21.4 是只用遮蔽渲染的结果：没有任何灯光，仅靠遮蔽就足以让缝隙、角落变暗，立体感立刻出现。</p>
         <p>注意成本：要为每个像素发射 N 根射线，朴素实现在几何复杂时非常慢。实际做法要么做预计算（烘焙到贴图），要么用第 13 章的 GPU 计算（SSAO）。</p>
@@ -122,7 +126,7 @@ export function HemisphereOcclusionActivity() {
         ['可见环境光 AO', format(ao, 3)],
         ['当前显示', mode === 'ao' ? `环境光 × ${format(ao, 2)}` : '不叠加 AO'],
       ]} />
-      <p className="draggable-note">法线固定为 +z，所以采样方向分布在上半球。</p>
+      <p className="draggable-note">法线固定为 +z，所以采样方向分布在 +z 半球。射线与球体按三维坐标求交；图形投影到 xz 平面显示。</p>
     </ActivityFrame>
   );
 }

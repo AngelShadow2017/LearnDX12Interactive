@@ -17,7 +17,7 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 
 <Callout tone="note">
   <b>局部光照模型的边界</b>
-  <p>这本书用的是<b>局部</b>光照模型：每个点的颜色只由它自己的材质和直达光源决定，不考虑其他物体的遮挡。图 8.3 那种「墙挡住光」的全局效果不在模型范围内——它需要第 20 章的阴影贴图和第 21 章的环境光遮蔽来近似。</p>
+  <p>这本书用的是<b>局部</b>光照模型：在每个表面点分别计算材质对直达光的响应，并用一个简化的环境光项粗略补上间接光。它不追踪光在物体之间的传播，也不会自动算出图 8.3 那种遮挡；阴影贴图和环境光遮蔽会分别近似其中一部分效果。</p>
 </Callout>
 </section>
 
@@ -129,7 +129,7 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 <section className="lesson-section" id="s89">
 <h2>8.9 实现材质</h2>
 
-<p>材质就是一组描述「表面如何反光」的参数：漫反射反照率、镜面反射率、粗糙度。一个网格可以分成多个材质组（图 8.22），每组用不同的材质绘制。</p>
+<p>材质就是一组描述「表面如何反光」的参数：漫反射反照率 <code>DiffuseAlbedo</code>、正视入射时的 Fresnel 反射率 <code>FresnelR0</code>、粗糙度 <code>Roughness</code>。本书把粗糙度限制在 [0, 1]，并令 <code>Shininess = 1 − Roughness</code>；着色器再由它构造镜面分布指数。一个网格可以分成多个材质组（图 8.22），每组用不同的材质绘制。</p>
 
 <Figure src="images/Fig8-22.jpg" alt="汽车网格划分成五个材质组" figureNumber="图 8.22" caption="汽车网格划分成五个材质组（车漆、玻璃、轮胎等）。" />
 </section>
@@ -176,33 +176,53 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 <CodeSample
   title="HLSL 里的光照计算"
   language="hlsl"
-  code={`float3 ComputeDirectionalLight(Light L, Material mat, float3 normal, float3 toEye)
+  code={`float3 SchlickFresnel(float3 R0, float3 normal, float3 lightVec)
 {
-    // 环境光：常数项
-    float3 ambient = L.Ambient * mat.DiffuseAlbedo;
+    float f = 1.0f - saturate(dot(normal, lightVec));
+    return R0 + (1.0f - R0) * pow(f, 5.0f);
+}
 
-    // 漫反射：朗伯余弦定律
-    float diffuseFactor = max(dot(normal, L.Direction), 0.0f);
-    float3 diffuse = diffuseFactor * L.Diffuse * mat.DiffuseAlbedo;
+float3 BlinnPhong(float3 lightStrength, float3 lightVec,
+                  float3 normal, float3 toEye, Material mat)
+{
+    // 本书用 Shininess = 1 - Roughness，再映射到指数 m
+    float m = mat.Shininess * 256.0f;
+    float3 halfVec = normalize(toEye + lightVec);
+    float roughnessFactor = (m + 8.0f)
+        * pow(max(dot(halfVec, normal), 0.0f), m) / 8.0f;
+    float3 fresnel = SchlickFresnel(mat.FresnelR0, halfVec, lightVec);
+    float3 specAlbedo = roughnessFactor * fresnel;
 
-    // 镜面高光：半程向量 + 粗糙度
-    float3 halfVec = normalize(L.Direction + toEye);
-    float roughFactor = (mat.Shininess + 8.0f) / 8.0f;
-    float3 specular = pow(max(dot(normal, halfVec), 0.0f), mat.Shininess)
-                    * roughFactor * L.Specular * mat.SpecularAlbedo;
+    // 本书的 LDR 示例压缩过亮的高光
+    specAlbedo = specAlbedo / (specAlbedo + 1.0f);
+    return (mat.DiffuseAlbedo.rgb + specAlbedo) * lightStrength;
+}
 
-    return ambient + diffuse + specular;
-}`}
-  input={<>已归一化的法线 <code>normal</code>、从表面点指向眼睛的 <code>toEye</code>、光源结构体 <code>L</code> 与材质 <code>mat</code>。</>}
+float3 ComputeDirectionalLight(Light L, Material mat,
+                                float3 normal, float3 toEye)
+{
+    float3 lightVec = -L.Direction; // 指向光源
+    float ndotl = max(dot(lightVec, normal), 0.0f);
+    float3 lightStrength = L.Strength * ndotl;
+    return BlinnPhong(lightStrength, lightVec, normal, toEye, mat);
+}
+
+// 像素着色器另加每个 Pass 共用的简化环境光项
+float3 ambient = gAmbientLight.rgb * mat.DiffuseAlbedo.rgb;
+float3 direct = ComputeDirectionalLight(L, mat, normal, toEye);
+float3 color = ambient + direct;`}
+  input={<>已归一化的法线 <code>normal</code>、从表面点指向眼睛的 <code>toEye</code>、光源结构体 <code>L</code> 与含 <code>DiffuseAlbedo</code>、<code>FresnelR0</code>、<code>Shininess</code> 的材质 <code>mat</code>。</>}
   keyLines={[
-    { code: 'max(dot(normal, L.Direction), 0.0f)', note: '朗伯余弦定律；max 截断背面照明。' },
-    { code: 'normalize(L.Direction + toEye)', note: '半程向量 h，微表面模型的关键。' },
-    { code: 'pow(..., mat.Shininess)', note: '粗糙度指数：值越大高光越小越锐利。' },
-    { code: '(mat.Shininess + 8.0f) / 8.0f', note: '粗糙因子，用来保持高光总能量大致守恒。' },
+    { code: 'max(dot(lightVec, normal), 0.0f)', note: '朗伯余弦定律；max 截断背面直达光。' },
+    { code: 'normalize(toEye + lightVec)', note: '半程向量 h，近似能把光反射进视线的微面元朝向。' },
+    { code: 'm = mat.Shininess * 256.0f', note: '本书令 Shininess = 1 − Roughness，再换算成指数 m；m 越大，高光越窄。' },
+    { code: '(m + 8.0f) / 8.0f', note: '与幂函数构成粗糙度分布的归一化因子，用来近似保持镜面能量。' },
+    { code: 'SchlickFresnel(..., halfVec, lightVec)', note: '用 Schlick 近似计算视角相关的 Fresnel 反射比例。' },
+    { code: 'ambient + direct', note: '书中把简化环境光与逐光源计算的直达光分开累加。' },
   ]}
   output={<>图 8.21 的三张对比图：仅环境光、环境+漫反射、三项全开；图 8.28 是光照演示的完整截图。</>}
   pitfalls={[
-    '法线或光照方向没归一化：max(n·L, 0) 的数值不再等于 cos θ，光照会整体偏暗或偏亮。',
+    '法线、光照方向或视线方向没归一化：点积和半程向量会失去预期的角度含义。',
     '忘记 max(…, 0)：背面会被照亮，物体边缘出现诡异亮环。',
     '把法线直接用世界矩阵变换：遇到非均匀缩放时光照方向就错了，要用逆转置。',
   ]}
@@ -215,7 +235,7 @@ import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
 <h2>本章小结</h2>
 
 <ul>
-  <li>局部光照模型只考虑直达光，不考虑其他物体的遮挡；阴影与 AO 要另想办法。</li>
+  <li>本书的局部光照模型逐点计算直达光响应，并加一个简化的常量环境光项；它不追踪物体间的光传播，也不自动计算遮挡，阴影与 AO 要另行近似。</li>
   <li>顶点法线用相邻面法线的平均值近似；非均匀缩放后必须用<b>逆转置</b>变换法线。</li>
   <li>朗伯余弦定律：漫反射 ∝ max(L · n, 0)，max 用来截断背面照明。</li>
   <li>环境光是常数项 A = la ⊗ ma，只负责把暗部提亮，单独用会失去全部立体感。</li>

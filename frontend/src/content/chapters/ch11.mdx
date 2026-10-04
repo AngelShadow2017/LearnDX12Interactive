@@ -36,7 +36,7 @@ mCommandList->ClearDepthStencilView(
 
 <div className="math-block">(StencilRef &amp; StencilReadMask) ⊴ (Value &amp; StencilReadMask)<small>Value 是模板缓冲里的当前值；⊴ 是比较函数；不通过则丢弃像素</small></div>
 
-<p>不通过的像素<b>既不写颜色也不写深度</b>，连后续阶段都不会进入。这正是「倒影不穿墙」的实现方式（图 11.1）。</p>
+<p>模板测试不通过时，这个片元在输出合并阶段被丢弃，<b>不会写入颜色或深度</b>。像素着色器位于输出合并之前，因此不能据此断言它一定没有执行；但模板值可以限制哪些片元最终写入目标。这正是「倒影不穿墙」的实现方式（图 11.1）。</p>
 
 <Figure src="images/Fig11-1.jpg" alt="骷髅倒影正确显示在镜子里，没有透过砖墙显示" figureNumber="图 11.1" caption="左：骷髅倒影正确显示在镜子里；倒影没有透过砖墙显示——模板把「镜子外」的倒影像素挡住了。" />
 

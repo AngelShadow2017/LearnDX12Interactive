@@ -27,7 +27,7 @@ import { PickRayActivity } from '@/activities/ch17/PickRayActivity';
 <section className="lesson-section" id="s172">
 <h2>17.2 世界/本地空间拾取射线</h2>
 
-<p>视空间射线要变成世界空间射线：用<b>视图矩阵的逆</b>（也就是相机的世界矩阵）变换它的方向即可。方向向量用 w = 0，所以平移不会影响它。</p>
+<p>视空间射线先乘<b>视图矩阵的逆</b>（相机世界矩阵）变成世界空间；要和某个网格的局部顶点求交，还要再乘该网格世界矩阵的逆。原书直接把两步合成 <code>invView · invWorld</code>（按行向量约定）。每个网格的局部坐标系不同，所以必须对每个网格分别变换射线。变换原点按点处理（w = 1），方向按向量处理（w = 0）；最后将方向归一化，满足相交 API 的输入约定。</p>
 
 <CodeSample
   title="把点击变成世界空间射线"
@@ -39,21 +39,48 @@ float ndcY = -(y * 2.0f - mClientHeight) / mClientHeight;
 // 2) NDC -> 视空间方向：除以投影矩阵的两个缩放项，z 取 1
 XMVECTOR projScale = XMVectorSet(1.0f / mProj[0][0], 1.0f / mProj[1][1],
                                  1.0f, 0.0f);
-XMVECTOR vView = XMVectorMultiply(projScale, XMVectorSet(ndcX, ndcY, 1.0f, 0.0f));
+XMVECTOR rayOriginV = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+XMVECTOR rayDirV = XMVectorMultiply(projScale, XMVectorSet(ndcX, ndcY, 1.0f, 0.0f));
 
-// 3) 视空间 -> 世界空间：用相机世界矩阵变换方向（w = 0，不含平移）
-XMVECTOR vWorld = XMVector3Transform(vView, mCamera.GetWorld());`}
-  input={<>鼠标窗口坐标、投影矩阵的 p00 / p11，以及相机世界矩阵。</>}
+// 3) 视空间 -> 每个网格的局部空间
+XMMATRIX invView = XMMatrixInverse(nullptr, mCamera.GetView());
+XMVECTOR rayOriginW = XMVector3TransformCoord(rayOriginV, invView);
+XMVECTOR rayDirW = XMVector3Normalize(
+    XMVector3TransformNormal(rayDirV, invView));
+float closestDistanceW = FLT_MAX;
+for (RenderItem* ri : renderItems)
+{
+    XMMATRIX world = XMLoadFloat4x4(&ri->World);
+    XMMATRIX invWorld = XMMatrixInverse(nullptr, world);
+    XMMATRIX viewToLocal = XMMatrixMultiply(invView, invWorld);
+    XMVECTOR rayOriginL = XMVector3TransformCoord(rayOriginV, viewToLocal);
+XMVECTOR rayDirL = XMVector3Normalize(
+        XMVector3TransformNormal(rayDirV, viewToLocal));
+    // 调用包围盒 / 三角形相交例程；命中时得到局部距离 tLocal。
+    float tLocal = 0.0f; // 由相交例程写入
+    bool hit = IntersectMesh(rayOriginL, rayDirL, ri, tLocal);
+    if (!hit) continue;
+    XMVECTOR hitPointL = XMVectorMultiplyAdd(
+        XMVectorReplicate(tLocal), rayDirL, rayOriginL);
+    // 把命中点变回世界空间，再统一比较距离。
+    // 各物体缩放不同，不能直接比较各自局部空间的 t。
+    XMVECTOR hitPointW = XMVector3TransformCoord(hitPointL, world);
+    float distanceW = XMVectorGetX(XMVector3Dot(
+        XMVectorSubtract(hitPointW, rayOriginW), rayDirW));
+    if (distanceW > 0.0f && distanceW < closestDistanceW)
+        closestDistanceW = distanceW; // 保存这个最近的网格 / 三角形
+}`}
+  input={<>鼠标窗口坐标、投影矩阵、相机视图矩阵，以及每个绘制项的世界矩阵。</>}
   keyLines={[
     { code: '1.0f / mProj[0][0]', note: '投影矩阵的两个缩放项就是这一步要除的数；写成倒数直接相乘更快。' },
-    { code: 'XMVectorSet(..., 0.0f)', note: 'w = 0 表示方向向量，变换时不会带上平移。' },
-    { code: 'mCamera.GetWorld()', note: '就是视图矩阵的逆，避免另推一套旋转矩阵。' },
+    { code: 'XMVector3TransformNormal(rayDirV, viewToLocal)', note: '把方向按 w = 0 变换，不会带上平移；物体缩放会改变方向长度，所以随后归一化。' },
+    { code: 'XMMatrixMultiply(invView, invWorld)', note: '行向量先经 invView 到世界，再经 invWorld 到当前网格局部空间。跨网格比较命中时应统一回世界空间。' },
   ]}
   output={<>一条从相机出发、穿过被点击屏幕点的世界空间射线。</>}
   pitfalls={[
     '忘记翻转 y：拾取位置上下颠倒。',
-    '用 w = 1 变换方向：射线会被平移到奇怪的位置，表现为「点击时高亮了别的东西」。',
-    '没有用视图矩阵的逆而是重算旋转矩阵：容易与相机状态不一致。',
+    '把方向当点变换：平移会污染射线方向；方向应用 TransformNormal（w = 0）。',
+    '只变到世界空间就直接和局部顶点求交：两者坐标系不一致；每个物体都要再乘自己的逆世界矩阵。',
   ]}
 />
 </section>
@@ -71,7 +98,7 @@ XMVECTOR vWorld = XMVector3Transform(vView, mCamera.GetWorld());`}
 
 <Callout tone="note">
   <b>为什么一定要比 t</b>
-  <p>射线常常同时穿过多个三角形（前面的物体和它背后的物体）。拾取必须取<b>视线前方最近</b>的那个，否则会选中被遮挡的物体——这就是图 17.6 里「被选中的三角形高亮成绿色」所需要的 t 比较。</p>
+  <p>射线常常同时穿过多个三角形（前面的物体和它背后的物体）。在同一坐标空间里应取<b>视线前方最近</b>的命中。若逐个网格把射线变换到各自局部空间后求交，局部距离 t 可能受物体缩放影响，不能直接跨网格比较；应把命中点变回世界空间，再比较沿世界射线的距离。</p>
 </Callout>
 </section>
 

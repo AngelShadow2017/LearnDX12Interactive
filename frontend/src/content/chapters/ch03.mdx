@@ -161,7 +161,7 @@ XMVECTOR pLocal = XMVector4Transform(pWorld, worldInv);`}
   input={<>一个由 S、R、T 组成的世界矩阵，以及棋子上一点 p 与一个方向向量。</>}
   keyLines={[
     { code: 'XMVectorSet(..., 1.0f)', note: 'w = 1 表示点，会被矩阵最后一行的平移量影响。' },
-    { code: 'XMVectorSet(..., 0.0f)', note: 'w = 0 表示方向，平移项被乘 0 自动忽略。法线、视线方向都用这个。' },
+    { code: 'XMVectorSet(..., 0.0f)', note: 'w = 0 表示方向，平移项被乘 0 自动忽略。法线也不能受平移影响；若有非均匀缩放，还须用逆转置矩阵变换法线（第 8 章）。' },
     { code: 'XMVector4Transform', note: '带 w 的变换。用 XMVector3Transform 会隐式按 w = 1 处理，方向向量会算错。' },
     { code: 'XMMatrixInverse(nullptr, world)', note: '世界矩阵的逆把坐标从世界送回本地，正是坐标系变换的实现。' },
   ]}
@@ -230,7 +230,7 @@ XMVECTOR pLocal = XMVector4Transform(pWorld, worldInv);`}
       question: '变换一个法线方向时，w 分量应该设为多少？',
       options: ['0', '1', '取决于矩阵行列式', '设为方向的长度'],
       answer: 0,
-      explanation: '方向向量用 w = 0，这样矩阵的平移项被乘 0 自动忽略。用 w = 1 会把平移错误地加到法线上。',
+      explanation: 'w = 0 可避免平移污染法线；这只说明齐次坐标的 w 分量。若变换还包含非均匀缩放，法线还必须乘逆转置矩阵（第 8 章）。',
     },
   ]}
 />

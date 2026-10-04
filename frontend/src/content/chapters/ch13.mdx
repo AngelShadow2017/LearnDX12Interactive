@@ -15,15 +15,20 @@ import { BlurSharedMemoryActivity } from '@/activities/ch13/BlurSharedMemoryActi
 
 <Callout tone="note">
   <b>组内线程数上限</b>
-  <p>一个线程组的总线程数（X·Y·Z）不能超过 1024（多数硬件）。常用的形状是 256 个线程的一维组，或者 8×8、16×16 的二维组。</p>
+  <p>D3D12 每个线程组的总线程数（X·Y·Z）上限为 1024。常用形状有 256 个线程的一维组，或者 8×8、16×16 的二维组；实际大小还要按任务和硬件调优。</p>
 </Callout>
 </section>
 
 <section className="lesson-section" id="s132">
 <h2>13.2 一个简单的计算着色器</h2>
 
+<Callout tone="note">
+  <b>代码示例与原书的区别</b>
+  <p>原书这一节用计算着色器更新波浪模拟；下面改用更短的纹理反色内核，集中解释 Dispatch ID、SRV、UAV 和边界检查。它是教学补充，后面的 Blur 才是本章原书演示之一。</p>
+</Callout>
+
 <CodeSample
-  title="最小可运行的计算着色器"
+  title="教学内核：按线程 ID 反转纹理颜色"
   language="hlsl"
   code={`Texture2D      gInput  : register(t0);
 RWTexture2D<float4> gOutput : register(u0);
@@ -40,14 +45,14 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
     float4 c = gInput[dispatchThreadID.xy];
     gOutput[dispatchThreadID.xy] = float4(1.0f - c.rgb, 1.0f);
 }`}
-  input={<>一张输入纹理（SRV，t0）与一张输出纹理（UAV，u0）。</>}
+  input={<>两张尺寸相同的纹理：输入纹理（SRV，t0）与输出纹理（UAV，u0）。此代码只展示着色器内核；创建 PSO、绑定资源、设置状态并调用 <code>Dispatch</code> 的 CPU 代码从略。</>}
   keyLines={[
     { code: '[numthreads(16, 16, 1)]', note: '声明组内线程数；总数不能超过硬件上限（通常 1024）。' },
     { code: 'RWTexture2D<float4>', note: '可读写资源，必须绑成 UAV；读用普通 Texture2D 绑 SRV。' },
     { code: 'SV_DispatchThreadID', note: '全局线程 ID，直接当作像素坐标使用最方便。' },
     { code: 'if (dispatchThreadID.x >= width || dispatchThreadID.y >= height)', note: 'Dispatch 通常按线程组向上取整，最后一组可能覆盖到纹理外；必须先检查边界。' },
   ]}
-  output={<>输出纹理里是反色后的图像；图 13.9 对比了模糊前后的效果。</>}
+  output={<>输出纹理里每个像素的 RGB 被反转，alpha 设为 1；本书 Blur 效果见图 13.9。</>}
   pitfalls={[
     '组大小超过硬件上限：Dispatch 直接失败。',
     '忘记把输出资源设成 UAV：编译或绑定报错。',
@@ -60,11 +65,11 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
 <section className="lesson-section" id="s133">
 <h2>13.3 数据输入输出资源</h2>
 
-<p>计算着色器读 <b>SRV</b>（<code>Texture2D</code>、<code>StructuredBuffer</code>），写 <b>UAV</b>（<code>RWTexture2D</code>、<code>RWStructuredBuffer</code>）。UAV 在创建和绑定时都要指定正确的资源状态（<code>D3D12_RESOURCE_STATE_UNORDERED_ACCESS</code>）。</p>
+  <p>计算着色器读 <b>SRV</b>（<code>Texture2D</code>、<code>StructuredBuffer</code>），写 <b>UAV</b>（<code>RWTexture2D</code>、<code>RWStructuredBuffer</code>）。UAV 视图描述资源的访问方式；Dispatch 前还要确保对应子资源处于 <code>D3D12_RESOURCE_STATE_UNORDERED_ACCESS</code>，必要时插入状态转换屏障。</p>
 
 <Callout tone="warning">
   <b>UAV 与渲染目标不能同时绑</b>
-  <p>同一资源在同一时刻不能既是 UAV 又是渲染目标。做后处理时要先把后台缓冲复制/渲染到离屏纹理，再用计算着色器处理（图 13.7 的 render-to-texture 就是这一类）。</p>
+  <p>同一个子资源不能同时以 UAV 和渲染目标状态使用。做后处理时通常先把场景渲染到离屏纹理，再转换状态并用计算着色器处理（图 13.7 的 render-to-texture 就是这一类流程）。</p>
 </Callout>
 </section>
 
@@ -79,18 +84,18 @@ void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
 <section className="lesson-section" id="s135">
 <h2>13.5 Append 与 Consume 缓冲</h2>
 
-<p><code>AppendStructuredBuffer</code> 与 <code>ConsumeStructuredBuffer</code> 提供一个无锁的「多写一读」队列：多个线程可以往里追加元素，另一趟 Pass 再消费它们。粒子系统常用它来做「存活粒子列表」。</p>
+<p><code>AppendStructuredBuffer</code> 与 <code>ConsumeStructuredBuffer</code> 用内部计数器管理追加与消费索引：多个线程可以追加元素，后续一趟 Pass 再消费它们。若不要求元素顺序，粒子系统可用它维护「存活粒子列表」。</p>
 
 <Callout tone="tip">
   <b>计数是隐式的</b>
-  <p>Append/Consume 的计数器由硬件维护，不需要你自己做原子加。但缓冲区容量要预留够，溢出的元素会被丢弃（不报错）。</p>
+  <p>Append/Consume 的计数器由运行时维护，不需要你自己管理索引；缓冲区不会自动扩容，必须预留足够容量，不能依赖溢出时的结果。</p>
 </Callout>
 </section>
 
 <section className="lesson-section" id="s136">
 <h2>13.6 共享内存与同步</h2>
 
-<p>每个线程组有一块 <code>groupshared</code> 内存，访问速度远高于全局显存。典型用法是「先把一块数据搬进共享内存 → 同步 → 再各自计算」。</p>
+<p>每个线程组有一块 <code>groupshared</code> 内存，适合缓存组内会重复使用的数据，减少对全局资源的重复访问。典型用法是「先把一块数据搬进共享内存 → 同步 → 再各自计算」。</p>
 
 <Callout tone="warning">
   <b>必须同步</b>

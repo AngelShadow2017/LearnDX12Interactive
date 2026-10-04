@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityFrame } from '@/activities/ActivityFrame';
 import { MatrixGrid, Readout, Slider, svgPoint } from '@/activities/controls';
-import { format, lookAtLH, transformDirection, vec3 } from '@/activities/math';
+import { format, lookAtLH, vec3 } from '@/activities/math';
 
 const UNIT = 34;
 
@@ -18,11 +18,14 @@ export function CameraAxesActivity() {
   const focus = vec3(posX + forward[0], 0, posZ + forward[1]);
   const view = lookAtLH(eye, focus, vec3(0, 1, 0));
 
-  const cameraRight = transformDirection(view, vec3(1, 0, 0));
-  const cameraUp = transformDirection(view, vec3(0, 1, 0));
-  const cameraForward = transformDirection(view, vec3(0, 0, 1));
+  // XMMatrixLookAtLH 的旋转块按行主序保存；列分别是 right/up/look 在世界空间的分量。
+  const cameraRight: [number, number, number] = [view[0], view[4], view[8]];
+  const cameraUp: [number, number, number] = [view[1], view[5], view[9]];
+  const cameraForward: [number, number, number] = [view[2], view[6], view[10]];
 
-  function move(dx: number, dz: number, dyaw: number) {
+  function move(strafe: number, walk: number, dyaw: number) {
+    const dx = cameraRight[0] * strafe + cameraForward[0] * walk;
+    const dz = cameraRight[2] * strafe + cameraForward[2] * walk;
     setPosX((current) => Math.max(-3, Math.min(3, current + dx)));
     setPosZ((current) => Math.max(-3, Math.min(3, current + dz)));
     setYaw((current) => ((current + dyaw + 540) % 360) - 180);
@@ -39,8 +42,8 @@ export function CameraAxesActivity() {
     const key = event.key.toLowerCase();
     if (key === 'arrowleft' || key === 'a') { move(-step, 0, 0); event.preventDefault(); }
     if (key === 'arrowright' || key === 'd') { move(step, 0, 0); event.preventDefault(); }
-    if (key === 'arrowup' || key === 'w') { move(0, -step, 0); event.preventDefault(); }
-    if (key === 'arrowdown' || key === 's') { move(0, step, 0); event.preventDefault(); }
+    if (key === 'arrowup' || key === 'w') { move(0, step, 0); event.preventDefault(); }
+    if (key === 'arrowdown' || key === 's') { move(0, -step, 0); event.preventDefault(); }
     if (key === 'q') { move(0, 0, -3); event.preventDefault(); }
     if (key === 'e') { move(0, 0, 3); event.preventDefault(); }
   };
@@ -57,7 +60,7 @@ export function CameraAxesActivity() {
       id="ch15-camera-axes"
       chapterId="ch15"
       title="把相机转到面向世界 +x"
-      prompt="用方向键（或下面的按钮）移动和转向相机。俯视图里能看到世界轴（灰）与相机轴（蓝/绿），右边的矩阵是当前的视图矩阵。"
+      prompt="用方向键（或下面的按钮）沿相机 right/look 轴移动和转向。俯视图里能看到世界轴（灰）与相机轴（蓝/绿），矩阵显示当前视图变换。"
       predict={{
         question: '在 D3D 的左手系里，视图空间中原点在哪里、相机的「前方向」是哪一边？',
         options: ['原点在世界原点，朝 −z', '原点在相机位置，朝 +z', '原点在目标点，朝 +z', '原点在相机位置，朝 −z'],
@@ -75,11 +78,10 @@ export function CameraAxesActivity() {
       }}
       explanation={<>
         <p>视图变换把世界坐标变成「相机视角下的坐标」。在左手系里，相机被放到<b>原点</b>，并且沿 <b>+z</b> 方向观察（图 15.1）。</p>
-        <p>相机坐标系的三条轴可以直接从视图矩阵的<b>行向量</b>读出来：<code>XMMatrixLookAtLH</code> 构造的矩阵，前三列（行向量约定下是三行）正是相机右轴、上轴、前轴在世界坐标中的方向描述。</p>
-        <p>相机类需要维护：位置、一组基轴（right / up / look）和偏航俯仰角。移动时把基轴当作坐标系使用，转向时先旋转基轴——这样不用每帧重算三角函数矩阵。</p>
-        <p>示例里 <code>Camera::UpdateCameraVectors</code> 做的事就是：用偏航角算出 look（水平面上的前方向），再用它和世界上方向叉乘得到 right，再叉乘得到 up。</p>
+        <p>在行向量约定下，<code>XMMatrixLookAtLH</code> 构造的视图矩阵，其左上角 3×3 旋转块的三列分别表示相机 right、up、look 轴在世界坐标中的方向；逆矩阵（相机世界矩阵）的对应三行直接存着这三条轴。</p>
+        <p>书中的相机类维护位置和 right / up / look 三条基轴。<code>Walk</code> 沿 look 移动，<code>Strafe</code> 沿 right 移动；<code>Pitch</code> 绕相机 right 轴旋转 up/look，<code>RotateY</code> 绕世界 y 轴旋转整组基轴。多次旋转后，<code>UpdateViewMatrix</code> 会重新正交化并归一化基轴，再构造视图矩阵。</p>
       </>}
-      apply={<p>游戏里 WASD 移动、鼠标环视、Shift 加速（图 15.2）都是基于同一套基轴：移动方向 = right × (a−d) + look × (w−s)，最后调用 <code>XMFloat3Normalize</code>。</p>}
+      apply={<p>游戏里 WASD 移动、鼠标环视、Shift 加速（图 15.2）都是基于同一套基轴：移动方向 = right × (a−d) + look × (w−s)。若同时按多个方向并希望速度不变，可先用 <code>XMVector3Normalize</code> 归一化合成方向；书中样例则按 <code>Walk</code>/<code>Strafe</code> 分别更新相机位置。</p>}
     >
       <svg className="svg-stage" viewBox="0 0 320 320" role="img"
         aria-label={`俯视图：相机位于 ${format(posX)} 逗号 ${format(posZ)}，偏航角 ${yaw} 度`}>
@@ -101,19 +103,19 @@ export function CameraAxesActivity() {
         <line className="vec vec--v" x1={eyePoint.x} y1={eyePoint.y} x2={fTip.x} y2={fTip.y} />
         <line className="vec vec--w" x1={eyePoint.x} y1={eyePoint.y} x2={rTip.x} y2={rTip.y} strokeDasharray="5 4" />
         <circle cx={eyePoint.x} cy={eyePoint.y} r={6} fill="#b1712f" />
-        <text x={eyePoint.x + 9} y={eyePoint.y + 16}>相机（前）</text>
+        <text x={eyePoint.x + 9} y={eyePoint.y + 16}>相机</text>
         <text x={fTip.x + 8} y={fTip.y - 6}>前 +z_view</text>
         <text x={rTip.x + 6} y={rTip.y + 14}>右 +x_view</text>
       </svg>
 
-      <div className="ctl-panel" tabIndex={0} role="group" aria-label="相机键盘控制：方向键或 WASD 移动，Q/E 转向" onKeyDown={onKeyDown}
+      <div className="ctl-panel" tabIndex={0} role="group" aria-label="相机键盘控制：方向键或 WASD 沿相机基轴移动，Q/E 转向" onKeyDown={onKeyDown}
         onFocus={(event) => (event.currentTarget.style.outline = '2px solid #559d7c')} style={{ marginBottom: 10 }}>
-        <span className="ctl-panel__title">键盘控制（先点一下这个区域，然后按方向键 / WASD / Q、E）</span>
+        <span className="ctl-panel__title">键盘控制（先点一下这个区域，然后按方向键 / WASD / Q、E；移动跟随相机朝向）</span>
         <div className="activity__actions">
           <button className="button button--quiet" type="button" onClick={() => move(0, 0, -3)}>← 左转</button>
           <button className="button button--quiet" type="button" onClick={() => move(0, 0, 3)}>右转 →</button>
-          <button className="button button--quiet" type="button" onClick={() => move(0, -0.25, 0)}>前进 ↑</button>
-          <button className="button button--quiet" type="button" onClick={() => move(0, 0.25, 0)}>后退 ↓</button>
+        <button className="button button--quiet" type="button" onClick={() => move(0, 0.25, 0)}>前进 ↑</button>
+        <button className="button button--quiet" type="button" onClick={() => move(0, -0.25, 0)}>后退 ↓</button>
           <button className="button button--quiet" type="button" onClick={() => move(-0.25, 0, 0)}>左移</button>
           <button className="button button--quiet" type="button" onClick={() => move(0.25, 0, 0)}>右移</button>
         </div>
@@ -131,7 +133,7 @@ export function CameraAxesActivity() {
       ]} />
 
       <div className="ctl-panel">
-        <span className="ctl-panel__title">视图矩阵 gView（行主序，最后一行是 −eye）</span>
+        <span className="ctl-panel__title">视图矩阵 gView（平移行是 −dot(相机各轴, eye)）</span>
         <MatrixGrid matrix={view} />
       </div>
     </ActivityFrame>

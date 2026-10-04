@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActivityFrame } from '@/activities/ActivityFrame';
 import { Readout, Slider } from '@/activities/controls';
 
-/** 16.1 后的推演：对比 100 个物体逐次绘制与实例化的提交方式。 */
+/** 16.1 后的概念示意：对比 100 个物体逐次绘制与实例化的提交方式；绑定次数是演示假设，不是固定 API 计数。 */
 export function InstancingSubmitActivity() {
   const [instances, setInstances] = useState(100);
   const [useInstancing, setUseInstancing] = useState(false);
@@ -44,14 +44,14 @@ export function InstancingSubmitActivity() {
         };
       }}
       explanation={<>
-        <p>硬件实例化的做法是把几何数据只上传一份，在常量缓冲里放 N 个世界矩阵（每个 256 字节对齐），然后一次 <code>DrawIndexedInstanced(indexCount, N, 0, 0, 0)</code> 画 N 个物体。</p>
-        <p>着色器用 <code>SV_InstanceID</code> 取出当前实例的世界矩阵：</p>
-        <div className="math-block">float4 pos = mul(float4(vin.PosL, 1.0f), gWorld[SV_InstanceID]);</div>
-        <p><b>省掉的是什么：</b>CPU 侧的绘制调用与状态设置——这通常是真正的瓶颈，因为每次状态变化都会打断 GPU 的流水线。</p>
-        <p><b>没有省掉的是：</b>顶点着色器的执行次数。N 个实例 × 每个物体的顶点数，一点都没少。所以如果顶点着色器是瓶颈，实例化帮不上忙；此时应该考虑降低几何复杂度或用几何着色器/曲面细分。</p>
-        <p>顺带一提：GPU 早期还提供顶点缓冲实例化（<code>VB</code> bind slot 1 + <code>Advance</code>），效果类似但灵活性不如常量缓冲数组，D3D12 已不推荐。</p>
+        <p>书中的实现把几何数据只上传一份，把 N 条 <code>InstanceData</code> 放入 <code>StructuredBuffer</code>，再调用一次 <code>DrawIndexedInstanced(indexCount, N, 0, 0, 0)</code>。</p>
+        <p>顶点着色器用系统值 <code>SV_InstanceID</code> 读取当前实例数据：</p>
+        <div className="math-block">InstanceData inst = gInstanceData[instanceID];<br />float4 posW = mul(float4(vin.PosL, 1.0f), inst.World);</div>
+        <p><b>省掉的是什么：</b>逐个物体发起绘制和重复设置资源的 CPU 开销。图中按每次提交设置三项状态来估算；这只是便于比较的假设，实际哪些绑定能复用、状态调用有多少，取决于渲染器如何组织绘制。</p>
+        <p><b>没有省掉的是：</b>顶点着色器的工作量。N 个实例 × 每个物体的顶点数仍要处理；如果顶点着色器是瓶颈，应考虑减少顶点处理工作或降低细节层级。</p>
+        <p>Direct3D 也支持把 per-instance 数据放进第二个顶点缓冲流；本书示例采用结构化缓冲，并在下一步用动态索引选择每个实例的材质和贴图。</p>
       </>}
-      apply={<p>常量缓冲要按 <code>per-instance</code> 分类声明；也可以用结构化缓冲（<code>StructuredBuffer</code>）加 stride，更灵活。</p>}
+      apply={<p>本书用 <code>StructuredBuffer&lt;InstanceData&gt;</code> 与 <code>SV_InstanceID</code>；旧式输入布局也能声明 per-instance 顶点流。</p>}
     >
       <svg className="svg-stage" viewBox="0 0 320 200" role="img"
         aria-label={`${instances} 个物体，当前使用${useInstancing ? '实例化' : '逐次绘制'}`}>

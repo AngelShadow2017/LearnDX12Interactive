@@ -84,14 +84,14 @@ import { SwapChainOrderActivity } from '@/activities/SwapChainOrderActivity';
 
 <Callout tone="warning">
   <b>两个 D3D12 特有的硬要求</b>
-  <p>① 常量缓冲大小必须向上对齐到 256 字节；② D3D12 <b>不提供默认视口</b>，必须自己调用 <code>RSSetViewports</code>，否则什么都画不出来。</p>
+  <p>① 常量缓冲视图（CBV）的起始地址和 <code>SizeInBytes</code> 按 256 字节对齐，通常因此把每个常量缓冲槽位的步长向上取整；② D3D12 <b>不提供默认视口</b>，必须自己调用 <code>RSSetViewports</code>，否则什么都画不出来。</p>
 </Callout>
 
 <Figure src="images/Fig4-9.jpg" alt="通过修改视口把 3D 场景绘制到后台缓冲的子矩形中" figureNumber="图 4.9" caption="通过修改视口，把 3D 场景绘制到后台缓冲的子矩形中。" />
 
 <h3>资源状态必须显式转换</h3>
 
-<p>D3D12 不会帮你做任何隐式状态转换。后台缓冲呈现时处于 PRESENT，要画它就得先屏障到 RENDER_TARGET，画完再屏障回去。</p>
+  <p>D3D12 要求应用确保资源在使用时处于正确状态；某些资源可以发生隐式提升/衰减，但这里的交换链后台缓冲按显式状态流程处理：绘制前屏障到 RENDER_TARGET，绘制后屏障回 PRESENT。</p>
 
 <SwapChainOrderActivity />
 
@@ -113,7 +113,9 @@ mCommandList->RSSetViewports(1, &mScreenViewport);
 mCommandList->RSSetScissorRects(1, &mScissorRect);
 
 // 3) 绑定 RTV/DSV 并绘制
-mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
+auto rtv = CurrentBackBufferView();
+auto dsv = DepthStencilView();
+mCommandList->OMSetRenderTargets(1, &rtv, true, &dsv);
 mCommandList->DrawIndexedInstanced(...);
 
 // 4) 后台缓冲：RENDER_TARGET -> PRESENT
@@ -127,13 +129,11 @@ ThrowIfFailed(mCommandList->Close());
 ID3D12CommandList* lists[] = { mCommandList.Get() };
 mCommandQueue->ExecuteCommandLists(_countof(lists), lists);
 ThrowIfFailed(mSwapChain->Present(0, 0));
-mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
-FlushCommandQueue();`}
+mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;`}
   input={<>已创建设备、交换链、RTV/DSV 描述符堆与命令列表；当前后台缓冲索引 <code>mCurrBackBuffer</code>。</>}
   keyLines={[
-    { code: 'ResourceBarrier(... PRESENT → RENDER_TARGET)', note: 'D3D12 不做隐式转换，缺这一步就是「黑屏第一嫌疑」。' },
+    { code: 'ResourceBarrier(... PRESENT → RENDER_TARGET)', note: '此处按显式状态流程把后台缓冲切到渲染目标状态；漏掉所需屏障会造成状态不匹配。' },
     { code: 'RSSetViewports', note: 'D3D12 没有默认视口，不设置就什么都画不出来。' },
-    { code: 'FlushCommandQueue()', note: 'Signal 后 Wait 同一个 fence 值，强制 CPU/GPU 同步；每帧都调用会牺牲并行度，正常流程里用帧资源 + fence 代替。' },
   ]}
   output={<>图 4.12 是第 4 章示例程序的截图：一个窗口，背景为 LightSteelBlue 之类的纯色清屏色。</>}
   pitfalls={[

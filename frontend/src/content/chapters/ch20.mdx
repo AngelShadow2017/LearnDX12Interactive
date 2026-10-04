@@ -6,7 +6,7 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
 
 <p>阴影贴图只做两件事：<b>从光源视角把场景深度存下来</b>，以及<b>从相机视角比较深度</b>。这一节先说第一件。</p>
 
-<p>光源视角的渲染要用<b>正交投影</b>（平行光）或透视投影（点光源/聚光灯），并且只写深度不写颜色。</p>
+<p>光源视角的渲染要用<b>正交投影</b>（平行光）或透视投影（聚光灯），并且只写深度不写颜色。若要为全向点光源生成阴影，通常要从六个方向各渲染一次，并把结果存入立方体贴图。</p>
 
 <div className="figure-pair">
   <Figure src="images/Fig20-1.jpg" alt="正交视锥是与视角坐标系轴对齐的盒子" figureNumber="图 20.1" caption="正交视锥是与视角坐标系轴对齐的盒子。" />
@@ -15,7 +15,7 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
 
 <h3>光盒</h3>
 
-<p>光源前面会放一个「光盒」（light volume）。盒外的场景本来就照不到光，直接判成阴影，可以省掉大量无用计算。</p>
+  <p>对本章的平行光示例，光盒（light volume）限定了这束光覆盖的空间；盒外不接收这束光。实际渲染器还要按光源投影范围处理边界，不能把所有未写入阴影图的区域一概当作阴影。</p>
 
 <Callout tone="tip">
   <b>正交投影的另一半用途</b>
@@ -26,7 +26,7 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
 <section className="lesson-section" id="s202">
 <h2>20.2 正交投影</h2>
 
-<p>正交投影下，平行光线保持平行，场景的深度直接对应投影窗口的 (u, v) 位置。正因为深度与位置一一对应，阴影贴图才能用纹理来存深度。</p>
+<p>正交投影下，平行投影线保持平行；投影窗口中的 (u, v) 决定沿光线查看的位置，而该位置的深度值记录最近可见表面。阴影贴图正是把这些深度值存进纹理。</p>
 </section>
 
 <section className="lesson-section" id="s203">
@@ -88,7 +88,7 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
 
 <ul>
   <li>阴影贴图两步：光源视角存深度（正交投影，只写深度）+ 相机视角比较深度。</li>
-  <li>判定：d(p) &gt; s 则被遮挡；光盒外的场景直接判为阴影。</li>
+  <li>判定：d(p) &gt; s 表示被光源空间里更近的表面挡住；光盒界定光源覆盖范围，光盒外不接收这束光，阴影图边界需由渲染器单独处理。</li>
   <li>偏移治痤疮、过大则 Peter-Panning；斜率缩放偏移让倾斜表面更稳定。</li>
   <li>PCF 治锯齿：核内取多个样本求平均，边界从阶梯变成柔和过渡。</li>
   <li>大 PCF 核会引入深度误差，需要分两步校正，不能一味加大核。</li>
@@ -108,7 +108,7 @@ import { ShadowBiasPcfActivity } from '@/activities/ch20/ShadowBiasPcfActivity';
       question: '平行光的阴影贴图用哪种投影？',
       options: ['透视投影', '正交投影', '斜投影', '立方体贴图投影'],
       answer: 1,
-      explanation: '平行光的光线互相平行，所以要用正交投影，深度才能与投影窗口位置一一对应。',
+      explanation: '平行光的光线互相平行，所以用正交投影；每个投影纹素存下对应光线方向上最近可见表面的深度。',
     },
     {
       id: 'ch20-a2',

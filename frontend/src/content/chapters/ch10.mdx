@@ -40,7 +40,7 @@ import { FogClipBlendActivity } from '@/activities/FogClipBlendActivity';
 
 <Callout tone="tip">
   <b>一个常见技巧</b>
-  <p>图 10.2 提到的「不写颜色」（<code>RenderTargetWriteMask = 0</code>）只写深度/模板，常用来先「占住深度」再做后续绘制。</p>
+  <p>图 10.2 提到的「不写颜色」（<code>RenderTargetWriteMask = 0</code>）只关闭颜色写入；深度和模板是否写入仍由深度/模板状态决定。常见用途是先写深度，再做后续绘制。</p>
 </Callout>
 </section>
 
@@ -98,7 +98,7 @@ import { FogClipBlendActivity } from '@/activities/FogClipBlendActivity';
   pitfalls={[
     'clip 阈值定得太低：纹理边缘残留黑边（因为 alpha 是插值出来的中间值）。',
     '把需要半透明过渡的效果用 clip 实现：边缘会变成锯齿，需要配合 MSAA 或 alpha-to-coverage。',
-    'clip 之后仍然开启混合：两者混用会让结果难以预测，先想清楚要哪种效果。',
+    '把 clip 和混合不加区分地叠用：镂空通常用 clip 丢弃低 alpha 片元，半透明边缘则用混合；确需组合时要明确每个 pass 的目的。',
   ]}
 />
 </section>

@@ -27,7 +27,7 @@ static const D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
 };`}
   input={<>一个含位置（12 字节）与颜色（16 字节）的顶点结构体，共 28 字节。</>}
   keyLines={[
-    { code: '"POSITION", 0', note: '语义名 + 语义索引，必须与 HLSL 入口参数上的语义完全一致，大小写敏感。' },
+    { code: '"POSITION", 0', note: '语义名 + 语义索引，必须与 HLSL 入口参数上的语义对应。' },
     { code: 'DXGI_FORMAT_R32G32B32_FLOAT', note: '告诉硬件这个字段有多少个分量、每个分量什么类型。' },
     { code: '0, 12,', note: '第二个字段的字节偏移：前面 XMFLOAT3 占了 12 字节。' },
   ]}
@@ -133,7 +133,7 @@ ThrowIfFailed(hr);`}
 <section className="lesson-section" id="s69">
 <h2>6.9 管线状态对象</h2>
 
-<p>D3D12 把大多数管线状态打包进一个 <b>PSO</b>（<code>ID3D12PipelineState</code>）。一次 <code>SetPipelineState</code> 就完成全部绑定，硬件也因此能提前做优化。</p>
+<p>D3D12 把着色器、混合、光栅化、深度模板等大多数固定管线状态打包进一个 <b>PSO</b>（<code>ID3D12PipelineState</code>）。<code>SetPipelineState</code> 只绑定这个状态对象；根签名、描述符堆、顶点/索引缓冲和渲染目标仍要分别设置。把状态预先组合成 PSO 也便于驱动在创建时验证并准备管线。</p>
 
 <Callout tone="note">
   <b>代价是灵活性</b>
@@ -159,7 +159,6 @@ XMMATRIX wvp    = world * view * proj;
 
 ObjectConstants objConstants;
 XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(wvp));
-objConstants.Time = gt.TotalTime();
 
 // currFrameResource 是三个帧资源里轮到的那一个
 auto cb = mCurrFrameResource->ObjectCB.get();
@@ -187,7 +186,7 @@ cb->CopyData(0, objConstants);`}
   <li>顶点缓冲放 GPU 资源里；多个网格可以拼进同一个大缓冲，用起始偏移区分。</li>
   <li>索引让共享顶点数据只存一份；GPU 可能通过顶点后变换缓存复用着色结果。绘制用 <code>DrawIndexedInstanced</code>。</li>
   <li>常量缓冲传每帧参数，大小必须向上对齐到 256 字节；每个帧资源要各有一份。</li>
-  <li>语义是顶点字段与 HLSL 形参的对号方式；根签名是 CPU 与着色器之间的资源契约；PSO 把全部状态打包。</li>
+  <li>语义把顶点字段对应到 HLSL 入口；根签名是 CPU 与着色器之间的资源契约；PSO 打包大多数固定管线状态，但资源和缓冲仍需单独绑定。</li>
   <li>HLSL 编译错误不会抛异常，一定要打印 <code>ID3DBlob</code> 里的错误信息。</li>
   <li>上传矩阵到 HLSL 时要转置（或在 HLSL 里声明 row_major）。</li>
 </ul>

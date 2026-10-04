@@ -4,28 +4,34 @@ import { FrustumCullActivity } from '@/activities/ch16/FrustumCullActivity';
 <section className="lesson-section lesson-section--intro" id="s161">
 <h2>16.1 硬件实例化</h2>
 
-<p>当一批物体<b>共用同一份几何数据</b>、只是世界矩阵不同时，没必要为每个物体提交一次绘制调用。硬件实例化把 N 个世界矩阵放进常量缓冲，一次 <code>DrawIndexedInstanced</code> 画完。</p>
+<p>当一批物体<b>共用同一份几何数据</b>、只有实例数据（例如世界矩阵和材质索引）不同时，可以用一次 <code>DrawIndexedInstanced</code> 提交多个实例。书中的实现把每个实例的数据放在 <code>StructuredBuffer&lt;InstanceData&gt;</code> 中，顶点着色器用 <code>SV_InstanceID</code> 查出当前实例；它还用动态索引为不同实例选择材质和贴图。</p>
 
 <CodeSample
   title="实例化绘制"
   language="cpp"
-  code={`// 常量缓冲里放 N 个世界矩阵，每个按 256 字节对齐
-struct ObjectConstants { XMMATRIX World; };
-// ... mObjectCB->CopyData(instanceIndex, objConstants);
+code={`// 一份共享几何；实例数据放入结构化缓冲
+struct InstanceData { XMFLOAT4X4 World; UINT MaterialIndex; };
+std::vector<InstanceData> instanceData(mInstanceCount);
+// 填好数据并作为 SRV 绑定；着色器声明：
+// StructuredBuffer<InstanceData> gInstanceData;
+// VS(..., uint instanceID : SV_InstanceID) {
+//     InstanceData inst = gInstanceData[instanceID];
+//     float4 posW = mul(float4(vin.PosL, 1.0f), inst.World);
+// }
 
 mCommandList->IASetVertexBuffers(0, 1, &mVertexBufferView);
 mCommandList->IASetIndexBuffer(&mIndexBufferView);
 mCommandList->DrawIndexedInstanced(mIndexCount, mInstanceCount, 0, 0, 0);`}
-  input={<>一份共享的顶点/索引缓冲，以及每个实例一份世界矩阵（per-instance 常量缓冲槽位）。</>}
+  input={<>一份共享的顶点/索引缓冲，以及包含世界矩阵和材质索引的结构化实例缓冲。</>}
   keyLines={[
     { code: 'DrawIndexedInstanced(..., mInstanceCount, ...)', note: '第二个参数就是实例数：一次调用画 N 个物体。' },
-    { code: 'per-instance', note: '常量缓冲必须声明为 per-instance，否则所有实例读到同一个矩阵。' },
-    { code: 'SV_InstanceID', note: '着色器里用它索引世界矩阵数组。' },
+    { code: 'StructuredBuffer<InstanceData>', note: '每个实例一条数据；书中的现代做法是在顶点着色器里动态读取。' },
+    { code: 'SV_InstanceID', note: '系统值标识当前实例，用来索引实例缓冲。' },
   ]}
   output={<>一次绘制调用提交 N 个物体；图 16.11 是演示截图。</>}
   pitfalls={[
-    '忘记声明 per-instance：所有实例重叠在同一位置。',
-    '用顶点缓冲实例化而不是常量缓冲：需要 Advance 调用，灵活性和性能都不如常量缓冲。',
+    '索引用错：多个实例会读到同一条实例数据，重叠在一个位置。',
+    '把书中的 StructuredBuffer 实现误当成唯一方式：实例数据也可以通过 per-instance 顶点流传入。',
     '以为实例化能减少顶点着色器执行次数：不能，N 个实例仍要跑 N 次顶点着色器。',
   ]}
 />
@@ -92,9 +98,9 @@ mCommandList->DrawIndexedInstanced(mIndexCount, mInstanceCount, 0, 0, 0);`}
 <h2>本章小结</h2>
 
 <ul>
-  <li>硬件实例化把 N 个世界矩阵放进常量缓冲，一次绘制画 N 个物体；它省的是 CPU 提交与状态切换。</li>
+  <li>书中的硬件实例化把 N 份实例数据放入结构化缓冲，再用 <code>SV_InstanceID</code> 读取；一次绘制提交多个实例，减少逐个绘制的 CPU 开销。</li>
   <li>实例化<b>不减少</b>顶点着色器执行次数——顶点着色器是瓶颈时要换别的办法。</li>
-  <li>包围体是保守近似：AABB 更紧更准、包围球更松更快；两者都可能「错误保留」而不会「错误剔除」。</li>
+  <li>包围体（AABB、包围球、OBB）是保守近似；哪一种更贴合取决于物体形状与采用的坐标系。若包围体完全在视锥外，可以安全剔除；与视锥相交则表示物体可能可见，需要绘制。</li>
   <li>视锥 = 6 个半空间的交集；任一平面排除即可剔除。</li>
   <li>球/平面测试比较有符号距离与半径；AABB 测试沿法线取最不利的对角点。</li>
   <li>剔除的收益因场景而异，务必在自己的项目里实测。</li>

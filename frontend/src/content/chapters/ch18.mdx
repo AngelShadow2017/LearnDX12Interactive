@@ -19,7 +19,7 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 
 <Callout tone="tip">
   <b>硬件帮你做分支</b>
-  <p>上面这套「先判断主轴、再算 uv」的逻辑可以完全展开成条件分支，但硬件会用固定功能插值直接算出来。着色器只需要写一行采样。</p>
+  <p>立方体贴图采样器会按方向选面、映射面内坐标并过滤纹素；这不是光栅化阶段的插值。着色器只需提供方向并调用 <code>TextureCube.Sample</code>。</p>
 </Callout>
 </section>
 
@@ -32,7 +32,7 @@ import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity
 
 <Callout tone="note">
   <b>为什么盒子要足够大</b>
-  <p>天空盒的顶点随相机平移。如果盒子不够大，相机平移会让顶点跑到盒子外面，画面出现缺口。把它做得足够大（或干脆画全屏三角形），误差就可以忽略。</p>
+  <p>天空盒要随相机位置重新居中，但保留相机朝向：这样相机平移时背景方向不变，符合天空看起来无限远的假设。也可以用全屏三角形按视线方向采样天空贴图。</p>
 </Callout>
 </section>
 

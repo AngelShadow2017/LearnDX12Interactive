@@ -6,8 +6,6 @@ import { Readout, Slider } from '@/activities/controls';
 export function TessFactorActivity() {
   const [innerU, setInnerU] = useState(2);
   const [innerV, setInnerV] = useState(2);
-  const [edgeU, setEdgeU] = useState(2);
-  const [edgeV, setEdgeV] = useState(2);
   const [touched, setTouched] = useState(false);
 
   const cols = Math.max(1, Math.round(innerU));
@@ -24,8 +22,6 @@ export function TessFactorActivity() {
   function reset() {
     setInnerU(2);
     setInnerV(2);
-    setEdgeU(2);
-    setEdgeV(2);
     setTouched(false);
   }
 
@@ -36,7 +32,7 @@ export function TessFactorActivity() {
       title="把细分因子调成生成 32 个三角形"
       prompt={`三角形数 = 2 × 内部因子U × 内部因子V。目标是 32 个（也就是 4 × 4）。`}
       predict={{
-        question: '把一个四边形 patch 的内部细分因子从 2 提高到 4，生成的三角形数量大致怎么变？',
+        question: '把一个四边形 patch 的 U、V 两个方向均匀细分因子都从 2 提高到 4，三角形数量大致怎么变？',
         options: ['不变', '线性增长（×2）', '按平方增长（×4）', '反而变少'],
         answer: 2,
         hint: '两个方向都要细分，所以是二维增长。',
@@ -54,9 +50,9 @@ export function TessFactorActivity() {
       }}
       explanation={<>
         <p>曲面细分分三个阶段：<b>外壳着色器</b>（HS）输出控制点与细分因子 → <b>镶嵌器</b>（固定功能）按因子把域切成小片 → <b>域着色器</b>（DS）为每个新顶点计算最终位置。</p>
-        <p>细分因子分两组（图 14.2、14.3）：<b>边缘因子</b>控制四条边的切分，<b>内部因子</b>控制内部区域的切分。这两组要匹配好，否则相邻 patch 之间会出现裂缝。</p>
+        <p>细分因子分两组（图 14.2、14.3）：<b>边缘因子</b>控制各条边的切分，<b>内部因子</b>控制 patch 内部。相邻 patch 对同一条共享边必须给出一致的边缘因子；内部因子不必与边缘因子相等。本互动用规则整数网格简化显示，并假设相邻 patch 的共享边设置一致。</p>
         <p>图 14.5 展示了最有价值的应用：按到相机的距离动态改变因子，实现无级 LOD。</p>
-        <p><b>关于计数：</b>真实镶嵌器对奇数/偶数因子有不同的三角化方式，还会对小数因子做舍入。上面用的是「整数网格」模型，用来理解「因子越大三角形越多、且是二维增长」这个关系。</p>
+        <p><b>关于计数：</b>真实镶嵌器依 partitioning mode 对因子作分段；非整数因子也会按规则处理。上面只针对统一的整数网格：U×V 个小格，每格 2 个三角形，用来理解两个方向同时细分时数量按乘积增长。</p>
       </>}
       apply={<p>代码里 HS 的 patch constant function 输出 <code>SV_TessFactor</code> 与 <code>SV_InsideTessFactor</code>；DS 用 <code>SV_DomainLocation</code> 给出的 (u, v) 计算顶点位置。</p>}
     >
@@ -77,14 +73,11 @@ export function TessFactorActivity() {
 
       <Slider label="内部细分因子 U" min={1} max={8} step={1} value={innerU} onChange={(value) => { setInnerU(value); setTouched(true); }} />
       <Slider label="内部细分因子 V" min={1} max={8} step={1} value={innerV} onChange={(value) => { setInnerV(value); setTouched(true); }} />
-      <Slider label="边缘细分因子（上/下）" min={1} max={8} step={1} value={edgeU} onChange={(value) => { setEdgeU(value); setTouched(true); }} />
-      <Slider label="边缘细分因子（左/右）" min={1} max={8} step={1} value={edgeV} onChange={(value) => { setEdgeV(value); setTouched(true); }} />
-
       <Readout items={[
         ['格子数 U × V', String(quadCount)],
         ['三角形数 2·U·V', String(triangleCount)],
         ['顶点数 (U+1)(V+1)', String(vertices)],
-        ['边缘与内部因子是否一致', edgeU === innerU && edgeV === innerV ? '是' : '否（可能出现裂缝）'],
+        ['本模型的方向细分', `U=${innerU}、V=${innerV}`],
       ]} />
     </ActivityFrame>
   );

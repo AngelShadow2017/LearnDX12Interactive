@@ -1,0 +1,142 @@
+Introduction to 3D Game Programming with DirectX 12
+
+-
+
+Appendix E
+
+BIBLIOGRAPHY AND
+FURTHER READING
+
+[Angel00] Angel, Edward, Interactive Computer Graphics: A Top-Down Approach with OpenGL, Second Edition, Addison-Wesley, 2000.
+
+[ATI1] ATI. &ldquo;Dark Secrets of Shader Development or What Your Mother Never Told You About Shaders&rdquo; Presentation available at http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2012/10/Dark_Secrets_of_shader_Dev-Mojo.pdf
+
+[Bilodeau10] Bilodeau, Bill. &ldquo;Efficient Compute Shader Programming,&rdquo; Game Developers Conference, AMD slide presentation, 2010. (http://developer.amd.com/gpu_assets/Efficient%20Compute%20Shader%20Programming.pps)
+
+[Bilodeau10b] Bilodeau, Bill. &ldquo;Direct3D 11 Tutorial: Tessellation,&rdquo; Game Developers Conference, AMD slide presentation, 2010. (http://developer.amd.com/gpu_assets/Direct3D%2011%20Tessellation%20Tutorial.ppsx)
+
+[Blinn78] Blinn, James F., and Martin E. Newell. &ldquo;Clipping using Homogeneous Coordinates.&rdquo; In Computer Graphics (SIGGRAPH &rsquo;78 Proceedings), pages 245-251, New York, 1978.
+
+[Blinn96] Blinn, Jim, Jim Blinn&rsquo;s Corner: A Trip Down the Graphics Pipeline, Morgan Kaufmann Publishers, Inc, San Francisco CA, 1996.
+
+[Boyd08] Boyd, Chas. &ldquo;DirectX 11 Compute Shader,&rdquo; Siggraph slide presentation, 2008. (http://s08.idav.ucdavis.edu/boyd-dx11-compute-shader.pdf)
+
+[Boyd10] Boyd, Chas. &ldquo;DirectCompute Lecture Series 101: Introduction to DirectCompute,&rdquo; 2010. (http://channel9.msdn.com/Blogs/gclassy/DirectCompute-Lecture-Series-101-Introduction-to-DirectCompute)
+
+[Brennan02] Brennan, Chris. &ldquo;Accurate Reflections and Refractions by Adjusting for Object Distance,&rdquo; Direct3D ShaderX: Vertex and Pixel Shader Tips and Tricks.
+
+Wordware Publishing Inc., 2002.
+
+[Burg10] Burg, John van der, &ldquo;Building an Advanced Particle System.&rdquo; Gamasutra, June 2000. (http://www.gamasutra.com/features/20000623/vanderburg_01.htm)
+
+[Crawfis12] Crawfis, Roger. &ldquo;Modern GPU Architecture.&rdquo; Course notes available at http://web.cse.ohio-state.edu/&tilde;crawfis/cse786/ReferenceMaterial/CourseNotes/Modern%20GPU%20Architecture.ppt
+
+[De berg00] de Berg, M., M. van Kreveld, M. Overmars, and O. Schwarzkopf. Computational Geometry: Algorithms and Applications Second Edition. Springer-Verlag Berlin Heidelberg, 2000.
+
+[Dietrich] Dietrich, Sim. &ldquo;Texture Space Bump Maps.&rdquo; (http://developer.nvidia.com/object/texture_space_bump_mapping.html)
+
+[Dunlop03] Dunlop, Robert. &ldquo;FPS Versus Frame Time,&rdquo; 2003. (http://www.mvps.org/directx/articles/fps_versus_frame_time.htm)
+
+[DirectXMath] DirectXMath Online Documentation, Microsoft Corporation. http://msdn.microsoft.com/en-us/library/windows/desktop/hh437833(v=vs.85).aspx
+
+[DXSDK] Microsoft DirectX June 2010 SDK Documentation, Microsoft Corporation.
+
+[Eberly01] Eberly, David H., 3D Game Engine Design, Morgan Kaufmann Publishers, Inc, San Francisco CA, 2001.
+
+[Engel02] Engel, Wolfgang (Editor), Direct3D ShaderX: Vertex and Pixel Shader Tips and Tricks, Wordware Publishing, Plano TX, 2002.
+
+[Engel04] Engel, Wolfgang (Editor), ShaderX2: Shader Programming Tips & Tricks with DirectX 9, Wordware Publishing, Plano TX, 2004.
+
+[Engel06] Engel, Wolfgang (Editor), ShaderX5: Shader Advanced Rendering Techniques, Charles River Media, Inc., 2006.
+
+[Engel08] Engel, Wolfgang (Editor), ShaderX6: Shader Advanced Rendering Techniques, Charles River Media, Inc., 2008.
+
+[Farin98] Farin, Gerald, and Dianne Hansford. The Geometry Toolbox: For Graphics and Modeling. AK Peters, Ltd., 1998.
+
+[Fernando03] Fernando, Randima, and Mark J. Kilgard. The CG Tutorial: The Definitive Guide to Programmable Real-Time Graphics. Addison-Wesley, 2003.
+
+[Fraleigh95] Fraleigh, John B., and Raymond A. Beauregard. Linear Algebra 3rd Edition. Addison-Wesley, 1995.
+
+[Friedberg03] Friedberg, Stephen H., Arnold J. Insel, and Lawrence E. Spence. Linear Algebra Fourth Edition. Pearson Education, Inc., 2003.
+
+[Fung10] Fung, James. &ldquo;DirectCompute Lecture Series 210: GPU Optimizations and Performance,&rdquo; 2010. (http://channel9.msdn.com/Blogs/gclassy/DirectCompute-Lecture-Series-210-GPU-Optimizations-and-Performance)
+
+[Halliday01] Halliday, David, Robert Resnick, and Jearl Walker. Fundamentals of Physics: Sixth Edition. John Wiley & Sons, Inc, 2001.
+
+[Hausner98] Hausner, Melvin. A Vector Space Approach to Geometry. Dover Publications, Inc. (www.doverpublications.com), 1998
+
+[Hoffmann75] Hoffmann, Banesh. About Vectors. Dover Publications, Inc. (www.doverpublications.com), 1975.
+
+[Isidoro06] Isidoro, John R. &ldquo;Shadow Mapping: GPU-based Tips and Techniques,&rdquo; Game Developers Conference, ATI slide presentation, 2006. (http://developer.amd.com/media/gpu_assets/Isidoro-ShadowMapping.pdf)
+
+[Isidoro06b] Isidoro, John R. &ldquo;Edge Masking and Per-Texel Depth Extent Propagation for Computation Culling During Shadow Mapping,&rdquo; ShaderX 5: Advanced Rendering Techniques. Charles River Media, 2007.
+
+[Kilgard99] Kilgard, Mark J., &ldquo;Creating Reflections and Shadows Using Stencil Buffers,&rdquo; Game Developers Conference, NVIDIA slide presentation, 1999. (http://developer.nvidia.com/docs/IO/1407/ATT/stencil.ppt)
+
+[Kilgard01] Kilgard, Mark J. &ldquo;Shadow Mapping with Today&rsquo;s OpenGL Hardware,&rdquo; Computer Entertainment Software Association&rsquo;s CEDEC, NVIDIA presentation, 2001. (http://developer.nvidia.com/object/cedec_shadowmap.html)
+
+[Kryachko05] Kryachko, Yuri. &ldquo;Using Vertex Texture Displacement for Realistic Water Rendering,&rdquo; GPU Gems 2: Programming Techniques for High-Performance Graphics and General Purpose Computation. Addison-Wesley, 2005.
+
+[Kuipers99] Kuipers, Jack B. Quaternions and Rotation Sequences: A Primer with Applications to Orbits, Aerospace, and Virtual Reality. Princeton University Press, 1999.
+
+[Lengyel02] Lengyel, Eric, Mathematics for 3D Game Programming and Computer Graphics. Charles River Media, Inc., 2002.
+
+[M&ouml;ller08] M&ouml;ller, Tomas, and Eric Haines. Real-Time Rendering: Third Edition. AK Peters, Ltd., 2008.
+
+[Mortenson99] Mortenson, M.E. Mathematics for Computer Graphics Applications. Industrial Press, Inc., 1999.
+
+[NVIDIA05] Antialiasing with Transparency, NVIDIA Corporation, 2005. (ftp://download.nvidia.com/developer/SDK/Individual_Samples/DEMOS/Direct3D9/src/AntiAliasingWithTransparency/docs/AntiAliasingWithTransparency.pdf)
+
+[NVIDIA08] GPU Programming Guide GeForce 8 and 9 Series, NVIDIA Corporation, 2008. (http://developer.download.nvidia.com/GPU_Programming_Guide/GPU_Programming_Guide_G80.pdf)
+
+[NVIDIA09] NVIDIA&rsquo;s Next Generation CUDA Compute Architecture: Fermi, NVIDIA Corporation, 2009. (http://www.nvidia.com/content/PDF/fermi_white_papers/NVIDIA_Fermi_Compute_Architecture_Whitepaper.pdf)
+
+[NVIDIA10] DirectCompute Programming Guide, NVIDIA Corporation, 2007&ndash;2010 (http://developer.download.nvidia.com/compute/DevZone/docs/html/DirectCompute/doc/DirectCompute_Programming_Guide.pdf)
+
+[Thibieroz13] Thibieroz, Nick and Holger Gruen. &ldquo;DirectX Performance Reloaded.&rdquo; Presentation at Game Developers Conference 2013.
+
+[Oliveira10] Oliveira, Gustavo. &ldquo;Designing Fast Cross-Platform SIMD Vector Libraries,&rdquo; 2010. (http://www.gamasutra.com/view/feature/4248/designing_fast_crossplatform_simd_.php)
+
+[Parent02] Parent, Rick. Computer Animation: Algorithms and Techniques. Morgan Kaufmann Publishers (www.mkp.com), 2002.
+
+[Pelzer04] Pelzer, Kurt. &ldquo;Rendering Countless Blades of Waving Grass,&rdquo; GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics. Addison-Wesley, 2004.
+
+[Pettineo12] Pettineo, Matt. &ldquo;A Closer Look at Tone Mapping,&rdquo; 2012. (https://mynameismjp.wordpress.com/2010/04/30/a-closer-look-at-tone-mapping/)
+
+[Petzold99] Petzold, Charles, Programming Windows, Fifth Edition, Microsoft Press, Redmond WA, 1999.
+
+[Prosise99] Prosise, Jeff, Programming Windows with MFC, Second Edition, Microsoft Press, Redmond WA, 1999.
+
+[Reinhard10] Reinhard, Erik, et al, High Dynamic Range Imaging, Second Edition, Morgan Kaufmann, 2010.
+
+[Santrock03] Santrock, John W. Psychology 7. The McGraw-Hill Companies, Inc., 2003.
+
+[Savchenko00] Savchenko, Sergei, 3D Graphics Programming: Games and Beyond, Sams Publishing, 2000.
+
+[Schneider03] Schneider, Philip J., and David H. Eberly. Geometric Tools for Computer Graphics. Morgan Kaufmann Publishers (www.mkp.com), 2003.
+
+[Snook03] Snook, Greg. Real-Time 3D Terrain Engines using C++ and DirectX9. Charles River Media, Inc., 2003.
+
+[Story10] Story, Jon, and Cem Cebenoyan, &ldquo;Tessellation Performance,&rdquo; Game Developers Conference, NVIDIA slide presentation, 2010. (http://developer.download.nvidia.com/presentations/2010/gdc/Tessellation_Performance.pdf)
+
+[Sutherland74] Sutherland, I. E., and G. W. Hodgeman. Reentrant Polygon Clipping. Communications of the ACM, 17(1):32-42, 1974.
+
+[Tuft10] Tuft, David. &ldquo;Cascaded Shadow Maps,&rdquo; 2010. (http://msdn.microsoft.com/en-us/library/ee416307%28v=vs.85%29.aspx)
+
+[Uralsky05] Uralsky, Yuri. &ldquo;Efficient Soft-Edged Shadows Using Pixel Shader Branching,&rdquo; GPU Gems 2: Programming Techniques for High-Performance Graphics and General Purpose Computation. Addison-Wesley, 2005.
+
+[Verth04] Verth, James M. van, and Lars M. Bishop. Essential Mathematics for Games & Interactive Applications: A Programmer&rsquo;s Guide. Morgan Kaufmann Publishers (www.mkp.com), 2004.
+
+[Vlachos01] Vlachos, Alex, J&ouml;rg Peters, Chas Boyd, and Jason L. Mitchell, &ldquo;Curved PN Triangles,&rdquo; ACM Symposium on Interactive 3D Graphics 2001, pp. 159-166, 2001. (http://alex.vlachos.com/graphics/CurvedPNTriangles.pdf)
+
+[Watt92] Watt, Alan, and Mark Watt, Advanced Animation and Rendering Techniques: Theory and Practice, Addison-Wesley, 1992.
+
+[Watt00] Watt, Alan, 3D Computer Graphics, Third Edition, Addison-Wesley, 2000.
+
+[Watt01] Watt, Alan, and Fabio Policarpo, 3D Games: Real-time Rendering and Software Technology, Addison-Wesley, 2001.
+
+[Weinreich98] Weinreich, Gabriel, Geometrical Vectors. The University of Chicago Press, Chicago, 1998.
+
+[Whatley05] Whatley, David. &ldquo;Toward Photorealism in Virtual Botany,&rdquo; GPU Gems 2: Programming Techniques for High-Performance Graphics and General Purpose Computation. Addison-Wesley, 2005.
+
+[Wloka03] Wloka, Matthias. &ldquo;Batch, Batch, Batch: What Does It Really Mean? &rdquo; Presentation at Game Developers Conference 2003. http://developer.nvidia.com/docs/IO/8230/BatchBatchBatch.pdf

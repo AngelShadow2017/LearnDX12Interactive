@@ -1,0 +1,727 @@
+Introduction to 3D Game Programming with DirectX 12
+
+-
+
+Appendix B
+
+HIGH LEVEL SHADER
+LANGUAGE REFERENCE
+
+VARIABLE TYPES
+
+Scalar Types
+
+- bool: True or false value. Note that the HLSL provides the true and false keywords like in C++.
+
+- int: 32-bit signed integer.
+
+- half: 16-bit floating point number.
+
+- float: 32-bit floating point number.
+
+- double: 64-bit floating point number.
+
+Some platforms might not support int, half, and double. If this is the case these types will be emulated using float.
+
+Vector Types
+
+- float2: 2D vector, where the components are of type float.
+
+- float3: 3D vector, where the components are of type float.
+
+- float4: 4D vector, where the components are of type float.
+
+[[IMG note.jpg]]
+
+You can create vectors where the components are of a type other than float. For example: int2, half3, bool4.
+
+We can initialize a vector using an array like syntax or constructor like syntax:
+
+float3 v = {1.0f, 2.0f, 3.0f};
+
+float2 w = float2(x, y);
+
+float4 u = float4(w, 3.0f, 4.0f); // u = (w.x, w.y, 3.0f, 4.0f)
+
+We can access a component of a vector using an array subscript syntax. For example, to set the ith component of a vector vec we would write:
+
+vec[i] = 2.0f;
+
+In addition, we can access the components of a vector vec, as we would access the members of a structure, using the defined component names x, y, z, w, r, g, b, and a.
+
+vec.x = vec.r = 1.0f;
+
+vec.y = vec.g = 2.0f;
+
+vec.z = vec.b = 3.0f;
+
+vec.w = vec.a = 4.0f;
+
+The names r, g, b, and a refer to the exact same component as the names x, y, z, and w, respectively. When using vectors to represent colors, the RGBA notation is more desirable since it reinforces the fact that the vector is representing a color.
+
+Swizzles
+
+Consider the vector u = (ux, uy, uz, uw) and suppose we want to copy the components of u to a vector v such that v = (uw, uy, uy, ux). The most immediate solution would be to individually copy each component of u over to v as necessary. However, the HLSL provides a special syntax for doing these kinds of out of order copies called swizzles:
+
+float4 u = {1.0f, 2.0f, 3.0f, 4.0f};
+
+float4 v = {0.0f, 0.0f, 5.0f, 6.0f};
+
+v = u.wyyx; // v = {4.0f, 2.0f, 2.0f, 1.0f}
+
+Another example:
+
+float4 u = {1.0f, 2.0f, 3.0f, 4.0f};
+
+float4 v = {0.0f, 0.0f, 5.0f, 6.0f};
+
+v = u.wzyx; // v = {4.0f, 3.0f, 2.0f, 1.0f}
+
+When copying vectors, we do not have to copy every component over. For example, we can only copy the x- and y-components over as this code snippet illustrates:
+
+float4 u = {1.0f, 2.0f, 3.0f, 4.0f};
+
+float4 v = {0.0f, 0.0f, 5.0f, 6.0f};
+
+v.xy = u; // v = {1.0f, 2.0f, 5.0f, 6.0f}
+
+Matrix Types
+
+We can define an m &times; n matrix, where m and n are between 1 and 4, using the following syntax:
+
+floatmxn matmxn;
+
+[[IMG hand.jpg]]
+Examples:
+
+- float2x2: 2 &times; 2 matrix, where the entries are of type float.
+
+- float3x3: 3 &times; 3 matrix, where the entries are of type float.
+
+- float4x4: 4 &times; 4 matrix, where the entries are of type float.
+
+- float3x4: 3 &times; 4 matrix, where the entries are of type float.
+
+[[IMG note.jpg]]
+
+You can create matrices where the components are of a type other than float. For example: int2x2, half3x3, bool4x4.
+
+We can access an entry in a matrix using a double array subscript syntax. For example, to set the ijth entry of a matrix M we would write:
+
+M[i][j] = value;
+
+In addition, we can refer to the entries of a matrix M as we would access the members of a structure. The following entry names are defined:
+
+One-Based Indexing:
+
+M._11 = M._12 = M._13 = M._14 = 0.0f;
+
+M._21 = M._22 = M._23 = M._24 = 0.0f;
+
+M._31 = M._32 = M._33 = M._34 = 0.0f;
+
+M._41 = M._42 = M._43 = M._44 = 0.0f;
+
+Zero-Based Indexing:
+
+M._m00 = M._m01 = M._m02 = M._m03 = 0.0f;
+
+M._m10 = M._m11 = M._m12 = M._m13 = 0.0f;
+
+M._m20 = M._m21 = M._m22 = M._m23 = 0.0f;
+
+M._m30 = M._m31 = M._m32 = M._m33 = 0.0f;
+
+Sometimes we want to refer to a particular row vector in a matrix. We can do so using a single array subscript syntax. For example, to extract the ith row vector in a 3 &times; 3 matrix M, we would write:
+
+float3 ithRow = M[i]; // get the ith row vector in M
+
+In this next example, we insert three vectors into the first, second and third row of a matrix:
+
+float3 N = normalize(pIn.normalW);
+
+float3 T = normalize(pIn.tangentW - dot(pIn.tangentW, N)*N);
+
+float3 B = cross(N,T);
+
+float3x3 TBN;
+
+TBN[0] = T; // sets row 1
+
+TBN[1] = B; // sets row 2
+
+TBN[2] = N; // sets row 3
+
+We can also construct a matrix from vectors:
+
+float3 N = normalize(pIn.normalW);
+
+float3 T = normalize(pIn.tangentW - dot(pIn.tangentW, N)*N);
+
+float3 B = cross(N,T);
+
+float3x3 TBN = float3x3(T, B, N);
+
+[[IMG note.jpg]]
+
+Instead of using float4 and float4x4 to represent 4D vectors and 4 &times; 4 matrices, you can equivalently use the vector and matrix type:
+
+vector u = {1.0f, 2.0f, 3.0f, 4.0f};
+
+matrix M; // 4x4 matrix
+
+Arrays
+
+We can declare an array of a particular type using familiar C++ syntax, for example:
+
+float M[4][4];
+
+half p[4];
+
+float3 v[12]; // 12 3D vectors
+
+Structures
+
+Structures are defined exactly as they are in C++. However, structures in the HLSL cannot have member functions. Here is an example of a structure in the HLSL:
+
+struct SurfaceInfo
+
+{
+
+float3 pos;
+
+float3 normal;
+
+float4 diffuse;
+
+float4 spec;
+
+};
+
+SurfaceInfo v;
+
+litColor += v.diffuse;
+
+dot(lightVec, v.normal);
+
+float specPower = max(v.spec.a, 1.0f);
+
+The typedef Keyword
+
+The HLSL typedef keyword functions exactly the same as it does in C++. For example, we can give the name point to the type vector<float, 3> using the following syntax:
+
+typedef float3 point;
+
+Then instead of writing:
+
+float3 myPoint;
+
+We can just write:
+
+point myPoint;
+
+Here is another example showing how to use the typedef keyword with the HLSL const keyword (which works as in C++):
+
+typedef const float CFLOAT;
+
+Variable Prefixes
+
+The following keywords can prefix a variable declaration.
+
+- static: Essentially the opposite of extern; this means that the shader variable will not be exposed to the C++ application.
+static float3 v = {1.0f, 2.0f, 3.0f};
+
+- uniform: This means that the variable does not change per vertex/pixel&mdash;it is constant for all vertices/pixels until we change it at the C++ application level. Uniform variables are initialized from outside the shader program (e.g., by the C++ application).
+
+- extern: This means that the C++ application can see the variable (i.e., the variable can be accessed outside the shader file by the C++ application code. Global variables in a shader program are, by default, uniform and extern.
+
+- const: The const keyword in the HLSL has the same meaning it has in C++. That is, if a variable is prefixed with the const keyword then that variable is constant and cannot be changed.
+const float pi = 3.14f;
+
+Casting
+
+The HLSL supports a very flexible casting scheme. The casting syntax in the HLSL is the same as in the C programming language. For example, to cast a float to a matrix we write:
+
+float f = 5.0f;
+
+float4x4 m = (float4x4)f; // copy f into each entry of m.
+
+What this scalar-matrix cast does is copy the scalar into each entry of the matrix.
+
+Consider the following example:
+
+float3 n = float3(&hellip;);
+
+float3 v = 2.0f*n - 1.0f;
+
+The 2.0f*n is just scalar-vector multiplication, which is well defined. However, to make this a vector equation, the scalar 1.0f is augmented to the vector (1.0f, 1.0f, 1.0f). So the above statement is like:
+
+float3 v = 2.0f*n &ndash; float3(1.0f, 1.0f, 1.0f);
+
+For the examples in this book, you will be able to deduce the meaning of the cast from the syntax. For a complete list of casting rules, search the SDK documentation index for &ldquo;Casting and Conversion&rdquo;).
+
+KEYWORDS AND OPERATORS
+
+Keywords
+
+For reference, here is a list of the keywords the HLSL defines:
+
+asm, bool, compile, const, decl, do,
+
+double, else, extern, false, float, for,
+
+half, if, in, inline, inout, int,
+
+matrix, out, pass, pixelshader, return, sampler,
+
+shared, static, string, struct, technique, texture,
+
+true, typedef, uniform, vector, vertexshader, void,
+
+volatile, while
+
+This next set of keywords displays identifiers that are reserved and unused, but may become keywords in the future:
+
+auto, break, case, catch, char, class,
+
+const_cast, continue, default, delete, dynamic_cast, enum,
+
+explicit, friend, goto, long, mutable, namespace,
+
+new, operator, private, protected, public, register,
+
+reinterpret_cast, short, signed, sizeof, static_cast, switch,
+
+template, this, throw, try, typename, union,
+
+unsigned, using, virtual
+
+Operators
+
+HLSL supports many familiar C++ operators. With a few exceptions noted below, they are used exactly the same way as they are in C++. The following table, lists the HLSL operators:
+
+[[IMG tbl812-01.jpg]]
+
+Although the operators&rsquo; behavior is very similar to C++, there are some differences. First of all, the modulus % operator works on both integer and floating-point types. And in order to use the modulus operator, both the left hand side value and right hand side value must have the same sign (e.g., both sides must be positive or both sides must be negative).
+
+Secondly, observe that many of the HLSL operations work on a per component basis. This is due to the fact that vectors and matrices are built into the language and these types consist of several components. By having the operations work on a component level, operations such as vector/matrix addition, vector/matrix subtraction, and vector/matrix equality tests can be done using the same operators we use for scalar types. See the following examples.
+
+[[IMG note.jpg]]
+
+The operators behave as expected for scalars, that is, in the usual C++ way.
+
+float4 u = {1.0f, 0.0f, -3.0f, 1.0f};
+
+float4 v = {-4.0f, 2.0f, 1.0f, 0.0f};
+
+// adds corresponding components
+
+float4 sum = u + v; // sum = (-3.0f, 2.0f, -2.0f, 1.0f)
+
+Incrementing a vector increments each component:
+
+// before increment: sum = (-3.0f, 2.0f, -2.0f, 1.0f)
+
+sum++; // after increment: sum = (-2.0f, 3.0f, -1.0f, 2.0f)
+
+Multiplying vectors component wise:
+
+float4 u = {1.0f, 0.0f, -3.0f, 1.0f};
+
+float4 v = {-4.0f, 2.0f, 1.0f, 0.0f};
+
+// multiply corresponding components
+
+float4 product = u * v; // product = (-4.0f, 0.0f, -3.0f, 0.0f)
+
+[[IMG note.jpg]]
+
+If you have two matrices:
+
+float4x4 A;
+
+float4x4 B;
+
+The syntax A*B does componentwise multiplication, not matrix multiplication. You need to use the mul function for matrix multiplication.
+
+Comparison operators are also done per component and return a vector or matrix where each component is of type bool. The resulting &ldquo;bool&rdquo; vector contains the results of each compared component. For example:
+
+float4 u = { 1.0f, 0.0f, -3.0f, 1.0f};
+
+float4 v = {-4.0f, 0.0f, 1.0f, 1.0f};
+
+float4 b = (u == v); // b = (false, true, false, true)
+
+Finally, we conclude by discussing variable promotions with binary operations:
+
+- For binary operations, if the left hand side and right hand side differ in dimension, then the side with the smaller dimension is promoted (cast) to have the same dimension as the side with the larger dimension. For example, if x is of type float and y is of type float3, in the expression (x + y), the variable x is promoted to float3 and the expression evaluates to a value of type float3. The promotion is done using the defined cast, in this case we are casting Scalar-to-Vector, therefore, after x is promoted to float3, x = (x, x, x) as the Scalar-to-Vector cast defines. Note that the promotion is not defined if the cast is not defined. For example, we can&rsquo;t promote float2 to float3 because there exists no such defined cast.
+
+- For binary operations, if the left hand side and right hand side differ in type. Then the side with the lower type resolution is promoted (cast) to have the same type as the side with the higher type resolution. For example, if x is of type int and y is of type half, in the expression (x + y), the variable x is promoted to a half and the expression evaluates to a value of type half.
+
+PROGRAM FLOW
+
+The HLSL supports many familiar C++ statements for selection, repetition, and general program flow. The syntax of these statements is exactly like C++.
+
+The Return Statement:
+
+return (expression);
+
+The If and If&hellip;Else Statements:
+
+if( condition )
+
+{
+
+statement(s);
+
+}
+
+if( condition )
+
+{
+
+statement(s);
+
+}
+
+else
+
+{
+
+statement(s);
+
+}
+
+The for statement:
+
+for(initial; condition; increment)
+
+{
+
+statement(s);
+
+}
+
+The while statement:
+
+while( condition )
+
+{
+
+statement(s);
+
+}
+
+The do&hellip;while statement:
+
+do
+
+{
+
+statement(s);
+
+}while( condition );
+
+FUNCTIONS
+
+User Defined Functions
+
+Functions in the HLSL have the following properties:
+
+- Functions use a familiar C++ syntax.
+
+- Parameters are always passed by value.
+
+- Recursion is not supported.
+
+- Functions are always inlined.
+
+Furthermore, the HLSL adds some extra keywords that can be used with functions. For example, consider the following function written in the HLSL:
+
+bool foo(in const bool b, // input bool
+
+out int r1, // output int
+
+inout float r2) // input/output float
+
+{
+
+if( b ) // test input value
+
+{
+
+r1 = 5; // output a value through r1
+
+}
+
+else
+
+{
+
+r1 = 1; // output a value through r1
+
+}
+
+// since r2 is inout we can use it as an input
+
+// value and also output a value through it
+
+r2 = r2 * r2 * r2;
+
+return true;
+
+}
+
+The function is almost identical to a C++ function except for the in, out, and inout keywords.
+
+- in: Specifies that the argument (particular variable we pass into a parameter) should be copied to the parameter before the function begins. It is not necessary to explicitly specify a parameter as in because a parameter is in by default. For example, the following are equivalent:
+float square(in float x)
+
+{
+
+return x * x;
+
+}
+
+And without explicitly specifying in:
+float square(float x)
+
+{
+
+return x * x;
+
+}
+
+- out: Specifies that the parameter should be copied to the argument when the function returns. This is useful for returning values through parameters. The out keyword is necessary because the HLSL doesn&rsquo;t allow us to pass by reference or to pass a pointer. We note that if a parameter is marked as out the argument is not copied to the parameter before the function begins. In other words, an out parameter can only be used to output data&mdash;it can&rsquo;t be used for input.
+void square(in float x, out float y)
+
+{
+
+y = x * x;
+
+}
+
+Here we input the number to be squared through x and return the square of x through the parameter y.
+
+- inout: Shortcut that denotes a parameter as both in and out. Specify inout if you wish to use a parameter for both input and output.
+void square(inout float x)
+
+{
+
+x = x * x;
+
+}
+
+Here we input the number to be squared through x and also return the square of x through x.
+
+Built-in Functions
+
+The HLSL has a rich set of built in functions that are useful for 3D graphics. The following table describes an abridged list of them.
+
+[[IMG tbl817.jpg]]
+
+[[IMG tbl818.jpg]]
+
+[[IMG tbl819.jpg]]
+
+[[IMG note.jpg]]
+
+Most of the functions are overloaded to work with all the built-in types that the function makes sense for. For instance, abs makes sense for all scalar types and so is overloaded for all of them. As another example, the cross product cross only makes sense for 3D vectors so it is only overloaded for 3D vectors of any type (e.g., 3D vectors of ints, floats, doubles etc.). On the other hand, linear interpolation, lerp, makes sense for scalars, 2D, 3D, and 4D vectors and therefore is overloaded for all types.
+
+[[IMG note.jpg]]
+
+If you pass in a non-scalar type into a &ldquo;scalar&rdquo; function, that is a function that traditionally operates on scalars (e.g., cos(x)), the function will act per component. For example, if you write:
+
+float3 v = float3(0.0f, 0.0f, 0.0f);
+
+v = cos(v);
+
+Then the function will act per component: v = (cos(x), cos(y), cos(z)).
+
+For further reference, the complete list of the built in HLSL functions can be found in the DirectX documentation. Search the index for &ldquo;HLSL Intrinsic Functions&rdquo;).
+
+Constant Buffer Packing
+
+In the HLSL, constant buffer padding occurs so that elements are packed into 4D vectors, with the restriction that a single element cannot be split across two 4D vectors. Consider the following example:
+
+// HLSL
+
+cbuffer cb : register(b0)
+
+{
+
+float3 Pos;
+
+float3 Dir;
+
+};
+
+If we have to pack the data into 4D vectors, you might think it is done like this:
+
+vector 1: (Pos.x, Pos.y, Pos.z, Dir.x)
+
+vector 2: (Dir.y, Dir.z, empty, empty)
+
+However, this splits the element dir across two 4D vectors, which is not allowed by the HLSL rules&mdash;an element is not allowed to straddle a 4D vector boundary. Therefore, it has to be packed like this in shader memory:
+
+vector 1: (Pos.x, Pos.y, Pos.z, empty)
+
+vector 2: (Dir.x, Dir.y, Dir.z, empty)
+
+Now suppose our C++ structure that mirrors the constant buffer was defined like so:
+
+// C++
+
+struct Data
+
+{
+
+XMFLOAT3 Pos;
+
+XMFLOAT3 Dir;
+
+};
+
+If we did not pay attention to these packing rules, and just blindly called copied the bytes over when writing to the constant buffer with a memcpy, then we would end up with the incorrect first situation and the constant values would be wrong:
+
+vector 1: (Pos.x, Pos.y, Pos.z, Dir.x)
+
+vector 2: (Dir.y, Dir.z, empty, empty)
+
+Thus we must define our C++ structures so that the elements copy over correctly into the HLSL constants based on the HLSL packing rules; we use &ldquo;pad&rdquo; variables for this. We redefine the constant buffer to make the padding explicit:
+
+cbuffer cb : register(b0)
+
+{
+
+float3 Pos;
+
+float __pad0;
+
+float3 Dir;
+
+float __pad1;
+
+};
+
+Now we can define a C++ structure that matches the constant buffer exactly:
+
+// C++
+
+struct Data
+
+{
+
+XMFLOAT3 Pos;
+
+float __pad0;
+
+XMFLOAT3 Dir;
+
+float __pad1;
+
+};
+
+If we do a memcpy now, the data gets copied over correctly to the constant buffer:
+
+vector 1: (Pos.x, Pos.y, Pos.z, __pad0)
+
+vector 2: (Dir.x, Dir.y, Dir.z, __pad1)
+
+We use padding variables in our constant buffers when needed in this book. In addition, when possible we order our constant buffer elements to reduce empty space to avoid padding. For example, we define our Light structure as follows so that we do not need to pad the w-coordinates&mdash;the structure elements are ordered so that the scalar data naturally occupies the w-coordinates:
+
+struct Light
+
+{
+
+DirectX::XMFLOAT3 Strength;
+
+float FalloffStart = 1.0f;
+
+DirectX::XMFLOAT3 Direction;
+
+float FalloffEnd = 10.0f;
+
+DirectX::XMFLOAT3 Position;
+
+float SpotPower = 64.0f;
+
+};
+
+When written to a constant buffer, these data elements will tightly pack three 3D vectors:
+
+vector 1: (Strength.x, Strength.y, Strength.z, FalloffStart)
+
+vector 2: (Direction.x, Direction.y, Direction.z, FalloffEnd)
+
+vector 3: (Position.x, Position.y, Position.z, SpotPower).
+
+[[IMG note.jpg]]
+
+You should define your C++ constant buffer data structures to match the memory layout of the constant buffer in shader memory so that you can do a simple memory copy.
+
+Just to make the HLSL packing/padding clearer, let us look at a few more examples of how HLSL constants are packed. If we have a constant buffer like this:
+
+cbuffer cb : register(b0)
+
+{
+
+float3 v;
+
+float s;
+
+float2 p;
+
+float3 q;
+
+};
+
+The structure would be padded and the data will be packed into three 4D vectors like so:
+
+vector 1: (v.x, v.y, v.z, s)
+
+vector 2: (p.x, p.y, empty, empty)
+
+vector 3: (q.x, q.y, q.z, empty)
+
+Here we can put the scalar s in the fourth component of the first vector. However, are are not able to fit all of q in the remaining slots of vector 2, so q has to get its own vector.
+
+As another example, consider the constant buffer:
+
+cbuffer cb : register(b0)
+
+{
+
+float2 u;
+
+float2 v;
+
+float a0;
+
+float a1;
+
+float a2;
+
+};
+
+This would be padded and packed like so:
+
+vector 1: (u.x, u.y, v.x, v.y)
+
+vector 2: (a0, a1, a2, empty)
+
+[[IMG note.jpg]]
+
+Arrays are handled differently. From the SDK documentation, &ldquo;every element in an array is stored in a four-component vector.&rdquo; So for example, if you have an array of float2:
+
+float2 TexOffsets[8];
+
+you might assume that two float2 elements will be packed into one float4 slot, as the examples above suggest. However, arrays are the exception, and the above is equivalent to:
+
+float4 TexOffsets[8];
+
+Therefore, from the C++ code you would need to set an array of 8 XMFLOAT4s, not an array of 8 XMFLOAT2s for things to work properly. Each element wastes two floats of storage since we really just wanted a float2 array. The SDK documentation points out that you can use casting and additional address computation instructions to make it more memory efficient:
+
+float4 array[4];
+
+static float2 aggressivePackArray[8] = (float2[8])array;

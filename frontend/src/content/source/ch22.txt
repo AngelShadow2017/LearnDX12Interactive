@@ -1,0 +1,1008 @@
+Introduction to 3D Game Programming with DirectX 12
+
+-
+
+Chapter   22
+
+QUATERNIONS
+
+In Chapter 1, we introduced a new class of mathematical objects called vectors. In particular, we learned that a 3D vector consists of an ordered 3-tuple of real numbers, and we defined operators on vectors that are useful geometrically. Likewise, in Chapter 2 we introduced matrices, which are rectangular tables of real numbers with operations defined on them that are useful; for example, we saw how matrices can represent linear and affine transformations, and how matrix multiplication corresponds to transformation composition. In this chapter, we learn about another type of mathematical objects called quaternions. We will see that a unit quaternion can be used to represent a 3D rotation, and has convenient interpolation properties. For readers looking for a comprehensive treatment of quaternions (and rotations), we like the book devoted to the topic by [Kuipers99].
+
+Objectives:
+
+- To review the complex numbers and recall how complex number multiplication performs a rotation in the plane.
+
+- To obtain an understanding of quaternions and the operations defined on them.
+
+- To discover how the set of unit quaternions represent 3D rotations.
+
+- To find out how to convert between the various rotation representations.
+
+- To learn how to interpolate between unit quaternions, and understand that this is geometrically equivalent to interpolating between 3D orientations.
+
+- To become familiar with the DirectX Math library&rsquo;s quaternion functions and classes.
+
+# 22.1 REVIEW OF THE COMPLEX NUMBERS
+
+The quaternions can be viewed as a generalization of the complex numbers; this motivates us to study complex numbers before quaternions. In particular, our main goal in this section is to show that multiplying a complex number p (thought of as a 2D vector or point) by a unit complex number results in a rotation of p. We will then show in §22.3 that a special quaternion product involving a unit quaternion results in a 3D rotation of a vector or point p.
+
+## 22.1.1 Definitions
+
+There are different ways to introduce complex numbers. We introduce them in such a way that they immediately cause us to think of complex numbers as 2D points or vectors.
+
+An ordered pair of real numbers z = (a, b) is a complex number. The first component is called the real part and the second component is called the imaginary part. Moreover, equality, addition, subtraction, multiplication and division are defined as follows:
+
+- (a, b) = (c, d) if and only if a = c and b = d.
+
+- (a, b)±(c, d) = (a±c, b±d).
+
+- (a, b)(c, d) = (ac &ndash; bd, ad + bc ).
+
+-
+[[IMG eq732-01.jpg]]
+.
+
+It is easy to verify that the usual arithmetic properties of real numbers also hold for complex arithmetic (e.g., commutativity, associativity, distributive laws); see Exercise 1.
+
+If a complex number is of the form (x, 0), then it is customary to identify it by the real number x and write x = (x, 0); thus any real number can be thought of as a complex number with a zero imaginary component. Observe then that a real number times a complex number is given by x(a, b) = (x, 0)(a, b) = (xa, xb) = (a, b)(x, 0) = (a, b)x, which is reminiscent of scalar-vector multiplication.
+
+We define the imaginary unit i = (0, 1). Using our definition of complex multiplication, observe that i2 = (0, 1)(0, 1) = (&minus;1, 0) = &minus;1, which implies
+[[IMG eq732-02.jpg]]
+. This tells us that i solves the equation x2 = &minus;1.
+
+The complex conjugate of a complex number z = (a, b) is denoted by
+[[IMG eq733-01.jpg]]
+and given by
+[[IMG eq733-01.jpg]]
+= (a, &minus;b). A simple way to remember the complex division formula is to multiply the numerator and denominator by the conjugate of the denominator so that the denominator becomes a real number:
+
+[[IMG eq733-03.jpg]]
+
+Next, we show that a complex number (a, b) can be written in the form a + ib. We have a = (a, 0), b = (b, 0) and i = (0, 1), so
+
+[[IMG eq733-06.jpg]]
+
+Using the form a + ib, we can recast the formulas for addition, subtraction, multiplication and division as follows:
+
+[[IMG eq733-04.jpg]]
+
+Furthermore, in this form, the complex conjugate of z = a + ib is given by
+[[IMG eq733-05.jpg]]
+.
+
+## 22.1.2 Geometric Interpretation
+
+The ordered pair form a + ib = (a, b) of a complex number naturally suggests that we think of a complex number geometrically as a 2D point or vector in the complex plane. In fact, our definition of complex number addition matches our definition of vector addition; see Figure 22.1. We will give a geometric interpretation to complex number multiplication in the next section.
+
+[[IMG Fig22-1.jpg]]
+
+Figure 22.1. Complex addition is reminiscent of vector addition in the plane.
+
+The absolute value, or magnitude, of the complex number a + ib is defined as the length of the vector it represents (Figure 22.2), which we know is given by:
+
+[[IMG eq734-01.jpg]]
+
+We say that a complex number is a unit complex number if it has a magnitude of one.
+
+[[IMG Fig22-2.jpg]]
+
+Figure 22.2. The magnitude of a complex number.
+
+## 22.1.3 Polar Representation and Rotations
+
+Because complex numbers can be viewed as just points or vectors in the 2D complex plane, we can just as well express their components using polar coordinates (see Figure 22.3):
+
+[[IMG eq734-02.jpg]]
+
+The right-hand-side of the equation is called the polar representation of the complex number a + ib.
+
+[[IMG Fig22-3.jpg]]
+
+Figure 22.3. Polar representation of a complex number.
+
+[[IMG Fig22-4.jpg]]
+
+Figure 22.4. z1 = r1(cos&theta;1 + isin&theta;1), z2 = (cos&theta;2 + isin&theta;2). The product z1z2 rotates z1 by the angle &theta;2.
+
+Let us multiply two complex numbers in polar form. Let
+[[IMG eq735-01.jpg]]
+and
+[[IMG eq735-02.jpg]]
+. Then
+
+[[IMG eq735-03.jpg]]
+
+where we employed the trigonometric identities
+
+[[IMG eq735-04.jpg]]
+
+Thus, geometrically, the product z1z2 is the complex number representing the vector with magnitude r1r2 and which makes an angle &theta;1 + &theta;2 with the real axis. In particular, if r2 = 1, then
+[[IMG eq735-05.jpg]]
+, which, geometrically, rotates z1 by the angle &theta;2; see Figure 22.4. Therefore, multiplying a complex number z1 (thought of as a 2D vector or point) by a unit complex number z2 results in a rotation of z1.
+
+# 22.2 QUATERNION ALGEBRA
+
+## 22.2.1 Definition and Basic Operations
+
+An ordered 4-tuple of real numbers q = (x, y, z, w) = (q1, q2, q3, q4) is a quaternion. This is commonly abbreviated as q = (u, w) = (x, y, z, w), and we call u = (x, y, z) the imaginary vector part and w the real part. Moreover, equality, addition, subtraction, multiplication, and division are defined as follows:
+
+- (u, a) = (v, b) if and only if u = v and a = b.
+
+- (u, a) ± (v, b) = (u ± v, a ± b).
+
+- (u, a)(v, b) = (av + bu + u &times; v, ab &minus; u · v)
+
+The definition of multiplication may seem &ldquo;weird,&rdquo; but these operations are definitions, so we can define them however we want&mdash;and this definition turns out to be useful. The definition of matrix multiplication may have seemed weird at first, but it turned out to be useful.
+
+Let p = (u, p4) = (p1, p2, p3, p4) and q = (v, q4) = (q1, q2, q3, q4). Then u &times; v = (p2q3 &ndash; p3q2, p3q1 &ndash; p1q3, p1q2 &ndash; p2q1) and u·v = p1q1 + p2q2 + p3q3. Now, in component form, the quaternion product r = pq takes on the form:
+
+[[IMG eq736-03.jpg]]
+
+This can be written as a matrix product:
+
+[[IMG eq736-01.jpg]]
+
+[[IMG note.jpg]]
+
+If you prefer row vector-matrix multiplication, simply take the transpose:
+
+[[IMG eq736-02.jpg]]
+
+## 22.2.2 Special Products
+
+Let i = (1, 0, 0, 0), j = (0, 1, 0, 0), k = (0, 0, 1, 0) be quaternions. Then we have the special products, some of which are reminiscent of the behavior of the cross product:
+
+[[IMG eq736-04.jpg]]
+
+These equations follow directly from our definition of quaternion multiplication. For example,
+
+[[IMG eq737-01.jpg]]
+
+## 22.2.3 Properties
+
+Quaternion multiplication is not commutative; for instance, §22.2.2 showed that ij = &minus;ji. Quaternion multiplication is associative, however; this can be seen from the fact that quaternion multiplication can be written using matrix multiplication and matrix multiplication is associative. The quaternion e = (0, 0, 0, 1) serves as a multiplicative identity:
+
+[[IMG eq737-02.jpg]]
+
+We also have that quaternion multiplication distributes over quaternion addition: p(q + r) = pq + pr and (q + r)p = qp + rp. To see this, write the quaternion multiplication and addition in matrix form, and note that matrix multiplication distributes over matrix addition.
+
+## 22.2.4 Conversions
+
+We relate real numbers, vectors (or points), and quaternions in the following way: Let s be a real number and let u = (x, y, z) be a vector. Then
+
+- s = (0, 0, 0, s)
+
+- u = (x, y, z) = (u, 0) = (x, y, z, 0)
+
+In other words, any real number can be thought of as a quaternion with a zero vector part, and any vector can be thought of as a quaternion with zero real part. In particular, note that for the identity quaternion, 1 = (0, 0, 0, 1). A quaternion with zero real part is called a pure quaternion.
+
+Observe, using the definition of quaternion multiplication, that a real number times a quaternion is just &ldquo;scalar multiplication&rdquo; and it is commutative:
+
+[[IMG eq738-01.jpg]]
+
+Similarly,
+
+[[IMG eq738-02.jpg]]
+
+## 22.2.5 Conjugate and Norm
+
+The conjugate of a quaternion q = (q1, q2, q3, q4) = (u, q4) is denoted by q* and defined by
+
+[[IMG eq738-04.jpg]]
+
+In other words, we just negate the imaginary vector part of the quaternion; compare this to the complex number conjugate. The conjugate has the following properties:
+
+[[IMG eq738-05.jpg]]
+
+In particular, note that q + q* and qq* = q*q evaluate to real numbers.
+
+The norm (or magnitude) of a quaternion is defined by:
+
+[[IMG eq738-03.jpg]]
+
+We say that a quaternion is a unit quaternion if it has a norm of one. The norm has the following properties:
+
+- ||q*|| = ||q||
+
+- ||pq|| = ||p||||q||
+
+In particular, property 2 tells us that the product of two unit quaternions is a unit quaternion; also if ||p|| = 1, then ||pq|| = ||q||.
+
+The conjugate and norm properties can be derived straightforwardly from the definitions. For example,
+
+[[IMG eq739-01.jpg]]
+
+The reader ought to try and derive the other properties (see Exercises).
+
+## 22.2.6 Inverses
+
+As with matrices, quaternion multiplication is not commutative, so we cannot define a division operator. (We like to reserve division only for when multiplication is commutative so that we have:
+[[IMG eq739-02.jpg]]
+) However, every nonzero quaternion has an inverse. (The zero quaternion has zeros for all its components.) Let q = (q1, q2, q3, q4) = (u, q4) be a nonzero quaternion, then the inverse is denoted by q&minus;1 and given by:
+
+[[IMG eq739-03.jpg]]
+
+It is easy to check that this is indeed the inverse, for we have:
+
+[[IMG eq739-04.jpg]]
+
+Observe that if q is a unit quaternion, then ||q||2 = 1 and so q-1 = q*.
+
+The following properties hold for the quaternion inverse:
+
+[[IMG eq739-05.jpg]]
+
+## 22.2.7 Polar Representation
+
+If q = (q1, q2, q3, q4) = (u, q4) is a unit quaternion, then
+
+[[IMG eq740-05.jpg]]
+
+[[IMG Fig22-5.jpg]]
+
+Figure 22.5. For a number y ∈ [&minus;1, 1] there exists an angle &theta; such that y = cos &theta;
+
+This implies
+[[IMG eq740-06.jpg]]
+Figure 22.5 shows there exists an angle &theta;∈[0, &pi;] such that q4 = cos&theta;. Employing the trigonometric identity sin2&theta; + cos2&theta; = 1, we have that
+
+[[IMG eq740-07.jpg]]
+
+This implies
+
+[[IMG eq740-08.jpg]]
+
+Now label the unit vector in the same direction as u by n:
+
+[[IMG eq740-01.jpg]]
+
+Hence, u = sin&theta;n and, we may therefore write the unit quaternion q = (u, q4) in the following polar representation where n is a unit vector:
+
+[[IMG eq740-09.jpg]]
+
+For example, suppose we are given the quaternion
+[[IMG eq740-02.jpg]]
+. To convert to polar representation, we find
+[[IMG eq740-03.jpg]]
+. So
+[[IMG eq740-04.jpg]]
+.
+
+[[IMG note.jpg]]
+
+The restriction of &theta; ∈ [0, &pi;] is for when converting a quaternion q = (q1, q2, q3, q4) to polar representation. That is, we need the angle restriction in order to associate a unique angle with the quaternion q = (q1, q2, q3, q4). Nothing stops us, however, from constructing a quaternion q = (sin&theta;n, cos&theta;) from any angle &theta;, but observe that q = (sin(&theta; + 2&pi;n)n, cos(&theta; + 2&pi;n)) for all integers n. So the quaternion does not have a unique polar representation without the angle restriction &theta; ∈ [0, &pi;].
+
+Observe that substituting &minus;&theta; for &theta; is equivalent to negating the vector part of the quaternion:
+
+[[IMG eq741-01.jpg]]
+
+In the next section we will see that n represents the axis of rotation, and so we can rotate in the other direction by negating the axis of rotation.
+
+# 22.3 UNIT QUATERNIONS AND ROTATIONS
+
+## 22.3.1 Rotation Operator
+
+Let q = (u, w) be a unit quaternion and let v be a 3D point or vector. Then we can think of v as the pure quaternion p = (v, 0). Also recall that since q is a unit quaternion, we have that q&minus;1 = q*. Recall the formula for quaternion multiplication:
+
+[[IMG eq741-02.jpg]]
+
+Now consider the product:
+
+[[IMG eq741-04.jpg]]
+
+Simplifying this is a little lengthy, so we will do the real part and vector part separately. We make the symbolic substitutions:
+
+[[IMG eq741-05.jpg]]
+
+Real Part
+
+[[IMG eq741-06.jpg]]
+
+Note that u · (v &times; u) = 0 because (v &times; u) is orthogonal to u by the definition of the cross product.
+
+Vector Part
+
+[[IMG eq742-03.jpg]]
+
+Where we applied the triple product identity a &times; (b &times; c) = (a · c)b &minus; (a · b)c to u &times; (u &times; v).
+
+We have shown:
+
+[[IMG eq742-01.jpg]]
+
+Observe that this results in a vector or point since the real component is zero (which is necessary if this operator is to rotate a vector or point&mdash;it must evaluate to a vector or point). Therefore, in the subsequent equations, we drop the real component.
+
+Now, because q is a unit quaternion, it can be written as
+
+[[IMG eq742-04.jpg]]
+
+Substituting this into Equation 22.1 yields:
+
+[[IMG eq742-05.jpg]]
+
+To simplify this further, we apply the trigonometric identities:
+
+[[IMG eq742-02.jpg]]
+
+Now, compare Equation 22.2 with the axis-angle rotation Equation 3.5 to see that this is just the rotation formula Rn (v); that is, it rotates the vector (or point) v about the axis n by an angle 2&theta;.
+
+[[IMG eq743-04.jpg]]
+
+Consequently, we define the quaternion rotation operator by:
+
+[[IMG eq743-01.jpg]]
+
+We have shown that the quaternion rotation operator Rq (v) = qvq&minus;1 rotates a vector (or point) v about the axis n by an angle 2&theta;.
+
+So suppose you are given an axis n and angle &theta; to rotate about the axis n. You construct the corresponding rotation quaternion by:
+
+[[IMG eq743-02.jpg]]
+
+Then apply the formula Rq(v). The division by 2 is to compensate for the 2&theta; because we want to rotate by the angle &theta;, not 2&theta;.
+
+## 22.3.2 Quaternion Rotation Operator to Matrix
+
+Let q = (u, w) = (q1, q2, q3, q4) be a unit quaternion. From Equation 22.1, we know
+
+[[IMG eq743-05.jpg]]
+
+The three terms in Rq(v) can be written in terms of matrices:
+
+[[IMG eq743-03.jpg]]
+
+[[IMG eq744-01.jpg]]
+
+Summing the terms yields:
+
+[[IMG eq744-02.jpg]]
+
+The unit length property
+[[IMG eq744-06.jpg]]
+of q implies:
+
+[[IMG eq744-05.jpg]]
+
+We can, therefore, rewrite this matrix equation as:
+
+[[IMG eq744-03.jpg]]
+
+[[IMG note.jpg]]
+
+Many graphics books use matrix-column vector ordering for transforming vectors. Hence you will see the transpose of the matrix Q in many graphics books:
+[[IMG eq744-07.jpg]]
+.
+
+## 22.3.3 Matrix to Quaternion Rotation Operator
+
+Given the rotation matrix
+
+[[IMG eq744-04.jpg]]
+
+we want to find the quaternion q = (q1, q2, q3, q4) such that if we build the Equation 22.4 matrix Q from q we get R. So our strategy is to set:
+
+[[IMG eq745-01.jpg]]
+
+and solve for q1, q2, q3, q4. Note that we are given R, so all the elements on the left-hand-side of the equation are known.
+
+We start by summing the diagonal elements (which is called the trace of a matrix):
+
+[[IMG eq745-02.jpg]]
+
+Now we combine diagonally opposite elements to solve for q1, q2, q3 (because we eliminate terms):
+
+[[IMG eq745-03.jpg]]
+
+If q4 = 0 then these equations are undefined. In this case, we will find the largest diagonal element of R to divide by, and choose other combinations of matrix elements. Suppose R11 is the maximum diagonal:
+
+[[IMG eq746-01.jpg]]
+
+A similar pattern is taken if R22 or R33 is the maximum diagonal.
+
+## 22.3.4 Composition
+
+Suppose p and q are unit quaternions with corresponding rotational operators given by Rp and Rq, respectively. Letting
+[[IMG eq746-03.jpg]]
+the composition is given by:
+
+[[IMG eq746-02.jpg]]
+
+Because p and q are both unit quaternions, the product pq is also a unit quaternion since ||pq|| = ||p||||q|| = 1; thus, the quaternion product pq also represents a rotation; namely, the net rotation given by the composition
+[[IMG eq746-04.jpg]]
+.
+
+# 22.4 QUATERNION INTERPOLATION
+
+Since quaternions are 4-tuples of real numbers, geometrically, we can visualize them as 4D vectors. In particular, unit quaternions are 4D unit vectors that lie on the 4D unit sphere. With the exception of the cross product (which is only defined for 3D vectors), our vector math generalizes to 4-space&mdash;and even n-space. Specifically, the dot product holds for quaternions. Let p = (u, s) and q = (v, t), then:
+
+[[IMG eq747-01.jpg]]
+
+where &theta; is the angle between the quaternions. If the quaternions p and q are unit length, then p·q = cos&theta; The dot product allows us to talk about the angle between two quaternions, as a measure of how &ldquo;close&rdquo; they are to each other on the unit sphere.
+
+For the purposes of animation, we want to interpolate from one orientation to another orientation. To interpolate quaternions, we want to interpolate on the arc of the unit sphere so that our interpolated quaternion is also a unit quaternion. To derive such a formula, consider Figure 22.6, where we want to interpolate between a to b by an angle t&theta;. We want to find weights c1 and c2 such that p = c1a + c2b, where ||p|| = ||a|| = ||b||. We setup two equations for the two unknowns as follows:
+
+[[IMG eq747-02.jpg]]
+
+[[IMG Fig22-6.jpg]]
+
+Figure 22.6. Interpolating along the 4D unit sphere from a to b by an angle t&theta;. The angle between a and b is &theta;, the angle between a and p is t&theta;, and the angle between p and b is (1 &minus; t)&theta;.
+
+This yields the matrix equation:
+
+[[IMG eq748-01.jpg]]
+
+Consider the matrix equation Ax = b, where A is invertible. Then Cramer&rsquo;s Rule tells us that
+[[IMG eq748-05.jpg]]
+, where Ai is found by swapping the ith column vector in A with b. Therefore:
+
+[[IMG eq748-02.jpg]]
+
+From the trigonometric Pythagorean identity and addition formulas, we have:
+
+[[IMG eq748-04.jpg]]
+
+Therefore,
+
+[[IMG eq748-03.jpg]]
+
+and
+
+[[IMG eq749-01.jpg]]
+
+Thus we define the spherical interpolation formula:
+
+[[IMG eq749-02.jpg]]
+
+Thinking of unit quaternions as 4D unit vectors allows us to solve for the angle between the quaternions: &theta; = arccos(a · b).
+
+If &theta;, the angle between a and b is near zero, sin&theta; is near zero, and the division can cause problems due to finite numerical precision. In this case, perform linear interpolation between the quaternions and normalize the result, which is actually a good approximation for small &theta; (see Figure 22.7).
+
+[[IMG Fig22-7.jpg]]
+
+Figure 22.7. For small angles &theta; between a and b, linear interpolation is a good approximation for spherical interpolation. However, when using linear interpolation, the interpolated quaternion no longer lies on the unit sphere, so you must normalize the result to project it back on to the unit sphere.
+
+Observe from Figure 22.8 that linear interpolation followed by projecting the interpolated quaternion back on to the unit sphere results in a nonlinear rate of rotation. Thus is you used linear interpolation for large angles, the speed of rotation will speed up and slow down. This effect is often undesirable, and one reason why spherical interpolation is preferred (which rotates at a constant speed).
+
+[[IMG Fig22-8.jpg]]
+
+Figure 22.8. Linear interpolation results in nonlinear interpolation over the unit sphere after normalization. This means the rotation speeds up and slows down as it interpolates, rather than moving at a constant speed.
+
+We now point out an interesting property of quaternions. Note that since (sq)* = sq* and scalar-quaternion multiplication is commutative, we have that:
+
+[[IMG eq749-03.jpg]]
+
+We therefore have q and &minus;q representing the same rotation. To see this another way, if
+[[IMG eq750-01.jpg]]
+, then
+
+[[IMG eq750-02.jpg]]
+
+That is, Rq rotates &theta; about the axis n, and R-q rotates 2&pi; &minus; &theta; about the axis &minus;n. Geometrically, a unit quaternion q on the 4D unit sphere and its polar opposite &minus;q represent the same orientation. Figure 22.9 shows that these two rotations take us to the same place. However, we see that one will take the shorter angle around and the other will take the longer angle around.
+
+Because b and -b representing the same orientation, we have two choices for interpolation: slerp(a, b, t) or slerp(a, &minus;b, t). One will interpolate between the orientations in the most direct way that minimizes spinning (analogous to Figure 22.9a), and one will take the long way around (analogous to Figure 22.9b). Referring to Figure 22.10, we want to choose b or &minus;b based on which one interpolates over a shorter arc on the 4D unit sphere. Choosing the shorter arc results in interpolating through the most direct path; choosing the longer arc results in extra spinning of the object [Eberly01], as it rotates the long way around.
+
+From [Watt92], to find the quaternion that gives the shortest arc around the 4D unit sphere, we compare ||a &ndash; b||2 and ||a &ndash; (&minus;b)||2 = ||a + b||2. If ||a + b||2 < ||a &ndash; b||2 then we choose &minus;b for interpolation instead of b because &minus;b is closer to a, and thus will give the shorter arc.
+
+[[IMG Fig22-9.jpg]]
+
+Figure 22.9. Rq rotates &theta;about the axis n, and R&minus;q rotates 2&pi; &minus; &theta; about the axis &minus;n.
+
+[[IMG Fig22-10.jpg]]
+
+Figure 22.10. Interpolating from a to b results in interpolating over the larger arc &theta;1 on the 4D unit sphere, whereas interpolating from a to &minus;b results in interpolating over the shorter arc &theta;2 on the 4D unit sphere. We want to choose the shortest arc on the 4D unit sphere.
+
+// Linear interpolation (for small theta).
+
+public static Quaternion LerpAndNormalize(Quaternion p, Quaternion q, float s)
+
+{
+
+// Normalize to make sure it is a unit quaternion.
+
+return Normalize((1.0f - s)*p + s*q);
+
+}
+
+public static Quaternion Slerp(Quaternion p, Quaternion q, float s)
+
+{
+
+// Recall that q and -q represent the same orientation, but
+
+// interpolating between the two is different: One will take the
+
+// shortest arc and one will take the long arc. To find
+
+// the shortest arc, compare the magnitude of p-q with the
+
+// magnitude p-(-q) = p+q.
+
+if(LengthSq(p-q) > LengthSq(p+q))
+
+q = -q;
+
+float cosPhi = DotP(p, q);
+
+// For very small angles, use linear interpolation.
+
+if(cosPhi > (1.0f - 0.001))
+
+return LerpAndNormalize(p, q, s);
+
+// Find the angle between the two quaternions.
+
+float phi = (float)Math.Acos(cosPhi);
+
+float sinPhi = (float)Math.Sin(phi);
+
+// Interpolate along the arc formed by the intersection of the 4D
+
+// unit sphere and the plane passing through p, q, and the origin of
+
+// the unit sphere.
+
+return ((float)Math.Sin(phi*(1.0-s))/sinPhi)*p +
+
+((float)Math.Sin(phi*s)/sinPhi)*q;
+
+}
+
+# 22.5 DIRECTX MATH QUATERNION FUNCTIONS
+
+The DirectX math library supports quaternions. Because the &ldquo;data&rdquo; of a quaternion is four real numbers, DirectX math uses the XMVECTOR type for storing quaternions. Then some of the common quaternion functions defined are:
+
+// Returns the quaternion dot product Q1·Q2.
+
+XMVECTOR XMQuaternionDot(XMVECTOR Q1, XMVECTOR Q2);
+
+// Returns the identity quaternion (0, 0, 0, 1).
+
+XMVECTOR XMQuaternionIdentity();
+
+// Returns the conjugate of the quaternion Q.
+
+XMVECTOR XMQuaternionConjugate(XMVECTOR Q);
+
+// Returns the norm of the quaternion Q.
+
+XMVECTOR XMQuaternionLength(XMVECTOR Q);
+
+// Normalizes a quaternion by treating it as a 4D vector.
+
+XMVECTOR XMQuaternionNormalize(XMVECTOR Q);
+
+// Computes the quaternion product Q1Q2.
+
+XMVECTOR XMQuaternionMultiply(XMVECTOR Q1, XMVECTOR Q2);
+
+// Returns a quaternions from axis-angle rotation representation.
+
+XMVECTOR XMQuaternionRotationAxis(XMVECTOR Axis, FLOAT Angle);
+
+// Returns a quaternions from axis-angle rotation representation, where the axis
+
+// vector is normalized&mdash;this is faster than XMQuaternionRotationAxis.
+
+XMVECTOR XMQuaternionRotationNormal(XMVECTOR NormalAxis,FLOAT Angle);
+
+// Returns a quaternion from a rotation matrix.
+
+XMVECTOR XMQuaternionRotationMatrix(XMMATRIX M);
+
+// Returns a rotation matrix from a unit quaternion.
+
+XMMATRIX XMMatrixRotationQuaternion(XMVECTOR Quaternion);
+
+// Extracts the axis and angle rotation representation from the quaternion Q.
+
+VOID XMQuaternionToAxisAngle(XMVECTOR *pAxis, FLOAT *pAngle, XMVECTOR Q);
+
+// Returns slerp(Q1, Q2, t)
+
+XMVECTOR XMQuaternionSlerp(XMVECTOR Q0, XMVECTOR Q1, FLOAT t);
+
+# 22.6 ROTATION DEMO
+
+For this chapter&rsquo;s demo, we animate a skull mesh around a simple scene. The position, orientation, and scale of the mesh are animated. We use quaternions to represent the orientation of the skull, and use slerp to interpolate between orientations. We use linear interpolation to interpolate between position and scale. This demo also serves as an animation &ldquo;warm up&rdquo; to the next chapter on character animation.
+
+A common form of animation is called key frame animation. A key frame specifies the position, orientation, and scale of an object at an instance in time. In our demo (in AnimationHelper.h/.cpp), we define the following key frame structure:
+
+struct Keyframe
+
+{
+
+Keyframe();
+
+&tilde;Keyframe();
+
+float TimePos;
+
+XMFLOAT3 Translation;
+
+XMFLOAT3 Scale;
+
+XMFLOAT4 RotationQuat;
+
+};
+
+An animation is a list of key frames sorted by time:
+
+struct BoneAnimation
+
+{
+
+float GetStartTime()const;
+
+float GetEndTime()const;
+
+void Interpolate(float t, XMFLOAT4X4& M)const;
+
+std::vector<Keyframe> Keyframes;
+
+};
+
+The reason for using the term &ldquo;bone&rdquo; will be made clear in the next section. For now, you can just think of animating a single bone as animating a single object. The method GetStartTime just returns the time of the first key frame. For example, maybe the object does not start animating until after ten seconds relative to some timeline. Similarly, the method GetEndTime returns the time of the last key frame. This is useful to know when the animation ends, and we can stop animating it.
+
+We now have a list of key frames, which define the rough overall look of the animation. So how will the animation look at time between the key frames? This is where interpolation comes in. For times t between two key frames, say Ki and Ki+1, we interpolate between the two key frames Ki and Ki+1.
+
+void BoneAnimation::Interpolate(float t, XMFLOAT4X4& M)const
+
+{
+
+// t is before the animation started, so just return the first key frame.
+
+if( t <= Keyframes.front().TimePos )
+
+{
+
+XMVECTOR S = XMLoadFloat3(&Keyframes.front().Scale);
+
+XMVECTOR P = XMLoadFloat3(&Keyframes.front().Translation);
+
+XMVECTOR Q = XMLoadFloat4(&Keyframes.front().RotationQuat);
+
+XMVECTOR zero = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+
+XMStoreFloat4x4(&M, XMMatrixAffineTransformation(S, zero, Q, P));
+
+}
+
+// t is after the animation ended, so just return the last key frame.
+
+else if( t >= Keyframes.back().TimePos )
+
+{
+
+XMVECTOR S = XMLoadFloat3(&Keyframes.back().Scale);
+
+XMVECTOR P = XMLoadFloat3(&Keyframes.back().Translation);
+
+XMVECTOR Q = XMLoadFloat4(&Keyframes.back().RotationQuat);
+
+XMVECTOR zero = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+
+XMStoreFloat4x4(&M, XMMatrixAffineTransformation(S, zero, Q, P));
+
+}
+
+// t is between two key frames, so interpolate.
+
+else
+
+{
+
+for(UINT i = 0; i < Keyframes.size()-1; ++i)
+
+{
+
+if( t >= Keyframes[i].TimePos && t <= Keyframes[i+1].TimePos )
+
+{
+
+float lerpPercent = (t - Keyframes[i].TimePos) /
+
+(Keyframes[i+1].TimePos - Keyframes[i].TimePos);
+
+XMVECTOR s0 = XMLoadFloat3(&Keyframes[i].Scale);
+
+XMVECTOR s1 = XMLoadFloat3(&Keyframes[i+1].Scale);
+
+XMVECTOR p0 = XMLoadFloat3(&Keyframes[i].Translation);
+
+XMVECTOR p1 = XMLoadFloat3(&Keyframes[i+1].Translation);
+
+XMVECTOR q0 = XMLoadFloat4(&Keyframes[i].RotationQuat);
+
+XMVECTOR q1 = XMLoadFloat4(&Keyframes[i+1].RotationQuat);
+
+XMVECTOR S = XMVectorLerp(s0, s1, lerpPercent);
+
+XMVECTOR P = XMVectorLerp(p0, p1, lerpPercent);
+
+XMVECTOR Q = XMQuaternionSlerp(q0, q1, lerpPercent);
+
+XMVECTOR zero = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
+
+XMStoreFloat4x4(&M, XMMatrixAffineTransformation(S, zero, Q, P));
+
+break;
+
+}
+
+}
+
+}
+
+}
+
+Figure 22.11 shows the in-between frames generated by interpolating from Key 1 to Key 2.
+
+[[IMG Fig22-11.jpg]]
+
+Figure 22.11. Key frame interpolation. The key frames define the &ldquo;key&rdquo; poses of the animation. The interpolated values represent the values between the key frames.
+
+[[IMG note.jpg]]
+
+Figure 22.11 appeared in the book by Frank D. Luna, Introduction to 3D Game Programming with DirectX 9.0c: A Shader Approach, 2006: Jones and Bartlett Learning, Burlington, MA. www.jblearning.com. Reprinted with permission.
+
+After interpolation, we construct a transformation matrix because ultimately we use matrices for transformations in our shader programs. The XMMatrixAffineTransformation function is declared as follows:
+
+XMMATRIX XMMatrixAffineTransformation(
+
+XMVECTOR Scaling,
+
+XMVECTOR RotationOrigin,
+
+XMVECTOR RotationQuaternion,
+
+XMVECTOR Translation);
+
+Now that our simple animation system is in place, the next part of our demo is to define some key frames:
+
+// Member data
+
+float mAnimTimePos = 0.0f;
+
+BoneAnimation mSkullAnimation;
+
+//
+
+// In constructor, define the animation keyframes
+
+//
+
+void QuatApp::DefineSkullAnimation()
+
+{
+
+//
+
+// Define the animation keyframes
+
+//
+
+XMVECTOR q0 = XMQuaternionRotationAxis(
+
+XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XMConvertToRadians(30.0f));
+
+XMVECTOR q1 = XMQuaternionRotationAxis(
+
+XMVectorSet(1.0f, 1.0f, 2.0f, 0.0f), XMConvertToRadians(45.0f));
+
+XMVECTOR q2 = XMQuaternionRotationAxis(
+
+XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XMConvertToRadians(-30.0f));
+
+XMVECTOR q3 = XMQuaternionRotationAxis(
+
+XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f), XMConvertToRadians(70.0f));
+
+mSkullAnimation.Keyframes.resize(5);
+
+mSkullAnimation.Keyframes[0].TimePos = 0.0f;
+
+mSkullAnimation.Keyframes[0].Translation = XMFLOAT3(-7.0f, 0.0f, 0.0f);
+
+mSkullAnimation.Keyframes[0].Scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+
+XMStoreFloat4(&mSkullAnimation.Keyframes[0].RotationQuat, q0);
+
+mSkullAnimation.Keyframes[1].TimePos = 2.0f;
+
+mSkullAnimation.Keyframes[1].Translation = XMFLOAT3(0.0f, 2.0f, 10.0f);
+
+mSkullAnimation.Keyframes[1].Scale = XMFLOAT3(0.5f, 0.5f, 0.5f);
+
+XMStoreFloat4(&mSkullAnimation.Keyframes[1].RotationQuat, q1);
+
+mSkullAnimation.Keyframes[2].TimePos = 4.0f;
+
+mSkullAnimation.Keyframes[2].Translation = XMFLOAT3(7.0f, 0.0f, 0.0f);
+
+mSkullAnimation.Keyframes[2].Scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+
+XMStoreFloat4(&mSkullAnimation.Keyframes[2].RotationQuat, q2);
+
+mSkullAnimation.Keyframes[3].TimePos = 6.0f;
+
+mSkullAnimation.Keyframes[3].Translation = XMFLOAT3(0.0f, 1.0f, -10.0f);
+
+mSkullAnimation.Keyframes[3].Scale = XMFLOAT3(0.5f, 0.5f, 0.5f);
+
+XMStoreFloat4(&mSkullAnimation.Keyframes[3].RotationQuat, q3);
+
+mSkullAnimation.Keyframes[4].TimePos = 8.0f;
+
+mSkullAnimation.Keyframes[4].Translation = XMFLOAT3(-7.0f, 0.0f, 0.0f);
+
+mSkullAnimation.Keyframes[4].Scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+
+XMStoreFloat4(&mSkullAnimation.Keyframes[4].RotationQuat, q0);
+
+}
+
+Our key frames position the skull at different locations in the scene, at different orientations, and at different scales. You can have fun experimenting with this demo by adding your own key frames or changing the key frame values. For example, you can set all the rotations and scaling to identity, to see what the animation looks like when only position is animated.
+
+[[IMG Fig22-12.jpg]]
+
+Figure 22.12. Screenshot of the quaternion demo.
+
+The last step to get the animation working is to perform the interpolation to get the new skull world matrix, which changes over time:
+
+void QuatApp::UpdateScene(float dt)
+
+{
+
+&hellip;
+
+// Increase the time position.
+
+mAnimTimePos += dt;
+
+if(mAnimTimePos >= mSkullAnimation.GetEndTime())
+
+{
+
+// Loop animation back to beginning.
+
+mAnimTimePos = 0.0f;
+
+}
+
+// Get the skull&rsquo;s world matrix at this time instant.
+
+mSkullAnimation.Interpolate(mAnimTimePos, mSkullWorld);
+
+&hellip;
+
+}
+
+The skull&rsquo;s world matrix is now changing every frame in order to animate the skull.
+
+# 22.7 SUMMARY
+
+- An ordered 4-tuple of real numbers q = (x, y, z, w) = (q1, q2, q3, q4) is a quaternion. This is commonly abbreviated as q = (u, w) = (x, y, z, w), and we call u = (x, y, z) the imaginary vector part and w the real part. Moreover, equality, addition, subtraction, multiplication and division are defined as follows:
+
+- (u, a) = (v, b) if and only if u = v and a = b.
+
+- (u, a) ± (v, b) = (u ± v, a ± b).
+
+- (u, a)(v, b) = (av + bu + u &times; v, ab &minus; u · v)
+
+- Quaternion multiplication is not commutative, but it is associative. The quaternion e = (0, 0, 0, 1) serves as a multiplicative identity. Quaternion multiplication distributes over quaternion addition: p(q + r) = pq + pr and (q + r)p = qp + rp.
+
+- We can convert a real number s to quaternion space by writing s = (0, 0, 0, s), and we can convert a vector u to quaternion space by writing u = (u, 0). A quaternion with zero real part is called a pure quaternion. It is then possible to multiply a scalar and a quaternion, and the result is s(p1, p2, p3, p4) = (sp1, sp2, sp3, sp4) = (p1, p2, p3, p4)s. The special case of scalar multiplication is commutative.
+
+- The conjugate of a quaternion q = (q1, q2, q3, q4) = (u, q4) is denoted by q* and defined by
+[[IMG eq758-03.jpg]]
+. The norm (or magnitude) of a quaternion is defined by:
+[[IMG eq758-01.jpg]]
+. We say that a quaternion is a unit quaternion if it has a norm of one.
+
+- Let q = (q1, q2, q3, q4) = (u, q4) be a nonzero quaternion, then the inverse is denoted by q&minus;1 and given by:
+[[IMG eq758-02.jpg]]
+. If q is a unit quaternion, then q&minus;1 = q*.
+
+- A unit quaternion q = (u, q4) can be written in the polar representation , where n is a unit vector.
+
+- If q is a unit quaternion, then q = (sin&theta;n,cos&theta;) for ||n|| = 1 and &theta; ∈ [0, &pi;]. The quaternion rotation operator is defined by
+[[IMG eq758-04.jpg]]
+and rotates the point/vector v around the axis n by an angle 2&theta;. Rq has a matrix representation, and any rotation matrix can be converted to a quaternion representing the rotation.
+
+- A common task in animation is to interpolate between two orientations. Representing each orientation by a unit quaternion, we can use spherical interpolation to interpolate the unit quaternions to find the interpolated orientation.
+
+# 22.8 EXERCISES
+
+- Perform the indicated complex number operation.
+
+- (3 + 2i) + (&minus;1 + i)
+
+- (3 + 2i) &minus; (&minus;1 + i)
+
+- (3 + 2i) (&minus;1 + i)
+
+- 4(&minus;1 + i)
+
+- (3 + 2i)/(&minus;1 + i)
+
+- (3 + 2i)*
+
+- |3 + 2i|
+
+- Write the complex number (&minus;1, 3) in polar notation.
+
+- Rotate the vector (2, 1) 30&deg; using complex number multiplication.
+
+- Show using the definition of complex division that
+[[IMG eq759-09.jpg]]
+.
+
+- Let z = a + ib. Show
+[[IMG eq759-02.jpg]]
+.
+
+- Let M be a 2 &times; 2 matrix. Prove that det M = 1 and M&minus;1 = MT if and only if
+[[IMG eq759-03.jpg]]
+. That is, if and only if M is a rotation matrix. This gives us a way of testing if a matrix is a rotation matrix.
+
+- Let p = (1, 2, 3, 4) and q = (2, &minus;1, 1, &minus;2) be quaternions. Perform the indicated quaternion operations.
+
+- p + q
+
+- p &minus; q
+
+- pq
+
+- p*
+
+- q*
+
+- p*p
+
+- ||p||
+
+- ||q||
+
+- p&minus;1
+
+- q&minus;1
+
+- Write the unit quaternion
+[[IMG eq759-04.jpg]]
+in polar notation.
+
+- Write the unit quaternion
+[[IMG eq759-01.jpg]]
+in polar notation.
+
+- Find the unit quaternion that rotates 45&deg; about the axis (1, 1, 1).
+
+- Find the unit quaternion that rotates 60&deg; about the axis (0, 0, &minus;1).
+
+- Let
+[[IMG eq759-06.jpg]]
+and
+[[IMG eq759-07.jpg]]
+. Compute
+[[IMG eq759-08.jpg]]
+and verify it is a unit quaternion.
+
+- Show that a quaternion (x, y, z, w) can be written in the form xi + yj + zk + w.
+
+- Prove that
+[[IMG eq760-02.jpg]]
+
+- Let p = (u, 0)and q = (v, 0) be pure quaternions (i.e., real part 0). Show pq = (p &times; q, &minus;p · q).
+
+- Prove the following properties:
+
+[[IMG eq760-03.jpg]]
+
+- Prove
+[[IMG eq760-01.jpg]]
+algebraically.
+
+- Let a, b, c be 3D vectors. Prove the identities:
+
+- a &times; (b &times; c) = (a · c)b &minus; (a · b)c
+
+- (a &times; b) &times; c = &minus; (c · b)a + (c · a)b

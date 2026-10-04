@@ -1,0 +1,592 @@
+<div className="translation-progress"><b>本章译文进度</b><span>现有首轮译稿；尚未逐页对照 EPUB，需核对原文段落、图注、代码和习题，并复查公式。</span></div>
+
+在三维计算机图形学中，我们用矩阵紧凑地描述缩放、旋转和平移等几何变换，也用矩阵把点或向量的坐标从一个坐标系转换到另一个坐标系。本章讨论矩阵数学。
+
+本章目标：
+
+- 理解矩阵及其运算。
+- 了解向量与矩阵相乘如何表示为线性组合。
+- 理解单位矩阵，以及矩阵的转置、行列式和逆矩阵。
+- 熟悉 DirectXMath 库中用于矩阵运算的部分类型和函数。
+
+<section className="lesson-section lesson-section--intro" id="s21">
+<h2>2.1 定义</h2>
+
+一个 $m\times n$ 矩阵 $M$，是由 $m$ 行、$n$ 列实数组成的矩形数组。矩阵的维数由行数和列数组成，称为 $m\times n$。矩阵中的数称为元素或项。用双下标 $M_{ij}$ 表示矩阵元素：第一个下标 $i$ 指定行，第二个下标 $j$ 指定列。
+
+**例 2.1**　考虑以下矩阵：
+
+<Figure src="images/eq72-01.jpg" alt="例 2.1 的矩阵 A、B、行向量 u 和列向量 v" caption="矩阵 A、B、u 和 v 的示例。" />
+
+- 矩阵 $A$ 是 $4\times4$ 矩阵；矩阵 $B$ 是 $3\times2$ 矩阵；$u$ 是 $1\times3$ 矩阵；$v$ 是 $4\times1$ 矩阵。
+- $A$ 的第 4 行第 2 列元素记为 $A_{42}=-5$；$B$ 的第 2 行第 1 列元素记为 $B_{21}$。
+- $u$ 和 $v$ 分别只有一行和一列，因此是特殊矩阵。它们常称为**行向量**和**列向量**，用于以矩阵形式表示向量。例如，向量记号 ($x,y,z$) 与行矩阵 ([x\;y\;z]) 可以互换使用。对于行向量和列向量，只需一个下标就能标识元素。
+
+有时把矩阵的每一行看作向量。例如：
+
+<Figure src="images/eq72-02.jpg" alt="将矩阵 A 的各行分别写成行向量" caption="矩阵各行的向量记号。" />
+
+其中 $A_{1,*}=[A_{11},A_{12},A_{13}]$、$A_{2,*}=[A_{21},A_{22},A_{23}]$、$A_{3,*}=[A_{31},A_{32},A_{33}]$。这里第一个下标指定行，第二个下标写作“$*$”表示整个行向量。列向量也采用类似记号：
+
+<Figure src="images/eq73-01.jpg" alt="将矩阵 A 的各列分别写成列向量" caption="矩阵各列的向量记号。" />
+
+此时第二个下标指定列，第一个下标的“$*$”表示整个列向量。
+
+现在定义矩阵的相等、加法、数乘和减法：
+
+- 两个矩阵相等，当且仅当对应元素相等。因此，只有行数和列数相同的矩阵才可以比较。
+- 两个矩阵相加时，把对应元素相加。因此，只有维数相同的矩阵才能相加。
+- 标量与矩阵相乘时，标量乘以矩阵的每一个元素。
+- 矩阵减法由加法和数乘定义：$A-B=A+(-1)B=A+(-B)$。
+
+**例 2.2**　设：
+
+<Figure src="images/eq73-03.jpg" alt="例 2.2 中的矩阵 A 和 B" caption="用于演示矩阵加法与数乘的矩阵。" />
+
+则：
+
+<Figure src="images/eq73-04.jpg" alt="例 2.2 的矩阵加法和数乘计算" caption="逐元素进行矩阵加法与数乘。" />
+
+由于加法和数乘都是逐元素进行，矩阵从实数运算继承以下性质：
+
+- $A+B=B+A$：加法交换律。
+- $(A+B)+C=A+(B+C)$：加法结合律。
+- $r(A+B)=rA+rB$：标量对矩阵加法的分配律。
+- $(r+s)A=rA+sA$：矩阵对标量加法的分配律。
+</section>
+
+<section className="lesson-section" id="s22">
+<h2>2.2 矩阵乘法</h2>
+
+<h3>2.2.1 定义</h3>
+
+设 $A$ 是 $m\times n$ 矩阵，$B$ 是 $n\times p$ 矩阵，则乘积 $AB$ 有定义，结果是一个 $m\times p$ 矩阵 $C$。乘积的第 $i,j$ 个元素，是 $A$ 的第 $i$ 行向量与 $B$ 的第 $j$ 列向量的点积：
+
+$$C_{ij}=A_{i,*}\cdot B_{*,j}.\tag{2.1}$$
+
+因此，要使 $AB$ 有定义，$A$ 的列数必须等于 $B$ 的行数，也就是 $A$ 的行向量与 $B$ 的列向量维数必须相同。否则，式 (2.1) 中的点积没有定义。
+
+**例 2.3**　下图中的 $AB$ 没有定义，因为 $A$ 的行向量是二维的，而 $B$ 的列向量是三维的。我们不能计算 $A$ 第一行与 $B$ 第一列的点积，因为二维向量与三维向量不能做点积。
+
+<Figure src="images/eq74-03.jpg" alt="例 2.3 中维数不匹配的矩阵 A 和 B" caption="A 的列数与 B 的行数不相等，因此 AB 未定义。" />
+
+**例 2.4**　设：
+
+<Figure src="images/eq75-01.jpg" alt="例 2.4 的矩阵 A 和 B" caption="用于计算 AB 的两个矩阵。" />
+
+由于 $A$ 的列数等于 $B$ 的行数，乘积 $AB$ 有定义，且是一个 $2\times3$ 矩阵。应用式 (2.1) 可得：
+
+<Figure src="images/eq75-02.jpg" alt="例 2.4 的矩阵乘积 AB" caption="按行与列的点积计算 AB。" />
+
+而 $BA$ 没有定义，因为 $B$ 的列数不等于 $A$ 的行数。这也说明矩阵乘法一般不满足交换律：$AB\ne BA$。
+
+<h3>2.2.2 向量与矩阵相乘</h3>
+
+考虑以下向量与矩阵的乘法：
+
+<Figure src="images/eq75-03.jpg" alt="行向量 u 与矩阵 A 相乘" caption="行向量与矩阵的乘法示例。" />
+
+在这个例子中，$uA$ 是一个 $1\times3$ 行向量。按式 (2.1) 计算：
+
+<Figure src="images/eq76-03.jpg" alt="向量与矩阵乘积的逐分量展开" caption="将每个结果分量写成点积。" />
+
+于是：
+
+<Figure src="images/eq76-01.jpg" alt="向量与矩阵乘法写成矩阵行向量的线性组合" caption="uA 是矩阵 A 各行向量的线性组合。" />
+
+式 (2.2) 是线性组合的一个例子：向量矩阵积 $uA$，等于矩阵 $A$ 的各行向量分别乘上标量系数 $x,y,z$ 后相加；这些系数由向量 $u$ 给出。虽然这里用的是 $1\times3$ 行向量和 $3\times3$ 矩阵，但一般情形同样成立：若 $u$ 是 $1\times n$ 行向量，$A$ 是 $n\times m$ 矩阵，那么 $uA$ 是 $A$ 各行向量以 $u$ 的分量为系数构成的线性组合：
+
+<Figure src="images/eq76-02.jpg" alt="一般的向量与矩阵乘法线性组合公式" caption="行向量 u 与矩阵 A 的行向量线性组合关系。" />
+
+<h3>2.2.3 结合律</h3>
+
+矩阵乘法有一些良好的代数性质。例如，它对加法满足分配律：$A(B+C)=AB+AC$，$(A+B)C=AC+BC$。特别地，我们会经常使用矩阵乘法的结合律，它允许我们选择先计算哪一组矩阵乘积：
+
+$$(AB)C=A(BC).$$
+</section>
+
+<section className="lesson-section" id="s23">
+<h2>2.3 矩阵的转置</h2>
+
+矩阵转置是把矩阵的行与列互换。因此，$m\times n$ 矩阵的转置是 $n\times m$ 矩阵。矩阵 $M$ 的转置记为 $M^T$。
+
+**例 2.5**　求下列三个矩阵的转置：
+
+<Figure src="images/eq77-01.jpg" alt="例 2.5 中的三个矩阵" caption="待转置的三个矩阵。" />
+
+交换行与列后得到：
+
+<Figure src="images/eq77-02.jpg" alt="例 2.5 的三个矩阵转置结果" caption="将各矩阵的行与列互换。" />
+
+转置有以下有用性质：
+
+- $(A+B)^T=A^T+B^T$。
+- $(cA)^T=cA^T$。
+- $(AB)^T=B^TA^T$。注意乘积转置后，因子顺序反转。
+- $(A^T)^T=A$。
+- $(A^{-1})^T=(A^T)^{-1}$。
+</section>
+
+<section className="lesson-section" id="s24">
+<h2>2.4 单位矩阵</h2>
+
+有一种特殊矩阵称为**单位矩阵**。它是方阵；除主对角线上的元素全为 1 外，其他元素全为 0。以下给出了 $2\times2$、$3\times3$ 和 $4\times4$ 单位矩阵：
+
+<Figure src="images/eq77-03.jpg" alt="二阶、三阶和四阶单位矩阵" caption="不同维数的单位矩阵。" />
+
+单位矩阵在矩阵乘法中扮演乘法单位元的角色。若 $A$ 是 $m\times n$ 矩阵、$B$ 是 $n\times p$ 矩阵，而 $I$ 是 $n\times n$ 单位矩阵，则：
+
+$$AI=A,\qquad IB=B.$$
+
+换句话说，矩阵乘以单位矩阵不会改变矩阵。可以把矩阵的单位矩阵看作数的 1。特别地，若 $M$ 是方阵，则：
+
+$$MI=IM=M.$$
+
+**例 2.6**　下图的计算说明，矩阵乘以适当维数的单位矩阵后保持不变：
+
+<Figure src="images/eq78-01.jpg" alt="例 2.6 验证矩阵乘以单位矩阵不变" caption="验证 MI = IM = M。" />
+
+因此，$MI=IM=M$。
+
+**例 2.7**　下图的计算还说明，矩阵乘积必须满足维数条件；不能计算 $Iu$，因为该矩阵乘法没有定义。
+
+<Figure src="images/eq78-02.jpg" alt="例 2.7 中不能定义的矩阵乘法" caption="该乘法的内维数不相等。" />
+</section>
+
+<section className="lesson-section" id="s25">
+<h2>2.5 矩阵的行列式</h2>
+
+行列式是一种特殊函数：输入一个方阵，输出一个实数。方阵 $A$ 的行列式通常记为 $\det A$。行列式有与盒体体积相关的几何解释，也能说明线性变换如何改变体积。此外，行列式还可用于克莱姆法则，以求解线性方程组。不过，本书研究行列式的主要动机，是它为计算矩阵的逆提供了显式公式（见 §2.7）。另外可以证明：方阵 $A$ 可逆，当且仅当 $\det A\ne0$。这给我们一个判断矩阵是否可逆的计算方法。在定义行列式之前，先介绍矩阵余子式。
+
+<h3>2.5.1 矩阵余子式</h3>
+
+给定 $n\times n$ 矩阵 $A$，其余子式矩阵记为 $\bar A_{ij}$，它是删除 $A$ 的第 $i$ 行和第 $j$ 列后得到的 $(n-1)\times(n-1)$ 矩阵。
+
+**例 2.8**　下图展示如何从矩阵中删除指定的行和列，构造余子式矩阵：
+
+<Figure src="images/eq79-01.jpg" alt="例 2.8 删除一行一列得到的余子式矩阵" caption="构造矩阵余子式的示例。" />
+
+<h3>2.5.2 定义</h3>
+
+矩阵行列式通过递归定义。例如，$4\times4$ 矩阵的行列式由 $3\times3$ 矩阵的行列式定义；$3\times3$ 又由 $2\times2$ 定义；$2\times2$ 又由 $1\times1$ 定义。$1\times1$ 矩阵 $A=[A_{11}]$ 的行列式直接定义为 $\det[A_{11}]=A_{11}$。
+
+设 $A$ 为 $n\times n$ 矩阵。对 $n>1$，按第一行展开可定义为：
+
+$$\det A=\sum_{j=1}^{n}A_{1j}(-1)^{1+j}\det\bar A_{1j}.\tag{2.4}$$
+
+根据余子式的定义，$2\times2$ 矩阵的行列式为：
+
+$$\det\begin{bmatrix}a&b\\c&d\end{bmatrix}=ad-bc.$$
+
+对于 $3\times3$ 矩阵，沿第一行展开得到：
+
+$$\det A=A_{11}(A_{22}A_{33}-A_{23}A_{32})-A_{12}(A_{21}A_{33}-A_{23}A_{31})+A_{13}(A_{21}A_{32}-A_{22}A_{31}).$$
+
+同理，$4\times4$ 的显式表达式可以继续沿第一行递归展开为四个 $3\times3$ 余子式的带符号加权和。三维图形学主要使用 $4\times4$ 矩阵，因此不必继续为 $n>4$ 展开成更长的公式。
+
+**例 2.9**　求下列矩阵的行列式：
+
+<Figure src="images/eq80-05.jpg" alt="例 2.9 中待计算行列式的矩阵" caption="待求行列式的矩阵。" />
+
+按递归展开计算：
+
+<Figure src="images/eq81-01.jpg" alt="例 2.9 的行列式展开与结果" caption="沿第一行展开并计算行列式。" />
+</section>
+
+<section className="lesson-section" id="s26">
+<h2>2.6 矩阵的伴随</h2>
+
+设 $A$ 是 $n\times n$ 矩阵。乘积
+
+$$C_{ij}=(-1)^{i+j}\det\bar A_{ij}$$
+
+称为 $A_{ij}$ 的**代数余子式**。对 $A$ 中每个元素计算 $C_{ij}$，并把结果放到对应的第 $i$ 行、第 $j$ 列，就得到 $A$ 的代数余子式矩阵 $C_A$：
+
+<Figure src="images/eq81-02.jpg" alt="矩阵 A 的代数余子式矩阵" caption="将各代数余子式放回对应位置。" />
+
+将 $C_A$ 转置，得到的矩阵称为 $A$ 的伴随矩阵，记作：
+
+$$A^*=C_A^T.$$
+
+下一节会看到，伴随矩阵可用于给出计算矩阵逆的显式公式。
+</section>
+
+<section className="lesson-section" id="s27">
+<h2>2.7 矩阵的逆</h2>
+
+矩阵代数没有除法运算，但有乘法逆运算。关于逆矩阵，需要记住以下几点：
+
+- 只有方阵才有可能存在逆矩阵；讨论矩阵的逆时，默认矩阵为方阵。
+- $n\times n$ 矩阵 $M$ 的逆仍是 $n\times n$ 矩阵，记为 $M^{-1}$。
+- 并非每个方阵都有逆。存在逆矩阵的矩阵称为**可逆矩阵**；不存在逆矩阵的矩阵称为**奇异矩阵**。
+- 逆矩阵若存在，则唯一。
+- 矩阵与其逆相乘得到单位矩阵：$MM^{-1}=M^{-1}M=I$。矩阵与自身的逆相乘，是矩阵乘法可交换的一种情形。
+
+逆矩阵可用于在矩阵方程中求未知矩阵。例如，给定矩阵方程 $p'=pM$，并已知 $p'$ 和 $M$，想要求 $p$。若 $M$ 可逆（即 $M^{-1}$ 存在），则在等式两边右乘 $M^{-1}$：
+
+$$p'M^{-1}=pMM^{-1}=pI=p,\qquad\therefore\quad p=p'M^{-1}.$$
+
+矩阵逆的一个公式可以用伴随矩阵和行列式表示。本书不证明此公式；大学线性代数教材会给出证明：
+
+$$A^{-1}=\frac{A^*}{\det A}.\tag{2.6}$$
+
+**例 2.10**　求一般 $2\times2$ 矩阵的逆公式，并用该公式求下列矩阵的逆：
+
+<Figure src="images/eq82-02.jpg" alt="一般的二阶矩阵 A" caption="用于推导二阶矩阵逆的通用矩阵。" />
+
+<Figure src="images/eq82-03.jpg" alt="例 2.10 中的矩阵 M" caption="本例要求求逆的矩阵 M。" />
+
+对 $A=\begin{bmatrix}a&b\\c&d\end{bmatrix}$，有 $\det A=ad-bc$，而其伴随矩阵为 $A^*=\begin{bmatrix}d&-b\\-c&a\end{bmatrix}$。因此，只要 $ad-bc\ne0$，
+
+$$A^{-1}=\frac{1}{ad-bc}\begin{bmatrix}d&-b\\-c&a\end{bmatrix}.$$
+
+本例中的行列式与代数余子式矩阵如下：
+
+<Figure src="images/eq82-04.jpg" alt="二阶矩阵的行列式及代数余子式矩阵" caption="用行列式和代数余子式构造逆矩阵。" />
+
+将公式用于 $M=\begin{bmatrix}3&0\\-1&2\end{bmatrix}$，可得：
+
+$$M^{-1}=\frac{1}{3\cdot2-0\cdot(-1)}\begin{bmatrix}2&0\\1&3\end{bmatrix}=\begin{bmatrix}\frac13&0\\\frac16&\frac12\end{bmatrix}.$$
+
+可通过验证 $MM^{-1}=M^{-1}M=I$ 检查结果。
+
+对于 $4\times4$ 及更小的矩阵，伴随矩阵法在计算上较有效率。对于更大的矩阵，会使用高斯消元等其他方法。不过，三维计算机图形学所用的矩阵通常有特殊形式，可以预先推导对应的逆矩阵公式，避免在 CPU 上为一般矩阵求逆。因此，代码中很少需要直接应用式 (2.6)。
+
+最后给出矩阵乘积的逆的一条有用性质：
+
+$$(AB)^{-1}=B^{-1}A^{-1}.$$
+
+该性质要求 $A$、$B$ 都可逆，且是维数相同的方阵。要证明 $B^{-1}A^{-1}$ 是 $AB$ 的逆，只需验证两个乘积都等于单位矩阵：
+
+$$
+\begin{aligned}
+(AB)(B^{-1}A^{-1})&=A(BB^{-1})A^{-1}=AIA^{-1}=AA^{-1}=I,\\
+(B^{-1}A^{-1})(AB)&=B^{-1}(A^{-1}A)B=B^{-1}IB=B^{-1}B=I.
+\end{aligned}
+$$
+</section>
+
+<section className="lesson-section" id="s28">
+<h2>2.8 DirectXMath 矩阵</h2>
+
+变换点和向量时，我们使用 $1\times4$ 行向量和 $4\times4$ 矩阵。原因将在下一章解释；本节先介绍 DirectXMath 中用于表示 $4\times4$ 矩阵的类型。
+
+<h3>2.8.1 矩阵类型</h3>
+
+在 DirectXMath 中，使用 `XMMATRIX` 类表示 $4\times4$ 矩阵。它在 `DirectXMath.h` 头文件中的定义如下（为清楚起见略作调整）：
+
+```cpp
+#if (defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM)) && defined(_XM_NO_INTRINSICS_)
+struct XMMATRIX
+#else
+__declspec(align(16)) struct XMMATRIX
+#endif
+{
+    // 使用 4 个 XMVECTOR 通过 SIMD 表示矩阵。
+    XMVECTOR r[4];
+
+    XMMATRIX() {}
+
+    // 指定 4 个行向量来初始化矩阵。
+    XMMATRIX(FXMVECTOR R0, FXMVECTOR R1, FXMVECTOR R2, CXMVECTOR R3)
+    { r[0] = R0; r[1] = R1; r[2] = R2; r[3] = R3; }
+
+    // 指定矩阵的 16 个元素。
+    XMMATRIX(float m00, float m01, float m02, float m03,
+             float m10, float m11, float m12, float m13,
+             float m20, float m21, float m22, float m23,
+             float m30, float m31, float m32, float m33);
+
+    // 通过 16 个 float 的数组构造矩阵。
+    explicit XMMATRIX(_In_reads_(16) const float *pArray);
+
+    XMMATRIX& operator= (const XMMATRIX& M)
+    { r[0] = M.r[0]; r[1] = M.r[1]; r[2] = M.r[2]; r[3] = M.r[3]; return *this; }
+
+    XMMATRIX operator+ () const { return *this; }
+    XMMATRIX operator- () const;
+    XMMATRIX& XM_CALLCONV operator+= (FXMMATRIX M);
+    XMMATRIX& XM_CALLCONV operator-= (FXMMATRIX M);
+    XMMATRIX& XM_CALLCONV operator*= (FXMMATRIX M);
+    XMMATRIX& operator*= (float S);
+    XMMATRIX& operator/= (float S);
+    XMMATRIX XM_CALLCONV operator+ (FXMMATRIX M) const;
+    XMMATRIX XM_CALLCONV operator- (FXMMATRIX M) const;
+    XMMATRIX XM_CALLCONV operator* (FXMMATRIX M) const;
+    XMMATRIX operator* (float S) const;
+    XMMATRIX operator/ (float S) const;
+    friend XMMATRIX XM_CALLCONV operator* (float S, FXMMATRIX M);
+};
+```
+
+可以看到，`XMMATRIX` 用四个 `XMVECTOR` 实例来使用 SIMD，并重载了矩阵算术运算符。除了使用不同构造函数，也可以用 `XMMatrixSet` 函数创建 `XMMATRIX`：
+
+```cpp
+XMMATRIX XM_CALLCONV XMMatrixSet(
+    float m00, float m01, float m02, float m03,
+    float m10, float m11, float m12, float m13,
+    float m20, float m21, float m22, float m23,
+    float m30, float m31, float m32, float m33);
+```
+
+在类中保存向量时，建议使用 `XMFLOAT2`（二维）、`XMFLOAT3`（三维）或 `XMFLOAT4`（四维）。DirectXMath 文档也建议，矩阵作为类的数据成员时，使用 `XMFLOAT4X4` 保存：
+
+```cpp
+struct XMFLOAT4X4
+{
+    union
+    {
+        struct
+        {
+            float _11, _12, _13, _14;
+            float _21, _22, _23, _24;
+            float _31, _32, _33, _34;
+            float _41, _42, _43, _44;
+        };
+        float m[4][4];
+    };
+
+    XMFLOAT4X4() {}
+    XMFLOAT4X4(float m00, float m01, float m02, float m03,
+               float m10, float m11, float m12, float m13,
+               float m20, float m21, float m22, float m23,
+               float m30, float m31, float m32, float m33);
+    explicit XMFLOAT4X4(_In_reads_(16) const float *pArray);
+    float operator() (size_t Row, size_t Column) const { return m[Row][Column]; }
+    float& operator() (size_t Row, size_t Column) { return m[Row][Column]; }
+    XMFLOAT4X4& operator= (const XMFLOAT4X4& Float4x4);
+};
+```
+
+通过以下方法把数据从 `XMFLOAT4X4` 加载到 `XMMATRIX`：
+
+```cpp
+inline XMMATRIX XM_CALLCONV XMLoadFloat4x4(const XMFLOAT4X4* pSource);
+```
+
+通过以下方法把数据从 `XMMATRIX` 存储到 `XMFLOAT4X4`：
+
+```cpp
+inline void XM_CALLCONV XMStoreFloat4x4(XMFLOAT4X4* pDestination, FXMMATRIX M);
+```
+
+<h3>2.8.2 矩阵函数</h3>
+
+DirectXMath 库提供以下常用矩阵函数：
+
+```cpp
+XMMATRIX XM_CALLCONV XMMatrixIdentity();
+// 返回单位矩阵 I
+
+bool XM_CALLCONV XMMatrixIsIdentity(FXMMATRIX M);
+// 判断 M 是否为单位矩阵
+
+XMMATRIX XM_CALLCONV XMMatrixMultiply(FXMMATRIX A, CXMMATRIX B);
+// 返回矩阵乘积 AB
+
+XMMATRIX XM_CALLCONV XMMatrixTranspose(FXMMATRIX M);
+// 返回 M 的转置
+
+XMVECTOR XM_CALLCONV XMMatrixDeterminant(FXMMATRIX M);
+// 返回 (det M, det M, det M, det M)
+
+XMMATRIX XM_CALLCONV XMMatrixInverse(XMVECTOR* pDeterminant, FXMMATRIX M);
+// 返回 M 的逆；pDeterminant 接收行列式值
+```
+
+声明接收 `XMMATRIX` 的函数参数时，使用与传递 `XMVECTOR` 参数相同的规则；但一个 `XMMATRIX` 按四个 `XMVECTOR` 参数计算。若函数总共不超过两个额外的 `FXMVECTOR` 参数，第一个 `XMMATRIX` 参数应使用 `FXMMATRIX`，之后的 `XMMATRIX` 参数应使用 `CXMMATRIX`。以下展示 32 位 Windows 上支持 `__fastcall` 和较新 `__vectorcall` 调用约定的编译器如何定义这些类型：
+
+```cpp
+// 32 位 Windows 的 __fastcall 将前 3 个 XMVECTOR 参数放在寄存器中，
+// 其余参数放在栈上。
+typedef const XMMATRIX& FXMMATRIX;
+typedef const XMMATRIX& CXMMATRIX;
+
+// 32 位 Windows 的 __vectorcall 将前 6 个 XMVECTOR 参数放在寄存器中，
+// 其余参数放在栈上。
+typedef const XMMATRIX FXMMATRIX;
+typedef const XMMATRIX& CXMMATRIX;
+```
+
+在 32 位 Windows 的 `__fastcall` 下，寄存器最多传递三个 `XMVECTOR` 参数，而一个 `XMMATRIX` 需要四个，因此它不能通过 SSE/SSE2 寄存器传递，只能按引用放在栈上传递。其他平台上的定义细节，请查阅 DirectXMath 文档 [DirectXMath] 中 “Library Internals” 下的 “Calling Conventions”。构造函数是例外：[DirectXMath] 建议接收 `XMMATRIX` 参数的构造函数一律使用 `CXMMATRIX`，并且不要给构造函数添加 `XM_CALLCONV` 标注。
+
+<h3>2.8.3 DirectXMath 矩阵示例程序</h3>
+
+下面的程序展示 `XMMATRIX` 类及上一节多数函数的用法。程序首先检查 CPU 是否支持 SSE2；然后创建矩阵，计算单位矩阵、乘积、转置、行列式和逆矩阵，并输出结果。
+
+```cpp
+#include <windows.h> // 用于 XMVerifyCPUSupport
+#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+#include <iostream>
+
+using namespace std;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
+// 重载 << 运算符，使 cout 能输出 XMVECTOR 和 XMMATRIX 对象。
+ostream& XM_CALLCONV operator << (ostream& os, FXMVECTOR v)
+{
+    XMFLOAT4 dest;
+    XMStoreFloat4(&dest, v);
+    os << "(" << dest.x << ", " << dest.y << ", " << dest.z << ", " << dest.w << ")";
+    return os;
+}
+
+ostream& XM_CALLCONV operator << (ostream& os, FXMMATRIX m)
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        os << XMVectorGetX(m.r[i]) << "\t";
+        os << XMVectorGetY(m.r[i]) << "\t";
+        os << XMVectorGetZ(m.r[i]) << "\t";
+        os << XMVectorGetW(m.r[i]);
+        os << endl;
+    }
+    return os;
+}
+
+int main()
+{
+    // 检查是否支持 SSE2（Pentium 4、AMD K8 及后续处理器）。
+    if (!XMVerifyCPUSupport())
+    {
+        cout << "directx math not supported" << endl;
+        return 0;
+    }
+
+    XMMATRIX A(1.0f, 0.0f, 0.0f, 0.0f,
+               0.0f, 2.0f, 0.0f, 0.0f,
+               0.0f, 0.0f, 4.0f, 0.0f,
+               1.0f, 2.0f, 3.0f, 1.0f);
+
+    XMMATRIX B = XMMatrixIdentity();
+    XMMATRIX C = A * B;
+    XMMATRIX D = XMMatrixTranspose(A);
+    XMVECTOR det = XMMatrixDeterminant(A);
+    XMMATRIX E = XMMatrixInverse(&det, A);
+    XMMATRIX F = A * E;
+
+    cout << "A = " << endl << A << endl;
+    cout << "B = " << endl << B << endl;
+    cout << "C = A*B = " << endl << C << endl;
+    cout << "D = transpose(A) = " << endl << D << endl;
+    cout << "det = determinant(A) = " << det << endl << endl;
+    cout << "E = inverse(A) = " << endl << E << endl;
+    cout << "F = A*E = " << endl << F << endl;
+
+    return 0;
+}
+```
+
+<Figure src="images/Fig2-1.jpg" alt="DirectXMath 矩阵示例程序的控制台输出" figureNumber="图 2.1" caption="上述程序的运行输出。" />
+</section>
+
+<section className="lesson-section" id="s29">
+<h2>2.9 本章小结</h2>
+
+- $m\times n$ 矩阵 $M$ 是有 $m$ 行、$n$ 列的实数矩形数组。两个维数相同的矩阵相等，当且仅当对应元素相等。相同维数的矩阵按对应元素相加；标量乘矩阵时，标量乘以每个元素。
+- 若 $A$ 是 $m\times n$ 矩阵，$B$ 是 $n\times p$ 矩阵，则 $AB$ 有定义，结果是 $m\times p$ 矩阵 $C$，且 $C_{ij}$ 是 $A$ 的第 $i$ 行与 $B$ 的第 $j$ 列的点积：
+
+  $$C_{ij}=A_{i,*}\cdot B_{*,j}.$$
+
+- 矩阵乘法通常不可交换，即 $AB\ne BA$；但满足结合律：$(AB)C=A(BC)$。
+- 转置通过交换矩阵的行和列得到。因此，$m\times n$ 矩阵的转置为 $n\times m$ 矩阵，记为 $M^T$。
+- 单位矩阵是方阵，主对角线上的元素为 1，其余元素为 0。
+- 行列式 $\det A$ 将方阵映射为实数。方阵 $A$ 可逆，当且仅当 $\det A\ne0$。行列式用于矩阵逆的计算公式。
+- 矩阵与其逆相乘得到单位矩阵：$MM^{-1}=M^{-1}M=I$。逆矩阵若存在则唯一。只有方阵可能有逆，而且方阵未必可逆。矩阵逆可以用伴随矩阵计算：
+
+  $$A^{-1}=\frac{1}{\det A}\operatorname{adj}(A),$$
+
+  其中 $\operatorname{adj}(A)$ 是 $A$ 的代数余子式矩阵的转置。
+
+- 在代码中，我们使用 DirectXMath 的 `XMMATRIX` 类型，以 SIMD 高效表示 $4\times4$ 矩阵。类的数据成员使用 `XMFLOAT4X4` 保存，并通过 `XMLoadFloat4x4` 和 `XMStoreFloat4x4` 在两种表示间转换。`XMMATRIX` 重载了矩阵加、减、乘法和标量乘法运算符。DirectXMath 还提供用于构造单位矩阵、计算矩阵乘积、转置、行列式和逆的函数：
+
+  ```cpp
+  XMMATRIX XM_CALLCONV XMMatrixIdentity();
+  XMMATRIX XM_CALLCONV XMMatrixMultiply(FXMMATRIX A, CXMMATRIX B);
+  XMMATRIX XM_CALLCONV XMMatrixTranspose(FXMMATRIX M);
+  XMVECTOR XM_CALLCONV XMMatrixDeterminant(FXMMATRIX M);
+  XMMATRIX XM_CALLCONV XMMatrixInverse(XMVECTOR* pDeterminant, FXMMATRIX M);
+  ```
+</section>
+
+<section className="lesson-section" id="s210">
+<h2>2.10 习题</h2>
+
+1. 求下列矩阵方程中的 $X$：
+
+   <Figure src="images/eq89-01.jpg" alt="习题 1 的矩阵方程" caption="原题给出的矩阵方程。" />
+
+2. 计算以下矩阵乘积：
+
+   <Figure src="images/eq90-01.jpg" alt="习题 2 的矩阵乘法算式" caption="原题给出的矩阵乘积。" />
+
+3. 求以下矩阵的转置：
+
+   <Figure src="images/eq90-02.jpg" alt="习题 3 中待转置的矩阵" caption="原题给出的矩阵。" />
+
+4. 将下列线性组合写成向量与矩阵的乘积：
+   - $v=2(1,2,3)-4(-5,0,-1)+3(2,-2,3)$。
+   - $v=3(2,-4)+2(1,4)-1(-2,-3)+5(1,1)$。
+
+5. 证明：
+
+   <Figure src="images/eq90-03.jpg" alt="习题 5 要证明的矩阵恒等式" caption="原题给出的矩阵恒等式。" />
+
+6. 证明：
+
+   <Figure src="images/eq90-04.jpg" alt="习题 6 要证明的矩阵恒等式" caption="原题给出的矩阵恒等式。" />
+
+7. 证明，叉积可以表示为以下矩阵乘积：
+
+   <Figure src="images/eq91-01.jpg" alt="用矩阵乘积表示叉积的公式" caption="原题给出的叉积矩阵表示。" />
+
+8. 下图中的矩阵是 $A$ 的逆矩阵吗？
+
+   <Figure src="images/eq91-02.jpg" alt="习题 8 用于判断是否为 A 逆矩阵的矩阵" caption="原题给出的矩阵。" />
+
+9. 下图中的矩阵是 $A$ 的逆矩阵吗？
+
+   <Figure src="images/eq91-03.jpg" alt="习题 9 用于判断是否为 A 逆矩阵的矩阵" caption="原题给出的矩阵。" />
+
+10. 求以下矩阵的行列式：
+
+    <Figure src="images/eq91-04.jpg" alt="习题 10 中待求行列式的矩阵" caption="原题给出的矩阵。" />
+
+11. 求以下矩阵的逆：
+
+    <Figure src="images/eq91-05.jpg" alt="习题 11 中待求逆的矩阵" caption="原题给出的矩阵。" />
+
+12. 下列矩阵可逆吗？
+
+    <Figure src="images/eq91-06.jpg" alt="习题 12 中待判断是否可逆的矩阵" caption="原题给出的矩阵。" />
+
+13. 假设 $A$ 可逆，证明 $(A^{-1})^T=(A^T)^{-1}$。
+
+14. 设 $A$、$B$ 是 $n\times n$ 矩阵。线性代数教材证明了 $\det(AB)=\det A\cdot\det B$。利用这一事实以及 $\det I=1$，证明当 $A$ 可逆时，
+
+    <Figure src="images/eq91-07.jpg" alt="习题 14 要证明的 A 逆矩阵行列式关系" caption="原题中的待证表达式。" />
+
+15. 证明二维行列式
+
+    $$\det\begin{bmatrix}u_x&u_y\\v_x&v_y\end{bmatrix}$$
+
+    给出由 $u=(u_x,u_y)$ 与 $v=(v_x,v_y)$ 张成的平行四边形的有向面积。当 $u$ 逆时针旋转角度 $\theta\in(0,\pi)$ 后与 $v$ 重合时，结果为正；否则为负。
+
+    <Figure src="images/Fig2-2.jpg" alt="由二维向量 u 和 v 张成的平行四边形" caption="由 u 与 v 张成的平行四边形；行列式的正负取决于向量的朝向。" />
+
+16. 求以下向量对所张成的平行四边形面积：
+    - $u=(3,0)$，$v=(1,1)$。
+    - $u=(-1,-1)$，$v=(0,1)$。
+
+17. 设：
+
+    <Figure src="images/eq92-02.jpg" alt="习题 17 中的矩阵 A、B 和 C" caption="用于验证矩阵乘法结合律的二阶矩阵。" />
+
+    证明 $A(BC)=(AB)C$。这说明矩阵乘法对 $2\times2$ 矩阵满足结合律。事实上，只要乘法有定义，一般维数的矩阵乘法也满足结合律。
+
+18. 编写一个计算 $m\times n$ 矩阵转置的程序，不使用 DirectXMath；在 C++ 中只使用二维数组。
+
+19. 编写一个程序，不使用 DirectXMath，而是在 C++ 中使用二维数组，计算 $4\times4$ 矩阵的行列式和逆矩阵。
+</section>

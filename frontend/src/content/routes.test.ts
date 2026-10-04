@@ -12,6 +12,16 @@ describe('single-entry page routes', () => {
     expect(pageHref('ch22.html', '#s224')).toBe('./?page=ch22#s224');
   });
 
+  it('adds an edition mode to a chapter URL without losing the single-entry route', () => {
+    expect(pageHref('ch05.html', undefined, 'translation')).toBe('./?page=ch05&mode=translation');
+    expect(pageHref('ch05.html', '#s51', 'original')).toBe('./?page=ch05&mode=original#s51');
+  });
+
+  it('supports the same reading modes for the introduction and appendices', () => {
+    expect(pageHref('intro.html', undefined, 'translation')).toBe('./?page=intro&mode=translation');
+    expect(pageHref('appendix.html', '#appendix-c', 'original')).toBe('./?page=appendix&mode=original#appendix-c');
+  });
+
   it('resolves query routes and keeps old direct paths readable', () => {
     expect(routeFromLocation('/', '?page=ch23')).toBe('ch23.html');
     expect(routeFromLocation('/', '?page=appendix')).toBe('appendix.html');

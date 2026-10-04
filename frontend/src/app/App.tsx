@@ -1,16 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
 import { MDXProvider } from '@mdx-js/react';
 import { bookParts, chapters, chapterByRoute, sampleUrl, type Chapter, type SectionLink } from '@/content/catalog';
 import { referencePages } from '@/content/pages';
 import { pageHref, routeFromLocation } from '@/content/routes';
 import { mdxComponents } from '@/components/ContentBlocks';
 import { ImageLightbox } from '@/components/InlineFigure';
+import { OriginalBookText } from '@/components/OriginalBookText';
 import { ProgressBackup } from '@/components/ProgressBackup';
 import { TableOfContents } from '@/components/TableOfContents';
 import { ProgressProvider, useProgress } from '@/progress/ProgressProvider';
 
 type LessonModule = { default: ComponentType };
 const lessonModules = import.meta.glob('../content/chapters/*.mdx', { eager: true }) as Record<string, LessonModule>;
+const translationLoaders = import.meta.glob('../content/translations/*.mdx') as Record<string, () => Promise<LessonModule>>;
+const translationModules = Object.fromEntries(
+  Object.entries(translationLoaders).map(([path, loader]) => [path, lazy(loader)]),
+) as Record<string, ComponentType>;
+const translationProgress: Record<string, string> = {
+  ch01: '录入中', ch02: '待校对', intro: '录入中', appendix: '录入中',
+};
+type ReadingMode = 'teaching' | 'translation' | 'original';
+
+function currentMode(): ReadingMode {
+  const requested = new URLSearchParams(window.location.search).get('mode');
+  return requested === 'translation' || requested === 'original' ? requested : 'teaching';
+}
 
 function currentRoute(): string {
   return routeFromLocation(window.location.pathname, window.location.search);
@@ -26,6 +40,7 @@ function currentPage(route: string): { title: string; sections: SectionLink[]; c
 
 function AppShell() {
   const route = currentRoute();
+  const mode = currentMode();
   const page = currentPage(route);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrollPercent, setScrollPercent] = useState(0);
@@ -77,7 +92,7 @@ function AppShell() {
         <TableOfContents route={route} sections={page.sections} chapter={page.chapter} mobileOpen={mobileMenuOpen} onNavigate={onNavigate} />
         <main className="main-content" id="main-content">
           {page.chapter || page.reference
-            ? <ReaderPage route={route} {...page} />
+            ? <ReaderPage route={route} mode={mode} {...page} />
             : <HomePage />}
         </main>
       </div>
@@ -87,12 +102,15 @@ function AppShell() {
   );
 }
 
-function ReaderPage({ route, title, sections, chapter, reference }: { route: string; title: string; sections: SectionLink[]; chapter?: Chapter; reference?: typeof referencePages[keyof typeof referencePages] }) {
+function ReaderPage({ route, title, sections, chapter, reference, mode }: { route: string; title: string; sections: SectionLink[]; chapter?: Chapter; reference?: typeof referencePages[keyof typeof referencePages]; mode: ReadingMode }) {
   const { chapter: getProgress, markRead, markPracticeDone } = useProgress();
   const progress = chapter ? getProgress(chapter.id) : undefined;
   const sample = chapter ? sampleUrl(chapter) : undefined;
   const lessonPath = chapter ? `../content/chapters/${chapter.id}.mdx` : `../content/chapters/${route.replace('.html', '.mdx')}`;
   const Lesson = lessonModules[lessonPath]?.default;
+  const contentId = chapter?.id ?? (route === 'intro.html' ? 'intro' : route === 'appendix.html' ? 'appendix' : undefined);
+  const translationPath = contentId ? `../content/translations/${contentId}.mdx` : '';
+  const Translation = translationModules[translationPath];
 
   useEffect(() => {
     const sentinel = document.getElementById('reading-complete-sentinel');
@@ -126,11 +144,23 @@ function ReaderPage({ route, title, sections, chapter, reference }: { route: str
         </>}
       </header>
 
+      {(chapter || reference) && <nav className="reading-modes" aria-label="阅读模式">
+        <a className={mode === 'teaching' ? 'is-current' : ''} href={pageHref(route)} aria-current={mode === 'teaching' ? 'page' : undefined}>互动讲解</a>
+        <a className={mode === 'translation' ? 'is-current' : ''} href={pageHref(route, undefined, 'translation')} aria-current={mode === 'translation' ? 'page' : undefined}>完整译文{(!Translation || (contentId && translationProgress[contentId])) && <small>{(contentId && translationProgress[contentId]) ?? '录入中'}</small>}</a>
+        <a className={mode === 'original' ? 'is-current' : ''} href={pageHref(route, undefined, 'original')} aria-current={mode === 'original' ? 'page' : undefined}>English 原文</a>
+      </nav>}
+
       <div className="reading-grid">
         <div className="lesson-column">
-          {Lesson
-            ? <MDXProvider components={mdxComponents}><div className="lesson-content"><Lesson /></div></MDXProvider>
-            : <FrameworkPlaceholder chapter={chapter} reference={reference} sections={sections} />}
+          {mode === 'original' && (chapter || reference)
+            ? <div className="lesson-content">{chapter ? <OriginalBookText chapterId={chapter.id} /> : <ReferenceOriginalBookText route={route} />}</div>
+            : mode === 'translation' && contentId
+              ? Translation
+                ? <MDXProvider components={mdxComponents}><Suspense fallback={<p className="translation-loading" role="status">正在载入译文…</p>}><div className="lesson-content translation-content"><Translation /></div></Suspense></MDXProvider>
+                : <div className="lesson-content translation-pending"><div className="callout callout--note"><b>{reference ? '本部分完整译文正在录入' : '本章完整译文正在录入'}</b><p>译文会按原书顺序保留正文、推导、示例、代码说明、图注、总结与练习；完成后可随时切回互动讲解或英文原文。</p></div></div>
+              : Lesson
+                ? <MDXProvider components={mdxComponents}><div className="lesson-content"><Lesson /></div></MDXProvider>
+                : <FrameworkPlaceholder chapter={chapter} reference={reference} sections={sections} />}
           <div className="chapter-finish" id="chapter-finish">
             <span className="eyebrow">PAUSE & APPLY</span>
             <h2>{chapter ? '把这一章用出来' : '继续你的学习路线'}</h2>
@@ -174,6 +204,17 @@ function ReaderPage({ route, title, sections, chapter, reference }: { route: str
       </div>
     </article>
   );
+}
+
+function ReferenceOriginalBookText({ route }: { route: string }) {
+  if (route === 'intro.html') return <OriginalBookText chapterId="intro" />;
+
+  const appendices = ['appA', 'appB', 'appC', 'appD', 'appE'];
+  return <div className="original-appendices">
+    {appendices.map((chapterId, index) => <section id={`appendix-${String.fromCharCode(97 + index)}`} key={chapterId}>
+      <OriginalBookText chapterId={chapterId} />
+    </section>)}
+  </div>;
 }
 
 function FrameworkPlaceholder({ chapter, reference, sections }: { chapter?: Chapter; reference?: typeof referencePages[keyof typeof referencePages]; sections: SectionLink[] }) {

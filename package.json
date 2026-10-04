@@ -10,7 +10,9 @@
     "preview:build": "npm run build && vite preview --config frontend/vite.config.ts --host 127.0.0.1 --port 4174 --strictPort",
     "test": "vitest run --config frontend/vitest.config.ts",
     "test:watch": "vitest --config frontend/vitest.config.ts",
-    "check:figures": "node tools/check-figures.mjs"
+    "check:figures": "node tools/check-figures.mjs",
+    "check:translations": "node tools/check-translations.mjs",
+    "check:translations:complete": "node tools/check-translations.mjs --strict"
   },
   "dependencies": {
     "@mdx-js/react": "^3.1.0",

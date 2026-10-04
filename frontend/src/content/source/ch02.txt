@@ -1,0 +1,737 @@
+Introduction to 3D Game Programming with DirectX 12
+
+-
+
+Chapter   2
+
+MATRIX
+
+ALGEBRA
+
+In 3D computer graphics, we use matrices to compactly describe geometric transformations such as scaling, rotation, and translation, and also to change the coordinates of a point or vector from one frame to another. This chapter explores the mathematics of matrices.
+
+Objectives:
+
+- To obtain an understanding of matrices and the operations defined on them.
+
+- To discover how a vector-matrix multiplication can be viewed as a linear combination.
+
+- To learn what the identity matrix is, and what the transpose, determinant, and inverse of a matrix are.
+
+- To become familiar with the subset of classes and functions provided by the DirectX Math library used for matrix mathematics.
+
+# 2.1 DEFINITION
+
+An m &times; n matrix M is a rectangular array of real numbers with m rows and n columns. The product of the number of rows and columns gives the dimensions of the matrix. The numbers in a matrix are called elements or entries. We identify a matrix element by specifying the row and column of the element using a double subscript notation Mij, where the first subscript identifies the row and the second subscript identifies the column.
+
+[[IMG hand.jpg]]
+Example 2.1
+
+Consider the following matrices:
+
+[[IMG eq72-01.jpg]]
+
+- The matrix A is a 4 &times; 4 matrix; the matrix B is a 3 &times; 2 matrix; the matrix u is a 1 &times; 3 matrix; and the matrix v is a 4 &times; 1 matrix.
+
+- We identify the element in the fourth row and second column of the matrix A by A42 = &minus;5. We identify the element in the second row and first column of the matrix B by B21.
+
+- The matrices u and v are special matrices in the sense that they contain a single row or column, respectively. We sometimes call these kinds of matrices row vectors or column vectors because they are used to represent a vector in matrix form (e.g., we can freely interchange the vector notations (x, y, z) and [x, y, z]). Observe that for row and column vectors, it is unnecessary to use a double subscript to denote the elements of the matrix&mdash;we only need one subscript.
+
+Occasionally we like to think of the rows of a matrix as vectors. For example, we might write:
+
+[[IMG eq72-02.jpg]]
+
+where A1,* = [A11, A12, A13], A2,* = [A21, A22, A23] and A3,* = [A31, A32, A33]. In this notation, the first index specifies the row, and we put a &lsquo;*&rsquo; in the second index to indicate that we are referring to the entire row vector. Likewise, we like to do the same thing for the columns:
+
+[[IMG eq73-01.jpg]]
+
+In this notation, the second index specifies the column, and we put a &lsquo;*&rsquo; in the first index to indicate that we are referring to the entire column vector.
+
+We now define equality, addition, scalar multiplication, and subtraction on matrices.
+
+- Two matrices are equal if and only if their corresponding elements are equal; as such, two matrices must have the same number of rows and columns in order to be compared.
+
+- We add two matrices by adding their corresponding elements; as such, it only makes sense to add matrices that the same number of rows and columns.
+
+- We multiply a scalar and a matrix by multiplying the scalar with every element in the matrix.
+
+- We define subtraction in terms of matrix addition and scalar multiplication. That is, A &minus; B = A + (&minus;1 B) = A + (&minus;B).
+
+[[IMG hand.jpg]]
+Example 2.2
+
+Let
+
+[[IMG eq73-03.jpg]]
+
+Then,
+
+(i)
+[[IMG eq73-04.jpg]]
+
+[[IMG eq74-02.jpg]]
+
+Because addition and scalar multiplication is done element-wise, matrices essentially inherit the following addition and scalar multiplication properties from real numbers:
+
+- A + B = B + A Commutative law of addition
+
+- (A + B) + C = A + (B + C) Associative law of addition
+
+- r(A + B) = rA + rB Scalar distribution over matrices
+
+- (r + s)A = rA + sA Matrix distribution over scalars
+
+# 2.2 MATRIX MULTIPLICATION
+
+## 2.2.1 Definition
+
+If A is a m &times; n matrix and B is a n &times; p matrix, then the product AB is defined and is a m &times; p matrix C, where the ijth entry of the product C is given by taking the dot product of the ith row vector in A with the jth column vector in B, that is,
+
+[[IMG 74-0a.jpg]]
+
+So note that in order for the matrix product AB to be defined, we require that the number of columns in A equal the number of rows in B, which is to say, we require that the dimension of the row vectors in A equal the dimension of the column vectors in B. If these dimensions did not match, then the dot product in Equation 2.1 would not make sense.
+
+[[IMG hand.jpg]]
+Example 2.3
+
+[[IMG eq74-03.jpg]]
+
+The product AB is not defined since the row vectors in A have dimension 2 and the column vectors in B have dimension 3. In particular, we cannot take the dot product of the first row vector in A with the first column vector in B because we cannot take the dot product of a 2D vector with a 3D vector.
+
+[[IMG hand.jpg]]
+Example 2.4
+
+Let
+
+[[IMG eq75-01.jpg]]
+
+We first point out that the product AB is defined (and is a 2 &times; 3 matrix) because the number of columns of A equals the number of rows of B. Applying Equation 2.1 yields:
+
+[[IMG eq75-02.jpg]]
+
+Observe that the product BA is not defined because the number of columns in B does not equal the number of rows in A. This demonstrates that, in general, matrix multiplication is not commutative; that is, AB ≠ BA.
+
+## 2.2.2 Vector-Matrix Multiplication
+
+Consider the following vector-matrix multiplication:
+
+[[IMG eq75-03.jpg]]
+
+Observe that uA evaluates to a 1 &times; 3 row vector in this case. Now, applying Equation 2.1 gives:
+
+[[IMG eq76-03.jpg]]
+
+Thus,
+
+[[IMG eq76-01.jpg]]
+
+Equation 2.2 is an example of a linear combination, and it says that the vector-matrix product uA is equivalent to a linear combination of the row vectors of the matrix A with scalar coefficients x, y, and z given by the vector u. Note that, although we showed this for a 1 &times; 3 row vector and a 3 &times; 3 matrix, the result is true in general. That is, for a l &times; n row vector u and a n &times; m matrix A, we have that uA is a linear combination of the row vectors in A with scalar coefficients given by u:
+
+[[IMG eq76-02.jpg]]
+
+## 2.2.3 Associativity
+
+Matrix multiplication has some nice algebraic properties. For example, matrix multiplication distributes over addition: A(B + C) = AB + AC) and (A + B)C = AC + BC). In particular, however, we will use the associative law of matrix multiplication from time to time, which allows us to choose the order we multiply matrices:
+
+(AB)C = A(BC)
+
+# 2.3 THE TRANSPOSE OF A MATRIX
+
+The transpose of a matrix is found by interchanging the rows and columns of the matrix. Thus the transpose of an m &times; n matrix is an n &times; m matrix. We denote the transpose of a matrix M as MT.
+
+[[IMG hand.jpg]]
+Example 2.5
+
+Find the transpose for the following three matrices:
+
+[[IMG eq77-01.jpg]]
+
+To reiterate, the transposes are found by interchanging the rows and columns, thus
+
+[[IMG eq77-02.jpg]]
+
+The transpose has the following useful properties:
+
+- (A + B)T = AT + BT
+
+- (cA)T = cAT
+
+- (AB)T = BTAT
+
+- (AT)T = A
+
+- (A&minus;1)T = (AT)&minus;1
+
+# 2.4 THE IDENTITY MATRIX
+
+There is a special matrix called the identity matrix. The identity matrix is a square matrix that has zeros for all elements except along the main diagonal; the elements along the main diagonal are all ones.
+
+For example, below are 2 &times; 2, 3 &times; 3 and 4 &times; 4 identity matrices.
+
+[[IMG eq77-03.jpg]]
+
+The identity matrix acts as a multiplicative identity; that is, if A is an m &times; n matrix, B is an n &times; p matrix, and I is the n &times; n identity matrix, then
+
+AI = A and IB = B
+
+In other words, multiplying a matrix by the identity matrix does not change the matrix. The identity matrix can be thought of as the number 1 for matrices. In particular, if M is a square matrix, then multiplication with the identity matrix is commutative:
+
+MI = IM = M
+
+[[IMG hand.jpg]]
+Example 2.6
+
+[[IMG eq78-01.jpg]]
+
+Thus it is true that MI = IM = M.
+
+[[IMG hand.jpg]]
+Example 2.7
+
+[[IMG eq78-02.jpg]]
+
+Note that we cannot take the product Iu because the matrix multiplication is not defined.
+
+# 2.5 THE DETERMINANT OF A MATRIX
+
+The determinant is a special function which inputs a square matrix and outputs a real number. The determinant of a square matrix A is commonly denoted by det A. It can be shown that the determinant has a geometric interpretation related to volumes of boxes and that the determinant provides information on how volumes change under linear transformations. In addition, determinants are used to solve systems of linear equations using Cramer&rsquo;s Rule. However, for our purposes, we are mainly motivated to study the determinant because it gives us an explicit formula for finding the inverse of a matrix (the topic of §2.7). In addition, it can be proved that: A square matrix A is invertible if and only if det A ≠ 0. This fact is useful because it gives us a computational tool for determining if a matrix is invertible. Before we can define the determinant, we first introduce the concept of matrix minors.
+
+## 2.5.1 Matrix Minors
+
+Given an n &times; n matrix A, the minor matrix
+[[IMG cabarij.jpg]]
+is the (n &minus; 1) &times; (n &minus; 1) matrix found by deleting the ith row and jth column of A.
+
+[[IMG hand.jpg]]
+Example 2.8
+
+[[IMG eq79-01.jpg]]
+
+## 2.5.2 Definition
+
+The determinant of a matrix is defined recursively; for instance, the determinant of a 4 &times; 4 matrix is defined in terms of the determinant of a 3 &times; 3 matrix, and the determinant of a 3 &times; 3 matrix is defined in terms of the determinant of a 2 &times; 2 matrix, and the determinant of a 2 &times; 2 matrix is defined in terms of the determinant of a 1 &times; 1 matrix (the determinant of a 1 &times; 1 matrix A = [A11] is trivially defined to be det [A11] = A11).
+
+Let A be an n &times; n matrix. Then for n > 1 we define:
+
+[[IMG eq80-01.jpg]]
+
+Recalling the definition of the minor matrix
+[[IMG cabarij.jpg]]
+, for 2 &times; 2 matrices, this gives the formula:
+
+[[IMG eq80-02.jpg]]
+
+For 3 &times; 3 matrices, this gives the formula:
+
+[[IMG eq80-03.jpg]]
+
+And for 4 &times; 4 matrices, this gives the formula:
+
+[[IMG eq80-04.jpg]]
+
+In 3D graphics, we primarily work with 4 &times; 4 matrices, and so we do not need to continue generating explicit formulas for n > 4.
+
+[[IMG hand.jpg]]
+Example 2.9
+
+Find the determinant of the matrix
+
+[[IMG eq80-05.jpg]]
+
+We have that:
+
+[[IMG eq81-01.jpg]]
+
+# 2.6 THE ADJOINT OF A MATRIX
+
+Let A be an n &times; n matrix. The product
+[[IMG 81-0a.jpg]]
+is called the cofactor of Aij. If we compute Cij and place it in the ijth position of a corresponding matrix CA for every element in A, we obtain the cofactor matrix of A:
+
+[[IMG eq81-02.jpg]]
+
+If we take the transpose of CA we get a matrix that is called adjoint of A, which we denote by
+
+[[IMG eq81-03.jpg]]
+
+In the next section, we learn that the adjoint enables us to find an explicit formula for computing matrix inverses.
+
+# 2.7 THE INVERSE OF A MATRIX
+
+Matrix algebra does not define a division operation, but it does define a multiplicative inverse operation. The following list summarizes the important information about inverses:
+
+- Only square matrices have inverses; therefore, when we speak of matrix inverses, we assume we are dealing with a square matrix.
+
+- The inverse of an n &times; n matrix M is an n &times; n matrix denoted by M&minus;1.
+
+- Not every square matrix has an inverse. A matrix that does have an inverse is said to be invertible, and a matrix that does not have an inverse is said to be singular.
+
+- The inverse is unique when it exists.
+
+- Multiplying a matrix with its inverse results in the identity matrix: MM&minus;1 = M&minus;1M = I. Note that multiplying a matrix with its own inverse is a case when matrix multiplication is commutative.
+
+Matrix inverses are useful when solving for other matrices in a matrix equation. For example, suppose that we are given the matrix equation p&prime; = pM. Further suppose that we are given p&prime; and M, and want to solve for p. Assuming that M is invertible (i.e., M&minus;1 exists), we can solve for p like so:
+
+[[IMG eq82-06.jpg]]
+
+A formula for finding inverses, which we do not prove here but should be proved in any college level linear algebra text, can be given in terms of the adjoint and determinant:
+
+[[IMG eq82-01.jpg]]
+
+[[IMG hand.jpg]]
+Example 2.10
+
+Find a general formula for the inverse of a 2 &times; 2 matrix
+[[IMG eq82-02.jpg]]
+, and use this formula to find the inverse of the matrix
+[[IMG eq82-03.jpg]]
+
+We have that
+
+[[IMG eq82-04.jpg]]
+
+[[IMG eq83-01.jpg]]
+
+[[IMG note.jpg]]
+
+For small matrices (sizes 4 &times; 4 and smaller), the adjoint method is computationally efficient. For larger matrices, other methods are used like Gaussian elimination. However, the matrices we are concerned about in 3D computer graphics have special forms, which enable us to determine the inverse formulas ahead of time, so that we do not need to waste CPU cycles finding the inverse of a general matrix. Consequently, we rarely need to apply Equation 2.6 in code.
+
+To conclude this section on inverses, we present the following useful algebraic property for the inverse of a product:
+
+(AB)&minus;1 = B&minus;1A&minus;1
+
+This property assumes both A and B are invertible and that they are both square matrices of the same dimension. To prove that B&minus;1A&minus;1 is the inverse of AB, we must show (AB)(B&minus;1A&minus;1) = I and (B&minus;1A&minus;1)(AB) = I. This is done as follows:
+
+(AB)(B&minus;1A&minus;1) = A(BB&minus;1)A&minus;1 = AIA&minus;1 = AA&minus;1 = I
+
+(B&minus;1A&minus;1)(AB) = B&minus;1(A&minus;1A)B = B&minus;1IB = B&minus;1B = I
+
+# 2.8 DIRECTX MATH MATRICES
+
+For transforming points and vectors, we use 1 &times; 4 row vectors and 4 &times; 4 matrices. The reason for this will be explained in the next chapter. For now, we just concentrate on the DirectX Math types used to represent 4 &times; 4 matrices.
+
+## 2.8.1 Matrix Types
+
+To represent 4 &times; 4 matrices in DirectX math, we use the XMMATRIX class, which is defined as follows in the DirectXMath.h header file (with some minor adjustments we have made for clarity):
+
+#if (defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM)) && defined(_XM_NO_INTRINSICS_)
+
+struct XMMATRIX
+
+#else
+
+__declspec(align(16)) struct XMMATRIX
+
+#endif
+
+{
+
+// Use 4 XMVECTORs to represent the matrix for SIMD.
+
+XMVECTOR r[4];
+
+XMMATRIX() {}
+
+// Initialize matrix by specifying 4 row vectors.
+
+XMMATRIX(FXMVECTOR R0, FXMVECTOR R1, FXMVECTOR R2, CXMVECTOR R3)
+
+{ r[0] = R0; r[1] = R1; r[2] = R2; r[3] = R3; }
+
+// Initialize matrix by specifying 4 row vectors.
+
+XMMATRIX(float m00, float m01, float m02, float m03,
+
+float m10, float m11, float m12, float m13,
+
+float m20, float m21, float m22, float m23,
+
+float m30, float m31, float m32, float m33);
+
+// Pass array of sixteen floats to construct matrix.
+
+explicit XMMATRIX(_In_reads_(16) const float *pArray);
+
+XMMATRIX& operator= (const XMMATRIX& M)
+
+{ r[0] = M.r[0]; r[1] = M.r[1]; r[2] = M.r[2]; r[3] = M.r[3]; return *this; }
+
+XMMATRIX operator+ () const { return *this; }
+
+XMMATRIX operator- () const;
+
+XMMATRIX& XM_CALLCONV operator+= (FXMMATRIX M);
+
+XMMATRIX& XM_CALLCONV operator-= (FXMMATRIX M);
+
+XMMATRIX& XM_CALLCONV operator*= (FXMMATRIX M);
+
+XMMATRIX& operator*= (float S);
+
+XMMATRIX& operator/= (float S);
+
+XMMATRIX XM_CALLCONV operator+ (FXMMATRIX M) const;
+
+XMMATRIX XM_CALLCONV operator- (FXMMATRIX M) const;
+
+XMMATRIX XM_CALLCONV operator* (FXMMATRIX M) const;
+
+XMMATRIX operator* (float S) const;
+
+XMMATRIX operator/ (float S) const;
+
+friend XMMATRIX XM_CALLCONV operator* (float S, FXMMATRIX M);
+
+};
+
+As you can see, XMMATRIX uses four XMVECTOR instances to use SIMD. Moreover, XMMATRIX provides overloaded operators for matrix arithmetic.
+
+In addition to using the various constructors, an XMMATRIX instance can be created using the XMMatrixSet function:
+
+XMMATRIX XM_CALLCONV XMMatrixSet(
+
+float m00, float m01, float m02, float m03,
+
+float m10, float m11, float m12, float m13,
+
+float m20, float m21, float m22, float m23,
+
+float m30, float m31, float m32, float m33);
+
+Just as we use XMFLOAT2 (2D), XMFLOAT3 (3D), and XMFLOAT4 (4D) when storing vectors in a class, it is recommended, by the DirectXMath documentation to use the XMFLOAT4X4 type to store matrices as class data members.
+
+struct XMFLOAT4X4
+
+{
+
+union
+
+{
+
+struct
+
+{
+
+float _11, _12, _13, _14;
+
+float _21, _22, _23, _24;
+
+float _31, _32, _33, _34;
+
+float _41, _42, _43, _44;
+
+};
+
+float m[4][4];
+
+};
+
+XMFLOAT4X4() {}
+
+XMFLOAT4X4(float m00, float m01, float m02, float m03,
+
+float m10, float m11, float m12, float m13,
+
+float m20, float m21, float m22, float m23,
+
+float m30, float m31, float m32, float m33);
+
+explicit XMFLOAT4X4(_In_reads_(16) const float *pArray);
+
+float operator() (size_t Row, size_t Column) const { return m[Row][Column]; }
+
+float& operator() (size_t Row, size_t Column) { return m[Row][Column]; }
+
+XMFLOAT4X4& operator= (const XMFLOAT4X4& Float4x4);
+
+};
+
+We use the following method to load data from XMFLOAT4X4 into XMMATRIX:
+
+inline XMMATRIX XM_CALLCONV
+
+XMLoadFloat4x4(const XMFLOAT4X4* pSource);
+
+We use the following method to store data from XMMATRIX into XMFLOAT4X4:
+
+inline void XM_CALLCONV
+
+XMStoreFloat4x4(XMFLOAT4X4* pDestination, FXMMATRIX M);
+
+## 2.8.2 Matrix Functions
+
+The DirectX Math library includes the following useful matrix related functions:
+
+XMMATRIX XM_CALLCONV XMMatrixIdentity(); // Returns the identity matrix I
+
+bool XM_CALLCONV XMMatrixIsIdentity( // Returns true if M is the identity matrix
+
+FXMMATRIX M); // Input M
+
+XMMATRIX XM_CALLCONV XMMatrixMultiply( // Returns the matrix product AB
+
+FXMMATRIX A, // Input A
+
+CXMMATRIX B); // Input B
+
+XMMATRIX XM_CALLCONV XMMatrixTranspose( // Returns MT
+
+FXMMATRIX M); // Input M
+
+XMVECTOR XM_CALLCONV XMMatrixDeterminant( // Returns (det M, det M, det M, det M)
+
+FXMMATRIX M); // Input M
+
+XMMATRIX XM_CALLCONV XMMatrixInverse( // Returns M&minus;1
+
+XMVECTOR* pDeterminant, // Input (det M, det M, det M, det M)
+
+FXMMATRIX M); // Input M
+
+When we declare a XMMATRIX parameter to a function, we use the same rules we used when passing XMVECTOR parameters (see §1.6.3), except that an XMMATRIX counts as four XMVECTOR parameters. Assuming there are no more than two additional FXMVECTOR parameters in total to the function, the first XMMATRIX should be of type FXMMATRIX, and any other XMMATRIX should be of type CXMMATRIX. We illustrate how these types are defined on 32-bit Windows with a compiler that supports the __fastcall calling convention and a compiler that supports the newer __vectorcall calling convention:
+
+// 32-bit Windows __fastcall passes first 3 XMVECTOR arguments
+
+// via registers, the remaining on the stack.
+
+typedef const XMMATRIX& FXMMATRIX;
+
+typedef const XMMATRIX& CXMMATRIX;
+
+// 32-bit Windows __vectorcall passes first 6 XMVECTOR arguments
+
+// via registers, the remaining on the stack.
+
+typedef const XMMATRIX FXMMATRIX;
+
+typedef const XMMATRIX& CXMMATRIX;
+
+Observe that on 32-bit Windows with __fastcall, a XMMATRIX cannot be passed through SSE/SSE2 registers because only three XMVECTOR arguments via registers are supported, and a XMMATRIX requires four; thus the matrix is just passed on the stack by reference. For the details on how these types are defined for the other platforms, see &ldquo;Calling Conventions&rdquo; under &ldquo;Library Internals&rdquo; in the DirectXMath documentation [DirectXMath]. The exception to these rules is with constructor methods. [DirectXMath] recommends always using CXMMATRIX for constructors that takes XMMATRIX parameters. Furthermore, do not use the annotation XM_CALLCONV for constructors.
+
+## 2.8.3 DirectX Math Matrix Sample Program
+
+The following code provides some examples on how to use the XMMATRIX class and most of the functions listed in the previous section.
+
+#include <windows.h> // for XMVerifyCPUSupport
+
+#include <DirectXMath.h>
+
+#include <DirectXPackedVector.h>
+
+#include <iostream>
+
+using namespace std;
+
+using namespace DirectX;
+
+using namespace DirectX::PackedVector;
+
+// Overload the "<<" operators so that we can use cout to
+
+// output XMVECTOR and XMMATRIX objects.
+
+ostream& XM_CALLCONV operator << (ostream& os, FXMVECTOR v)
+
+{
+
+XMFLOAT4 dest;
+
+XMStoreFloat4(&dest, v);
+
+os << "(" << dest.x << ", " << dest.y << ", " << dest.z << ", " << dest.w << ")";
+
+return os;
+
+}
+
+ostream& XM_CALLCONV operator << (ostream& os, FXMMATRIX m)
+
+{
+
+for (int i = 0; i < 4; ++i)
+
+{
+
+os << XMVectorGetX(m.r[i]) << ″\t";
+
+os << XMVectorGetY(m.r[i]) << "\t";
+
+os << XMVectorGetZ(m.r[i]) << "\t";
+
+os << XMVectorGetW(m.r[i]);
+
+os << endl;
+
+}
+
+return os;
+
+}
+
+int main()
+
+{
+
+// Check support for SSE2 (Pentium4, AMD K8, and above).
+
+if (!XMVerifyCPUSupport())
+
+{
+
+cout << "directx math not supported" << endl;
+
+return 0;
+
+}
+
+XMMATRIX A(1.0f, 0.0f, 0.0f, 0.0f,
+
+0.0f, 2.0f, 0.0f, 0.0f,
+
+0.0f, 0.0f, 4.0f, 0.0f,
+
+1.0f, 2.0f, 3.0f, 1.0f);
+
+XMMATRIX B = XMMatrixIdentity();
+
+XMMATRIX C = A * B;
+
+XMMATRIX D = XMMatrixTranspose(A);
+
+XMVECTOR det = XMMatrixDeterminant(A);
+
+XMMATRIX E = XMMatrixInverse(&det, A);
+
+XMMATRIX F = A * E;
+
+cout << "A = " << endl << A << endl;
+
+cout << "B = " << endl << B << endl;
+
+cout << "C = A*B = " << endl << C << endl;
+
+cout << "D = transpose(A) = " << endl << D << endl;
+
+cout << "det = determinant(A) = " << det << endl << endl;
+
+cout << "E = inverse(A) = " << endl << E << endl;
+
+cout << "F = A*E = " << endl << F << endl;
+
+return 0;
+
+}
+
+[[IMG Fig2-1.jpg]]
+
+Figure 2.1. Output of the above program.
+
+# 2.9 SUMMARY
+
+- An m &times; n matrix M is a rectangular array of real numbers with m rows and n columns. Two matrices of the same dimensions are equal if and only if their corresponding components are equal. We add two matrices of the same dimensions by adding their corresponding elements. We multiply a scalar and a matrix by multiplying the scalar with every element in the matrix.
+
+- If A is a m &times; n matrix and B is a n &times; p matrix, then the product AB is defined and is a m &times; p matrix C, where the ijth entry of the product C is given by taking the dot product of the ith row vector in A with the jth column vector in B, that is,
+[[IMG 89-0a.jpg]]
+.
+
+- Matrix multiplication is not commutative (i.e., AB ≠ BA, in general). Matrix multiplication is associative: (AB)C = A(BC).
+
+- The transpose of a matrix is found by interchanging the rows and columns of the matrix. Thus the transpose of an m &times; n matrix is an n &times; m matrix. We denote the transpose of a matrix M as MT.
+
+- The identity matrix is a square matrix that has zeros for all elements except along the main diagonal, and the elements along the main diagonal are all ones.
+
+- The determinant, det A, is a special function which inputs a square matrix and outputs a real number. A square matrix A is invertible if and only if det A ≠ 0. The determinant is used in the formula for computing the inverse of a matrix.
+
+- Multiplying a matrix with its inverse results in the identity matrix: MM&minus;1 = M&minus;1M = I. The inverse of a matrix, if it exists, is unique. Only square matrices have inverses and even then, a square matrix may not be invertible. The inverse of a matrix can be computed with the formula: , where is the adjoint (transpose of the cofactor matrix of A).
+
+- We use the DirectX Math XMMATRIX type to describe 4 &times; 4 matrices efficiently in code using SIMD operations. For class data members, we use the XMFLOAT4X4 class, and then use the loading (XMLoadFloat4x4) and storage (XMStoreFloat4x4) methods to convert back and forth between XMMATRIX and XMFLOAT4X4. The XMMATRIX class overloads the arithmetic operators to do matrix addition, subtraction, matrix multiplication, and scalar multiplication. Moreover, the DirectX Math library provides the following useful matrix functions for computing the identity matrix, product, transpose, determinant, and inverse:
+
+XMMATRIX XM_CALLCONV XMMatrixIdentity();
+
+XMMATRIX XM_CALLCONV XMMatrixMultiply(FXMMATRIX A, CXMMATRIX B);
+
+XMMATRIX XM_CALLCONV XMMatrixTranspose(FXMMATRIX M);
+
+XMVECTOR XM_CALLCONV XMMatrixDeterminant(FXMMATRIX M);
+
+XMMATRIX XM_CALLCONV XMMatrixInverse(XMVECTOR* pDeterminant, FXMMATRIX M);
+
+# 2.10 EXERCISES
+
+- Solve the following matrix equation for
+[[IMG eq89-01.jpg]]
+.
+
+- Compute the following matrix products:
+
+[[IMG eq90-01.jpg]]
+
+- Compute the transpose of the following matrices:
+
+[[IMG eq90-02.jpg]]
+
+- Write the following linear combinations as vector-matrix products:
+
+- v = 2(1, 2, 3) &minus; 4(&minus;5, 0, &minus;1) +3(2, &minus;2, 3)
+
+- v = 3(2, &minus;4) + 2(1, 4) &minus;1(&minus;2, &minus;3) + 5(1, 1)
+
+- Show that
+
+[[IMG eq90-03.jpg]]
+
+- Show that
+
+[[IMG eq90-04.jpg]]
+
+- Prove that the cross product can be expressed by the matrix product:
+
+[[IMG eq91-01.jpg]]
+
+-
+[[IMG eq91-02.jpg]]
+the inverse of A?
+
+-
+[[IMG eq91-03.jpg]]
+the inverse of A?
+
+- Find the determinants of the following matrices:
+
+[[IMG eq91-04.jpg]]
+
+- Find the inverse of the following matrices:
+
+[[IMG eq91-05.jpg]]
+
+- Is the following matrix invertible?
+
+[[IMG eq91-06.jpg]]
+
+- Show that (A&minus;1)T = (AT)&minus;1, assuming A is invertible.
+
+- Let A and B be n &times; n matrices. A fact proved in linear algebra books is that det(AB) = det A · det B. Use this fact along with the fact that det I = 1 to prove det
+[[IMG eq91-07.jpg]]
+, assuming A is invertible.
+
+- Prove that the 2D determinant
+[[IMG eq92-01.jpg]]
+gives the signed area of the parallelogram spanned by u = (ux, uy) and v = (vx, vy). The result is positive if u can be rotated counterclockwise to coincide with v by an angle &theta; ∈ (0, &pi;), and negative otherwise.
+
+[[IMG Fig2-2.jpg]]
+
+- Find the area of the parallelogram spanned by:
+
+- u = (3, 0) band v = (1, 1)
+
+- u = (&minus;1, &minus;1) and v = (0, 1)
+
+- Let
+[[IMG eq92-02.jpg]]
+.
+
+Show that A(BC) = (AB)C. This shows that matrix multiplication is associative for 2 &times; 2 matrices. (In fact, matrix multiplication is associative for general sized matrices, whenever the multiplication is defined.)
+
+- Write a computer program that computes the transpose of an m &times; n matrix without using DirectX Math (just use an array of arrays in C++).
+
+- Write a computer program that computes the determinant and inverse of 4 &times; 4 matrices without using DirectX Math (just use an array of arrays in C++).

@@ -4,10 +4,13 @@ import { referencePages } from './pages';
 const referenceRoutes = new Set(Object.values(referencePages).map((page) => page.route));
 
 /** Build an in-app URL that works with a single static index.html entry. */
-export function pageHref(route: string, sectionId?: string): string {
+export function pageHref(route: string, sectionId?: string, mode?: 'translation' | 'original'): string {
   const fileName = route.split('/').at(-1) ?? route;
   const page = fileName.replace(/\.html$/i, '');
-  const query = page && page !== 'index' ? `?page=${encodeURIComponent(page)}` : '';
+  const params = new URLSearchParams();
+  if (page && page !== 'index') params.set('page', page);
+  if (mode) params.set('mode', mode);
+  const query = params.size ? `?${params.toString()}` : '';
   const section = sectionId?.replace(/^#/, '');
   return `./${query}${section ? `#${encodeURIComponent(section)}` : ''}`;
 }

@@ -1,0 +1,43 @@
+<!--
+复制本模板到 frontend/src/content/translations/chNN.mdx 后再录入。
+不要把本文件移到 translations/ 根目录；App 会 glob 导入根目录中的 *.mdx。
+按原书实际标题和 catalog.ts 中的章节锚点替换所有示例值。
+-->
+
+<div className="translation-progress"><b>译文状态</b><span>录入中 · 已录入：填写小节 · 待录入：填写小节 · 图片待复核：填写清单编号</span></div>
+
+本章的引言和目标按 EPUB 原文顺序完整翻译于此。录入时不要删掉重复说明或压缩例题。
+
+<section className="lesson-section lesson-section--intro" id="replace-with-catalog-section-id">
+<h2>原书小节标题</h2>
+
+逐段翻译原文。保留术语、限定条件、公式说明、例子中的数值和推导步骤。公式图片已可靠识别并经上下文核对时，写成行内 `$...$` 或独立公式：
+
+$$
+% 在此放置经核实的 LaTeX，不保留百分号示例行。
+$$
+
+图表应放在原文对应位置；图注完整翻译：
+
+<Figure src="images/FigNN-1.jpg" alt="准确描述图中对象及关系" figureNumber="图 NN.1" caption="翻译后的原书图注。" />
+
+无法确认的公式图片也应留在相应段落附近，不得以猜测的公式代替：
+
+<Figure src="images/eqNN-01.jpg" alt="原书公式图片，待识别核对" caption="原书公式；待复核，见 uncertain-images.md。" />
+
+原书代码完整放在对应说明之后：
+
+```cpp
+// 将原书代码逐字抄录到这里；不要用伪代码或概述替代。
+```
+
+<h3 id="replace-with-unique-subsection-id">原书子小节标题</h3>
+
+按原书继续逐段翻译。每个子小节 ID 必须唯一，例如 `source-chNN-NN-1`；目录已有锚点优先原样沿用。
+</section>
+
+<!--
+按 EPUB 中每个实际小节复制上方 section，并为每个 section / 子小节使用不重复的 id。
+摘要和习题放在原书实际位置；目录没有对应锚点时，为其设置该章内唯一的 ID。
+摘要逐条翻译；习题保留编号、给定数据、图像、子问题和原书提示，不要自行解题。
+-->

@@ -15,7 +15,7 @@
   --green-wash: #e8f1eb;
   --yellow: #e8be68;
   --warm-wash: #f6efe0;
-  --mono: ui-monospace, 'Cascadia Mono', 'Cascadia Code', 'Source Code Pro', Consolas, 'SFMono-Regular', Menlo, Monaco, 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace;
+  --mono: ui-monospace, 'Cascadia Mono', 'Cascadia Code', 'Source Code Pro', 'SFMono-Regular', Menlo, Consolas, Monaco, 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace;
   --shadow: 0 10px 40px rgba(34, 46, 39, 0.055);
 }
 
@@ -262,7 +262,10 @@ a:hover { color: var(--green-dark); }
 .lesson-content .katex-display > .katex { text-align: left; }
 .lesson-content .math-note { margin: -7px 0 16px; color: #6f7d71; font-size: 11px; line-height: 1.8; }
 .lesson-content .katex { font-size: 1.05em; }
+.lesson-content code.language-math { padding: 0; background: transparent; color: inherit; font: inherit; }
+.lesson-content pre:has(code.language-math) { padding: 0; overflow: visible; border: 0; background: transparent; color: inherit; }
 .lesson-content pre code.hljs, .code-sample pre code.hljs { display: block; padding: 0; overflow-x: auto; background: transparent; color: #e4eae1; font: inherit; }
+code, pre { font-variant-ligatures: none; font-feature-settings: "calt" 0; }
 .term { border-bottom: 1px dotted #93a795; cursor: help; }
 .figure-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 23px 0; }
 .figure-pair .inline-figure { margin: 0; }

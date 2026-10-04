@@ -39,10 +39,10 @@ export function ScalarMultiplyActivity() {
         feedback: `现在 k=${format(factor)}，结果是 (${format(result[0])}, ${format(result[1])})，长度 ${format(resultLength)}。再试 k=0 和 k=1，对照「零向量」与「原向量」。`,
       })}
       explanation={<>
-        <p>逐分量乘标量：$k(x,y)=(kx,ky)$。$k&gt;0$ 时方向保持；$k&lt;0$ 时整支向量翻转；$|k|$ 决定长度缩放比例；$k=0$ 时结果是零向量。</p>
-        <p>本例中 $-\frac12(2,1)=(-1,-\frac12)$，所以箭头与原向量相反，长度是 $\frac12\sqrt5$。注意负号同时作用于两个分量。</p>
+        <p>逐分量乘标量：k(x, y) = (kx, ky)。k &gt; 0 时方向保持；k &lt; 0 时整支向量翻转；|k| 决定长度缩放比例；k = 0 时结果是零向量。</p>
+        <p>本例中 −½(2, 1) = (−1, −½)，所以箭头与原向量相反，长度是原来的 ½。注意负号同时作用于两个分量。</p>
       </>}
-      apply={<p>DirectXMath 可用 <code>XMVectorScale(v, k)</code> 做标量乘法。若代码里只对一个分量取负，得到的会是镜像后的另一个方向，不是 $-v$。</p>}
+      apply={<p>DirectXMath 可用 <code>XMVectorScale(v, k)</code> 做标量乘法。若代码里只对一个分量取负，得到的会是镜像后的另一个方向，不是 −v。</p>}
     >
       <svg className="svg-stage" viewBox="0 0 320 320" role="img"
         aria-label={`原向量 (2, 1)，标量 ${format(factor)}，结果 (${format(result[0])}, ${format(result[1])})`}>

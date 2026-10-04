@@ -1,0 +1,340 @@
+import { VectorFrameActivity } from '@/activities/ch01/VectorFrameActivity';
+import { DotProductActivity } from '@/activities/ch01/DotProductActivity';
+import { CrossProductActivity } from '@/activities/ch01/CrossProductActivity';
+
+<section className="lesson-section lesson-section--intro" id="s11">
+<h2>1.1 向量</h2>
+
+<p>向量（vector）是同时具有<b>大小</b>和<b>方向</b>的量，这样的量也叫向量值量。力（朝哪个方向用多大劲）、位移（朝哪儿移动、移动多远）、速度（多快、朝哪）都是向量。</p>
+
+<p>在几何上，向量用一段<b>有向线段</b>表示：线段长度是大小，箭头指向是方向。书里用「指挥蚂蚁向北移动 10 米」做例子——只说了方向和距离，没说从哪儿出发，这正是向量的特点：它描述「怎么动」，不描述「在哪」。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-1.jpg" alt="画在 2D 平面上的向量，以及指挥蚂蚁向北移动 10 米的向量" figureNumber="图 1.1" caption="(a) 画在 2D 平面上的向量。(b) 向量指挥蚂蚁「向北移动 10 米」。" />
+  <Figure src="images/Fig1-2.jpg" alt="平移向量 v 使尾部对齐坐标系原点" figureNumber="图 1.2" caption="平移 v 使其尾部对齐坐标系原点——尾部对齐原点后，头部坐标就是向量的数值表示。" />
+</div>
+
+<h3>向量与坐标系</h3>
+
+<p>计算机没法直接处理「一段有向线段」，所以要用坐标系把它数字化。做法是平移向量，让它的<b>尾部对齐坐标系原点</b>；处在标准位置的向量，头部坐标就是它的数值表示。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-3.jpg" alt="相对某个坐标系用坐标描述的向量" figureNumber="图 1.3" caption="相对某个坐标系、用坐标描述的向量。" />
+  <Figure src="images/Fig1-4.jpg" alt="同一个向量相对不同坐标系坐标不同" figureNumber="图 1.4" caption="同一个向量 v 相对不同坐标系（frame），坐标不同。" />
+</div>
+
+<h3>左手系与右手系</h3>
+
+<p>同样是 x 轴向右、y 轴向上，z 轴指向哪一侧决定了坐标系的「手性」：</p>
+
+<ul>
+  <li><b>左手系（left-handed）：</b>z 轴指向<b>屏幕内部</b>（远离观察者）。<b>Direct3D 使用左手系。</b></li>
+  <li><b>右手系（right-handed）：</b>z 轴指向<b>屏幕外部</b>（朝向观察者）。OpenGL 和多数数学教材使用右手系。</li>
+</ul>
+
+<Figure src="images/Fig1-5.jpg" alt="左图为左手系，+z 指向页面内部；右图为右手系，+z 朝向读者" figureNumber="图 1.5" caption="左：左手系（注意 +z 轴指向页面内部）；右：右手系（+z 轴朝向读者）。Direct3D 使用左手系。" />
+
+<Callout tone="warning">
+  <b>新手最大的坑</b>
+  <p>同一个数值 v = (2, 2, 1) 在左手系和右手系里描述的是不同的位置方向。看别人的代码或图形 API 文档时，第一件事就是确认坐标系手性，否则物体方向会左右颠倒。</p>
+</Callout>
+
+<h3>基本运算</h3>
+
+<ul>
+  <li><b>相等：</b>对应分量都相等。</li>
+  <li><b>标量乘法 k·u：</b>每个分量乘 k。k &gt; 0 时方向不变、长度缩放；k &lt; 0 时方向反转；几何上就是把向量拉长／缩短 |k| 倍。</li>
+  <li><b>加法 u + v：</b>对应分量相加。几何上是把 v 的尾部接到 u 的头部（三角形法则）。</li>
+  <li><b>减法 u − v：</b>等价于 u + (−v)。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-6.jpg" alt="标量乘法、向量加法、向量减法的几何解释" figureNumber="图 1.6" caption="(a) 标量乘法的几何解释。(b) 向量加法。(c) 向量减法。" />
+  <Figure src="images/Fig1-7.jpg" alt="作用在小球上的多个力用向量加法合成合力" figureNumber="图 1.7" caption="作用在小球上的多个力，用向量加法合成合力。" />
+</div>
+
+<p>这些运算都满足交换律、结合律等标准性质。书里给出了证明，重点是要记住它们的<b>几何意义</b>——后面判断变换顺序时，靠的是几何直觉而不是代数推导。</p>
+
+<VectorFrameActivity />
+</section>
+
+<section className="lesson-section" id="s12">
+<h2>1.2 长度与单位向量</h2>
+
+<p>向量的长度（模，magnitude）记作 ‖u‖。对 3D 向量，用两次勾股定理就能推出来：</p>
+
+<div className="math-block">‖u‖ = √(x² + y² + z²)</div>
+
+<Figure src="images/Fig1-8.jpg" alt="用两次勾股定理计算 3D 向量长度" figureNumber="图 1.8" caption="用两次勾股定理计算 3D 向量的长度。" />
+
+<p><b>单位向量</b>是长度为 1 的向量。把任意非零向量除以自己的长度就得到它，这一步叫<b>归一化</b>（normalize）：</p>
+
+<div className="math-block">û = u / ‖u‖</div>
+
+<p>归一化之后只保留「方向」信息。很多计算（光照里的法线、视线方向、反射向量）必须先归一化，否则结果会错。<b>零向量无法归一化</b>（除以 0），代码里要防。</p>
+
+<MiniQuiz
+  id="ch01-q-length"
+  chapterId="ch01"
+  question="u = (0, 3, 4)，它的长度和归一化结果分别是？"
+  options={['长度 5，归一化后 (0, 0.6, 0.8)', '长度 7，归一化后 (0, 3/7, 4/7)', '长度 25，归一化后 (0, 0.6, 0.8)', '长度 5，归一化后 (0, 3, 4)']}
+  answer={0}
+  explanation="‖u‖ = √(0 + 9 + 16) = √25 = 5；除以 5 得到 (0, 0.6, 0.8)，再验一次长度：0.36 + 0.64 = 1。"
+/>
+</section>
+
+<section className="lesson-section" id="s13">
+<h2>1.3 点积</h2>
+
+<p>点积（内积）定义为对应分量乘积之和：</p>
+
+<div className="math-block">u · v = u<sub>x</sub>v<sub>x</sub> + u<sub>y</sub>v<sub>y</sub> + u<sub>z</sub>v<sub>z</sub></div>
+
+<p>它同时有一个极其有用的几何关系：</p>
+
+<div className="math-block">u · v = ‖u‖ ‖v‖ cos θ<small>θ 是两个向量之间最小的夹角，0 ≤ θ ≤ π</small></div>
+
+<Figure src="images/Fig1-9.jpg" alt="左图为锐角夹角，右图为钝角夹角" figureNumber="图 1.9" caption="左：u 与 v 的夹角 θ 为锐角；右：θ 为钝角。" />
+
+<p>因为 ‖u‖‖v‖ 恒为正，点积的符号完全由 cos θ 决定。游戏里天天在用的判断就来自这里：</p>
+
+<ul>
+  <li>u · v = 0 → 两向量<b>垂直</b>（正交）；</li>
+  <li>u · v &gt; 0 → 夹角小于 90°，方向大致相同；</li>
+  <li>u · v &lt; 0 → 夹角大于 90°，方向大致相反。</li>
+</ul>
+
+<Callout tone="tip">
+  <b>典型应用：敌人是否在我面前</b>
+  <p>拿你的朝向向量和「你到它」的向量做点积，看正负与阈值。归一化之后，点积直接就是 cos θ，阈值可以写成「视野半角的余弦」。</p>
+</Callout>
+
+<h3>正交投影</h3>
+
+<p>点积还给出投影长度：v 在单位向量 n 上的正交投影是 proj<sub>n</sub>(v) = (v · n) n。</p>
+
+<Figure src="images/Fig1-10.jpg" alt="向量 v 在 n 上的正交投影" figureNumber="图 1.10" caption="向量 v 在 n 上的正交投影。" />
+
+<h3>正交化</h3>
+
+<p>有时一组向量「接近」正交但差一点（浮点误差累积后很常见），需要重新正交化。经典做法是 Gram-Schmidt：以 w₀ 为基准，把 w₁ 中平行于 w₀ 的分量减掉。</p>
+
+<div className="math-block">w₁′ = w₁ − proj<sub>w₀</sub>(w₁) = w₁ − ((w₁ · w₀) / ‖w₀‖²) · w₀</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-11.jpg" alt="2D 平面上的正交化" figureNumber="图 1.11" caption="2D 平面上的正交化（Gram-Schmidt）。" />
+  <Figure src="images/Fig1-12.jpg" alt="3D 空间中的正交化" figureNumber="图 1.12" caption="3D 空间中的正交化。" />
+</div>
+
+<p>3D 里再对第三个向量减去它在两个已正交向量上的投影。D3D12 里构造正交基（相机坐标系、切线空间）全都靠这一套。</p>
+
+<DotProductActivity />
+</section>
+
+<section className="lesson-section" id="s14">
+<h2>1.4 叉积</h2>
+
+<p>叉积只对 3D 向量有意义，结果<b>不是数而是向量</b>：w = u × v 同时垂直于 u 和 v。</p>
+
+<div className="math-block">u × v = (u<sub>y</sub>v<sub>z</sub> − u<sub>z</sub>v<sub>y</sub>,  u<sub>z</sub>v<sub>x</sub> − u<sub>x</sub>v<sub>z</sub>,  u<sub>x</sub>v<sub>y</sub> − u<sub>y</sub>v<sub>x</sub>)</div>
+
+<p>长度满足 ‖u × v‖ = ‖u‖ ‖v‖ sin θ，正好等于 u、v 张成的<b>平行四边形面积</b>。</p>
+
+<Figure src="images/Fig1-13.jpg" alt="u×v 得到与 u、v 都垂直的向量 w，方向由左手定则确定" figureNumber="图 1.13" caption="u×v 得到与 u、v 都垂直的向量 w；方向由左/右手定则确定。" />
+
+<Callout tone="note">
+  <b>方向怎么定</b>
+  <p>左手系里伸出左手，让四指从 u 转向 v，拇指指向就是 w 的方向（左手指法则）；右手系用右手。叉积满足<b>反交换律</b>：u × v = −(v × u)。</p>
+</Callout>
+
+<h3>伪 2D 叉积</h3>
+
+<p>2D 平面里常用「伪叉积」求一个垂直向量：对 u = (u<sub>x</sub>, u<sub>y</sub>, 0)，取 v = (u<sub>y</sub>, −u<sub>x</sub>, 0)，也就是交换分量并给其中一个变号。</p>
+
+<Figure src="images/Fig1-14.jpg" alt="2D 伪叉积由 u 算出正交向量 v" figureNumber="图 1.14" caption="2D 伪叉积：由 u 直接算出与其正交的向量 v。" />
+
+<h3>用叉积做正交化</h3>
+
+<p>给定两个不共线的向量，直接 w = u × v 得到第三个正交向量，再用 w × u 得到 v——这是构造正交基的另一种方式（第 19 章法线贴图的切线空间就用它）。</p>
+
+<Figure src="images/Fig1-15.jpg" alt="用叉积做 3D 正交化" figureNumber="图 1.15" caption="用叉积做 3D 正交化。" />
+
+<CrossProductActivity />
+</section>
+
+<section className="lesson-section" id="s15">
+<h2>1.5 点</h2>
+
+<p>向量表示「位移／方向」，<b>点表示「位置」</b>。两者都用同样的三元组 (x, y, z) 存储，但含义不同：</p>
+
+<ul>
+  <li><b>位置向量（position vector）：</b>从原点指向该点的向量——用一个向量描述点的位置。</li>
+  <li><b>点 − 点 = 向量：</b>q − p 是从 p 指向 q 的向量。</li>
+  <li><b>点 + 向量 = 点：</b>从 p 出发沿 v 移动，得到新点 q = p + v。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-16.jpg" alt="位置向量从原点延伸到点 p" figureNumber="图 1.16" caption="位置向量：从原点延伸到点 p，完整描述该点相对坐标系的方位。" />
+  <Figure src="images/Fig1-17.jpg" alt="两点之差得到向量，点与向量相加得到新点" figureNumber="图 1.17" caption="(a) 两点之差 q−p 定义为从 p 指向 q 的向量。(b) 点 p 加上向量 u 得到新点 q。" />
+</div>
+
+<Callout tone="tip">
+  <b>为什么第 3 章需要齐次坐标</b>
+  <p>点和向量用同样的三个数存，但平移对点有效、对向量无效。第 3 章引入的齐次坐标（w = 0 表示向量，w = 1 表示点）就是为了让矩阵能同时表达这两种语义。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s16">
+<h2>1.6 DirectXMath 向量库</h2>
+
+<p>Windows 8 及以上，DirectXMath 是随 Windows SDK 一起提供的 3D 数学库，它基于 SSE2 指令集：128 位宽的 SIMD 寄存器可以用<b>一条指令</b>同时处理四个 32 位浮点数。向量加法只是对应分量相加，用 SIMD 一条指令就能完成 4D 加法，而不是四次标量加法。做 3D 时忽略第四个分量，做 2D 时忽略第三、第四个。</p>
+
+<Callout tone="warning">
+  <b>勘误：DirectXMath 不需要链接任何 .lib</b>
+  <p>原书明确写道：「There are no additional library files, as all the code is implemented inline in the header file.」DirectXMath 全部以内联方式实现在头文件里，只要 <code>#include &lt;DirectXMath.h&gt;</code>（需要额外数据类型时再加 <code>&lt;DirectXPackedVector.h&gt;</code>）即可使用。本站早期版本写的「链接 DirectXMath.lib」并不存在；D3D12 工程要链接的是 <code>d3d12.lib</code>、<code>dxgi.lib</code>、<code>dxguid.lib</code>。</p>
+</Callout>
+
+<h3>向量类型</h3>
+
+<ul>
+  <li><b>XMVECTOR</b>：核心类型，映射到 SIMD 硬件寄存器，是 128 位类型。开启 SSE2 时定义为 <code>typedef __m128 XMVECTOR;</code>。<b>参与计算的向量必须是这个类型</b>才能吃到 SIMD。</li>
+  <li><b>XMFLOAT2 / XMFLOAT3 / XMFLOAT4</b>：普通的结构体存储类型（还有 <code>XMINT*</code>、<code>XMUINT*</code>）。适合放在类成员和数组里。</li>
+  <li><b>XMVECTORF32 / XMVECTORU32 / XMVECTORI32</b>：16 字节对齐的常量类型，用于初始化语法，并带 <code>XMVECTOR</code> 转换运算符。</li>
+</ul>
+
+<h3>加载与存储</h3>
+
+<p>SIMD 类型不能直接当普通成员用，所以要来回搬运：用 <code>XMLoadFloat3</code> 把 <code>XMFLOAT3</code> 读成 <code>XMVECTOR</code>，用 <code>XMStoreFloat3</code> 把结果写回。</p>
+
+<CodeSample
+  title="加载、计算、再存回"
+  language="cpp"
+  code={`#include <DirectXMath.h>
+#include <DirectXPackedVector.h>
+using namespace DirectX;
+
+XMFLOAT3 a(1.0f, 2.0f, 3.0f);   // 存储用：普通结构体
+XMFLOAT3 b(4.0f, 0.0f, -1.0f);
+
+XMVECTOR va = XMLoadFloat3(&a);          // 载入 SIMD 寄存器
+XMVECTOR vb = XMLoadFloat3(&b);
+
+XMVECTOR sum     = va + vb;                       // 重载过的运算符
+float    len     = XMVectorGetX(XMVector3Length(va));
+XMVECTOR dir     = XMVector3Normalize(va);        // 归一化
+float    d       = XMVectorGetX(XMVector3Dot(va, vb));
+XMVECTOR normal  = XMVector3Cross(va, vb);        // 叉积
+
+XMFLOAT3 out;
+XMStoreFloat3(&out, normal);    // 存回普通结构体`}
+  input={<>两个 <code>XMFLOAT3</code> 成员字段。注意类成员里放 <code>XMVECTOR</code> 会造成对齐问题，所以成员用 <code>XMFLOAT3</code>。</>}
+  keyLines={[
+    { code: 'XMLoadFloat3 / XMStoreFloat3', note: '在存储类型和 SIMD 类型之间搬运。热点循环里要尽量减少来回搬运。' },
+    { code: 'XMVector3Length(va)', note: '返回的是 XMVECTOR（四个分量都是长度），取标量要用 XMVectorGetX。' },
+    { code: 'XMVector3Normalize', note: '零向量会得到 NaN，调用前确认长度不为 0。' },
+  ]}
+  output={<>图 1.18—1.20 是书中示例程序的运行输出，可以直接对照 PRINT 出来的分量值。</>}
+  pitfalls={[
+    '把 XMVECTOR 直接作为类成员或 std::vector 元素：XMVECTOR 要求 16 字节对齐，x86 下容易崩。成员请用 XMFLOAT3。',
+    '忘记 XMVectorGetX 就当 float 用：XMVector3Length / Dot 返回的是 XMVECTOR，不是标量。',
+    '拿未归一化的向量去和阈值比较：那样比较的其实是 ‖u‖‖v‖cos θ，阈值失去意义。',
+  ]}
+/>
+
+<div className="figure-pair">
+  <Figure src="images/Fig1-18.jpg" alt="示例程序 1 的运行输出" figureNumber="图 1.18" caption="上述示例程序 1 的运行输出。" />
+  <Figure src="images/Fig1-19.jpg" alt="示例程序 2 的运行输出" figureNumber="图 1.19" caption="上述示例程序 2 的运行输出。" />
+</div>
+<div className="figure-pair">
+  <Figure src="images/Fig1-20.jpg" alt="示例程序 3 的运行输出" figureNumber="图 1.20" caption="上述示例程序 3 的运行输出。" />
+  <Figure src="images/Fig1-22.jpg" alt="示例程序的运行输出" figureNumber="图 1.22" caption="上述示例程序的运行输出。" />
+</div>
+
+<h3>参数传递</h3>
+
+<p>为了让 SIMD 寄存器物尽其用，DirectXMath 定了一套规则：函数要用 <code>XM_CALLCONV</code> 标注，前三个 <code>XMVECTOR</code> 形参用 <code>FXMVECTOR</code>，第四个用 <code>GXMVECTOR</code>，其余用 <code>HXMVECTOR</code>；在 32 位上还会用 <code>CXMVECTOR</code> 修饰。</p>
+
+<div className="math-block">inline XMMATRIX XM_CALLCONV XMMatrixTransformation(<br />&nbsp;&nbsp;FXMVECTOR ScalingOrigin,<br />&nbsp;&nbsp;FXMVECTOR ScalingOrientationQuaternion,<br />&nbsp;&nbsp;FXMVECTOR Scaling,<br />&nbsp;&nbsp;GXMVECTOR RotationOrigin,<br />&nbsp;&nbsp;HXMVECTOR RotationQuaternion,<br />&nbsp;&nbsp;HXMVECTOR Translation);</div>
+
+<p>非 <code>XMVECTOR</code> 参数可以插在中间，计数时忽略它们。注意：<b>输出用的</b> <code>XMVECTOR&amp;</code> 或 <code>XMVECTOR*</code> 不会走 SSE 寄存器，按普通参数处理。</p>
+
+<h3>Setter 函数与浮点误差</h3>
+
+<p>除了加载函数，还有一批 setter：<code>XMVectorSet</code>、<code>XMVectorSetX/Y/Z/W</code>、<code>XMVectorZero</code>、<code>XMVectorSplatX</code> 等，用来直接构造或分量赋值。</p>
+
+<Callout tone="note">
+  <b>浮点误差</b>
+  <p>用 SIMD 和单精度浮点做计算一定会有误差。比较两个向量是否相等时不要用 <code>==</code>，而是比较差值是否小于一个 epsilon；判断点积是否为零也一样。反复做正交化、反复归一化是控制误差累积的常用手段。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s17">
+<h2>本章小结</h2>
+
+<ul>
+  <li>向量同时具有大小和方向，几何上用有向线段表示；它描述「怎么动」，不描述「在哪」。</li>
+  <li>把向量尾部对齐原点（标准位置），头部坐标就是它的数值表示——同一个几何向量在不同坐标系下坐标不同，但长度不变。</li>
+  <li>Direct3D 使用<b>左手坐标系</b>：+z 指向屏幕内部。换手性会把物体前后颠倒。</li>
+  <li>‖u‖ = √(x² + y² + z²)；单位向量 û = u / ‖u‖ 只保留方向，零向量不能归一化。</li>
+  <li>点积 u · v = ‖u‖‖v‖ cos θ，符号只由夹角决定：正为锐角、零为正交、负为钝角。它同时给出正交投影。</li>
+  <li>叉积 u × v 是同时垂直于两者的向量，长度等于张成的平行四边形面积，方向由左手指法则确定，且满足反交换律。</li>
+  <li>点表示位置、向量表示位移；点 − 点是向量，点 + 向量是点。这个区别在第 3 章会由齐次坐标显式表达。</li>
+  <li>DirectXMath 里 <code>XMVECTOR</code> 是参与计算的 SIMD 类型，<code>XMFLOAT3</code> 等用于存储；DirectXMath 是纯头文件实现，<b>不需要链接任何 .lib</b>。</li>
+</ul>
+
+<Figure src="images/Fig1-21.jpg" alt="u、v 张成的平行四边形，面积等于 ‖u×v‖" figureNumber="图 1.21" caption="由两个 3D 向量 u、v 张成的平行四边形：底 ‖v‖、高 h，其面积等于 ‖u×v‖。" />
+
+<Checkpoint
+  chapterId="ch01"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch01-a1',
+      question: '同一个几何向量 v，把坐标系旋转 30° 后，它的坐标和长度分别会怎样？',
+      options: ['坐标变、长度变', '坐标变、长度不变', '坐标不变、长度变', '两者都不变'],
+      answer: 1,
+      explanation: '坐标是相对坐标系的读数，坐标系变了读数就变；长度由向量自身决定，与坐标系无关。这也是判断变换代码是否正确的第一道检查。',
+    },
+    {
+      id: 'ch01-a2',
+      question: '两向量夹角为 120°，长度都大于 0，它们的点积是？',
+      options: ['正数', '零', '负数', '无法判断，要看长度'],
+      answer: 2,
+      explanation: 'u·v = ‖u‖‖v‖cos θ，cos 120° < 0，所以点积为负。长度只影响绝对值，不影响符号。',
+    },
+    {
+      id: 'ch01-a3',
+      question: '已知 w = u × v。要得到一个与 w 方向相反、长度相同的向量，应该怎么做？',
+      options: ['把 u 和 v 都取反', '交换输入顺序，算 v × u', '把 u 的长度减半', '把 w 除以 2'],
+      answer: 1,
+      explanation: '叉积满足反交换律 u × v = −(v × u)，交换顺序只翻转方向；长度 ‖u‖‖v‖sin θ 与顺序无关。',
+    },
+    {
+      id: 'ch01-a4',
+      question: '关于 DirectXMath，下面哪一句是对的？',
+      options: ['需要链接 DirectXMath.lib 才能用', '它是纯头文件实现，不需要额外的库文件', 'XMVECTOR 可以直接作为类成员安全存储', 'XMVector3Dot 直接返回 float'],
+      answer: 1,
+      explanation: '原书写明「no additional library files, as all the code is implemented inline in the header file」。另外 XMVECTOR 有 16 字节对齐要求，不适合直接做类成员；XMVector3Dot 返回 XMVECTOR，取标量要用 XMVectorGetX。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch01"
+  title="在 XMVECTOR 示例里算一遍长度、归一化、点积和叉积"
+  goal="跑通第 1 章示例，确认 DirectXMath 的数值与你在网页里推演的一致，并能解释一个负点积的几何含义。"
+  steps={[
+    '打开 Chapter 1 Vector Algebra/XMVECTOR 目录里的 .sln，生成并运行。',
+    '对照图 1.18—1.20 的输出，确认长度、点积、叉积的分量值一致。',
+    '改一组你自己选的向量：让夹角明显大于 90°（例如 u = (1, 0, 0)，v = (−1, 0.2, 0)），重新运行。',
+    '在代码里找到 XMVector3Dot 的调用，把结果打印出来，写下它是负数的原因。',
+  ]}
+  expected="程序在控制台打印出各向量的分量、长度、归一化结果、点积与叉积。改成钝角的那组，点积输出为负数。"
+  verify={[
+    '我跑通了第 1 章示例，并看到了控制台输出。',
+    '我改成了一组钝角向量，点积确实为负。',
+    '我能用 ‖u‖‖v‖cos θ 解释这个负号来自哪里。',
+    '我确认工程里没有引用任何 DirectXMath.lib。',
+  ]}
+/>
+</section>

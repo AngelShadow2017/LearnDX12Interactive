@@ -1,0 +1,292 @@
+import { NormalTransformActivity } from '@/activities/NormalTransformActivity';
+import { LightingTermsActivity } from '@/activities/LightingTermsActivity';
+
+<section className="lesson-section lesson-section--intro" id="s81">
+<h2>8.1 光与材质的交互</h2>
+
+<p>光照是让 3D 场景「看起来立体」的关键：没有光照的球就是一个 2D 圆盘（图 8.1）。</p>
+
+<Figure src="images/Fig8-1.jpg" alt="(a) 无光照的球；(b) 有光照的球" figureNumber="图 8.1" caption="(a) 无光照的球；(b) 有光照的球看起来才是立体的。" />
+
+<p>光线打到物体表面时，一部分被<b>吸收</b>、一部分被<b>散射</b>出去（图 8.2）。我们看到的颜色就是散射出来的那部分。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-2.jpg" alt="入射白光光通量与光线打到圆柱后的吸收/散射" figureNumber="图 8.2" caption="(a) 入射白光光通量；(b) 光线打到圆柱：部分被吸收、部分被散射。" />
+  <Figure src="images/Fig8-3.jpg" alt="物理上墙挡住光线形成阴影，但局部光照模型不管这些" figureNumber="图 8.3" caption="物理上墙挡住灯泡的光线、球在墙的阴影里；但局部光照模型不管这些。" />
+</div>
+
+<Callout tone="note">
+  <b>局部光照模型的边界</b>
+  <p>这本书用的是<b>局部</b>光照模型：每个点的颜色只由它自己的材质和直达光源决定，不考虑其他物体的遮挡。图 8.3 那种「墙挡住光」的全局效果不在模型范围内——它需要第 20 章的阴影贴图和第 21 章的环境光遮蔽来近似。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s82">
+<h2>8.2 法向量</h2>
+
+<p>表面法线是垂直于表面的单位向量：平面法线垂直于面上所有点，曲面法线垂直于该点的切平面（图 8.4）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-4.jpg" alt="面法线垂直于面上所有点；曲面法线垂直于切平面" figureNumber="图 8.4" caption="(a) 面法线垂直于面上所有点；(b) 曲面法线垂直于该点的切平面。" />
+  <Figure src="images/Fig8-5.jpg" alt="线段两端点的顶点法线，中间点法线由插值得到" figureNumber="图 8.5" caption="线段两端点 p0、p1 定义了顶点法线 n0、n1；中间点 p 的法线 n 由插值得到。" />
+</div>
+
+<h3>计算顶点法线</h3>
+
+<p>网格里每个顶点通常被多个多边形共享，用<b>相邻面法线的平均值</b>近似它的顶点法线（图 8.6）。</p>
+
+<Figure src="images/Fig8-6.jpg" alt="中间顶点被四个相邻多边形共享，用平均面法线近似" figureNumber="图 8.6" caption="中间顶点被四个相邻多边形共享，用平均面法线近似其顶点法线。" />
+
+<h3>变换法向量</h3>
+
+<Figure src="images/Fig8-7a.jpg" alt="(a) 变换前的表面法线；(b) 沿 x 轴缩放 2 倍后法线不再垂直表面" figureNumber="图 8.7" caption="(a) 变换前的表面法线；(b) 沿 x 轴缩放 2 倍后法线不再垂直表面——所以要用逆转置矩阵。" />
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-7b.jpg" alt="非均匀缩放对法线的影响（b 图）" figureNumber="图 8.7（续）" caption="非均匀缩放对法线的影响（b 图）。" />
+  <Figure src="images/Fig8-7c.jpg" alt="非均匀缩放对法线的影响（c 图）" figureNumber="图 8.7（续）" caption="非均匀缩放对法线的影响（c 图）。" />
+</div>
+
+<NormalTransformActivity />
+</section>
+
+<section className="lesson-section" id="s84">
+<h2>8.4 朗伯余弦定律</h2>
+
+<p>一束光垂直照到表面时，能量集中在小面积上；斜照时同样一束光摊到更大的面积上，单位面积收到的能量按 <b>cos θ</b> 衰减（图 8.10）。这就是朗伯余弦定律。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-10.jpg" alt="光束垂直照射与斜照摊到更大面积" figureNumber="图 8.10" caption="(a) 光束垂直照射表面；(b) 同样光束斜照摊到更大面积——朗伯余弦定律。" />
+  <Figure src="images/Fig8-11.jpg" alt="f(θ)=max(cosθ,0)=max(L·n,0) 的曲线" figureNumber="图 8.11" caption="函数 f(θ)=max(cosθ,0)=max(L·n,0) 的曲线。" />
+</div>
+
+<div className="math-block">f(θ) = max(cos θ, 0) = max(L · n, 0)<small>θ 是表面法线 n 与指向光源的单位向量 L 之间的夹角</small></div>
+
+<Callout tone="tip">
+  <b>为什么要有 max(…, 0)</b>
+  <p>当 θ &gt; 90° 时光源在表面背面，物理上照不到。点积此时为负，必须用 max 截断成 0，否则会出现「背面被照亮」的错误。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s85">
+<h2>8.5 漫反射光</h2>
+
+<p>漫反射表面把入射光向<b>所有方向均匀散射</b>（图 8.12），所以从任何角度看亮度都差不多。这也是「物体本色」的来源。</p>
+
+<Figure src="images/Fig8-12.jpg" alt="漫反射表面把入射光向所有方向均匀散射" figureNumber="图 8.12" caption="漫反射表面把入射光向所有方向均匀散射。" />
+
+<div className="math-block">D = max(L · n, 0) · (ld ⊗ md)<small>ld 是光源的漫反射强度，md 是材质的漫反射反照率</small></div>
+</section>
+
+<section className="lesson-section" id="s86">
+<h2>8.6 环境光</h2>
+
+<p>环境光模拟经过多次反射后「从各个方向均匀照来」的间接光。它是一个<b>常数项</b>：</p>
+
+<div className="math-block">A = la ⊗ ma</div>
+
+<p>它的作用只是把阴影处整体提亮一点。单独使用环境光会让物体完全没有明暗变化——这正是下面这个互动要你重现的效果。</p>
+</section>
+
+<section className="lesson-section" id="s87">
+<h2>8.7 镜面光</h2>
+
+<p>镜面反射遵循反射定律（图 8.9）。完全光滑的表面像镜子，粗糙表面的反射光则围绕反射向量散开（图 8.14）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-9.jpg" alt="反射的几何：入射光 L、法线 n 与反射向量 r" figureNumber="图 8.9" caption="反射的几何：入射光 L、法线 n 与反射向量 r 的关系。" />
+  <Figure src="images/Fig8-14.jpg" alt="粗糙表面镜面光散开，只有落在视锥内的反射光形成高光" figureNumber="图 8.14" caption="(a) 粗糙表面的镜面光围绕反射向量 r 散开；(b) 只有落在视锥内的反射光进入眼睛形成高光。" />
+</div>
+
+<h3>菲涅尔效应</h3>
+
+<p>光线在介质交界处会分成反射与折射两部分（图 8.13），比例随入射角变化：掠射时反射更强。图 8.15 给出了水、红宝石、铁的 Schlick 近似曲线。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-13.jpg" alt="完全平面镜的菲涅尔效应" figureNumber="图 8.13" caption="(a) 完全平面镜的菲涅尔效应：入射光 I 被分为反射与折射两部分。" />
+  <Figure src="images/Fig8-15.jpg" alt="水、红宝石、铁的 Schlick 菲涅尔近似曲线" figureNumber="图 8.15" caption="不同材质（水、红宝石、铁）的 Schlick 菲涅尔近似曲线。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-16a.jpg" alt="俯视池塘：L 与 n 夹角小时反射弱、折射强" figureNumber="图 8.16" caption="(a) 俯视池塘：L 与 n 夹角小 → 反射弱、折射强（看到水底）；(b) 掠射角 → 反射强。" />
+  <Figure src="images/Fig8-16b.jpg" alt="菲涅尔效应随入射角变化（b 图）" figureNumber="图 8.16（续）" caption="菲涅尔效应随入射角变化（b 图）。" />
+</div>
+
+<h3>粗糙度</h3>
+
+<p>微观上表面由无数朝向不同的微面元组成（图 8.17）。只有法线恰好等于<b>半程向量</b> h = normalize(L + v) 的微面元才能把光反射进眼睛（图 8.18）。粗糙度越大，符合这个条件的微面元越少，高光越散越暗（图 8.19、8.20）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-17.jpg" alt="微观层面小表面元由无数微面元组成，朝向分布决定粗糙度" figureNumber="图 8.17" caption="(a) 微观层面小表面元由无数微面元组成，朝向分布决定粗糙度。" />
+  <Figure src="images/Fig8-19.jpg" alt="用函数建模表面粗糙度" figureNumber="图 8.19" caption="用函数建模表面粗糙度。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-18.jpg" alt="法线恰为半程向量 h 的微面元把 L 反射进视线 v" figureNumber="图 8.18" caption="法线恰为半程向量 h 的微面元把 L 反射进视线 v。" />
+  <Figure src="images/Fig8-20.jpg" alt="用函数建模粗糙度对镜面反射的削弱" figureNumber="图 8.20" caption="用函数建模粗糙度对镜面反射的削弱。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s89">
+<h2>8.9 实现材质</h2>
+
+<p>材质就是一组描述「表面如何反光」的参数：漫反射反照率、镜面反射率、粗糙度。一个网格可以分成多个材质组（图 8.22），每组用不同的材质绘制。</p>
+
+<Figure src="images/Fig8-22.jpg" alt="汽车网格划分成五个材质组" figureNumber="图 8.22" caption="汽车网格划分成五个材质组（车漆、玻璃、轮胎等）。" />
+</section>
+
+<section className="lesson-section" id="s810">
+<h2>8.10–8.12 三种光源</h2>
+
+<h3>平行光（方向光）</h3>
+
+<p>平行光的光线互相平行，适合模拟太阳（图 8.23、8.24）。它只有方向，没有位置，也没有衰减。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-23.jpg" alt="平行光的光线平行地照射表面" figureNumber="图 8.23" caption="平行光的光线平行地照射表面（方向光，如太阳）。" />
+  <Figure src="images/Fig8-24.jpg" alt="对地面一小块区域而言太阳光可近似为平行光" figureNumber="图 8.24" caption="对地面一小块区域而言，太阳光可近似为平行光。" />
+</div>
+
+<h3>点光源</h3>
+
+<p>点光源从一个位置向所有方向辐射（图 8.25）。它需要<b>衰减</b>：图 8.26 展示了示例用的线性衰减——在 falloffStart 内保持 1.0，之后线性降到 falloffEnd 处归零。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-25.jpg" alt="点光源向所有方向辐射" figureNumber="图 8.25" caption="点光源向所有方向辐射；任意点 P 都存在一条来自光源的入射线。" />
+  <Figure src="images/Fig8-26.jpg" alt="衰减因子在 falloffStart 内保持 1.0，之后线性衰减" figureNumber="图 8.26" caption="衰减因子在 falloffStart 内保持 1.0，之后线性衰减到 falloffEnd 归零。" />
+</div>
+
+<h3>聚光灯</h3>
+
+<p>聚光灯有位置 Q、朝向 d 和半角 φ<sub>max</sub>（图 8.27）。常用一个平滑因子控制锥体内外的过渡。</p>
+
+<Figure src="images/Fig8-27.jpg" alt="聚光灯：位置 Q、朝向 d，通过半角 φmax 的圆锥辐射光线" figureNumber="图 8.27" caption="聚光灯：位置 Q、朝向 d，通过半角 φmax 的圆锥辐射光线。" />
+</section>
+
+<section className="lesson-section" id="s813">
+<h2>8.13 光照实现</h2>
+
+<h3>光照计算涉及的重要向量</h3>
+
+<p>动手写光照代码前，先把这几个向量认清（图 8.8）：表面点 p、几何法线 n、指向光源的单位向量 L、指向眼睛的 v，以及由 L 与 v 归一化得到的<b>半程向量</b> h。</p>
+
+<Figure src="images/Fig8-8.jpg" alt="光照计算中涉及的各个重要向量" figureNumber="图 8.8" caption="光照计算中涉及的各个重要向量（表面点、法线、指向光源/眼睛的向量等）。" />
+
+<LightingTermsActivity />
+
+<CodeSample
+  title="HLSL 里的光照计算"
+  language="hlsl"
+  code={`float3 ComputeDirectionalLight(Light L, Material mat, float3 normal, float3 toEye)
+{
+    // 环境光：常数项
+    float3 ambient = L.Ambient * mat.DiffuseAlbedo;
+
+    // 漫反射：朗伯余弦定律
+    float diffuseFactor = max(dot(normal, L.Direction), 0.0f);
+    float3 diffuse = diffuseFactor * L.Diffuse * mat.DiffuseAlbedo;
+
+    // 镜面高光：半程向量 + 粗糙度
+    float3 halfVec = normalize(L.Direction + toEye);
+    float roughFactor = (mat.Shininess + 8.0f) / 8.0f;
+    float3 specular = pow(max(dot(normal, halfVec), 0.0f), mat.Shininess)
+                    * roughFactor * L.Specular * mat.SpecularAlbedo;
+
+    return ambient + diffuse + specular;
+}`}
+  input={<>已归一化的法线 <code>normal</code>、从表面点指向眼睛的 <code>toEye</code>、光源结构体 <code>L</code> 与材质 <code>mat</code>。</>}
+  keyLines={[
+    { code: 'max(dot(normal, L.Direction), 0.0f)', note: '朗伯余弦定律；max 截断背面照明。' },
+    { code: 'normalize(L.Direction + toEye)', note: '半程向量 h，微表面模型的关键。' },
+    { code: 'pow(..., mat.Shininess)', note: '粗糙度指数：值越大高光越小越锐利。' },
+    { code: '(mat.Shininess + 8.0f) / 8.0f', note: '粗糙因子，用来保持高光总能量大致守恒。' },
+  ]}
+  output={<>图 8.21 的三张对比图：仅环境光、环境+漫反射、三项全开；图 8.28 是光照演示的完整截图。</>}
+  pitfalls={[
+    '法线或光照方向没归一化：max(n·L, 0) 的数值不再等于 cos θ，光照会整体偏暗或偏亮。',
+    '忘记 max(…, 0)：背面会被照亮，物体边缘出现诡异亮环。',
+    '把法线直接用世界矩阵变换：遇到非均匀缩放时光照方向就错了，要用逆转置。',
+  ]}
+/>
+
+<Figure src="images/Fig8-21.jpg" alt="(a) 仅环境光；(b) 环境+漫反射；(c) 三项全开" figureNumber="图 8.21" caption="(a) 仅环境光：均匀提亮的球；(b) 环境+漫反射组合；(c) 全部三项组合。" />
+</section>
+
+<section className="lesson-section" id="s814">
+<h2>本章小结</h2>
+
+<ul>
+  <li>局部光照模型只考虑直达光，不考虑其他物体的遮挡；阴影与 AO 要另想办法。</li>
+  <li>顶点法线用相邻面法线的平均值近似；非均匀缩放后必须用<b>逆转置</b>变换法线。</li>
+  <li>朗伯余弦定律：漫反射 ∝ max(L · n, 0)，max 用来截断背面照明。</li>
+  <li>环境光是常数项 A = la ⊗ ma，只负责把暗部提亮，单独用会失去全部立体感。</li>
+  <li>高光基于微表面：半程向量 h = normalize(L + v)，粗糙度越大高光越散越暗。</li>
+  <li>三种光源：平行光（无位置、无衰减）、点光源（有衰减）、聚光灯（有锥角）。</li>
+</ul>
+
+<Figure src="images/Fig8-28.jpg" alt="光照演示截图" figureNumber="图 8.28" caption="光照演示（Lighting demo）截图。" />
+
+<div className="figure-pair">
+  <Figure src="images/Fig8-29.jpg" alt="习题 3 解答截图" figureNumber="图 8.29" caption="习题 3 解答截图。" />
+  <Figure src="images/Fig8-30.jpg" alt="卡通渲染截图" figureNumber="图 8.30" caption="卡通渲染（Toon shading）截图。" />
+</div>
+
+<Checkpoint
+  chapterId="ch08"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch08-a1',
+      question: '物体被非均匀缩放后，法线应该怎么变换？',
+      options: ['直接乘世界矩阵，再归一化', '乘世界矩阵的逆转置，再归一化', '不需要变换', '只做平移即可'],
+      answer: 1,
+      explanation: '要让变换后的法线仍然垂直于变换后的切向，必须用 (M⁻¹)ᵀ。均匀缩放时直接归一化就行，非均匀缩放不行。',
+    },
+    {
+      id: 'ch08-a2',
+      question: '漫反射公式里的 max(…, 0) 是干什么的？',
+      options: ['提升性能', '截断背面照明（θ > 90° 时该项为 0）', '避免除零', '把颜色限制在 0—1'],
+      answer: 1,
+      explanation: 'θ > 90° 时光源在表面背面，物理上照不到。点积为负，必须截断成 0，否则背面会被照亮。',
+    },
+    {
+      id: 'ch08-a3',
+      question: '半程向量 h 是怎么定义的？',
+      options: ['normalize(L − v)', 'normalize(L + v)', 'reflect(L, n)', 'cross(L, n)'],
+      answer: 1,
+      explanation: 'h = normalize(L + v)，即指向光源与指向眼睛两个单位向量之和的归一化。只有法线等于 h 的微面元能把光反射进眼睛。',
+    },
+    {
+      id: 'ch08-a4',
+      question: '只使用环境光时，物体看起来怎样？',
+      options: ['有清晰明暗', '均匀亮度，看不出立体感', '只有高光', '全黑'],
+      answer: 1,
+      explanation: '环境光是与方向和位置都无关的常数项，所以只用它时整个物体亮度一致，没有立体感。',
+    },
+    {
+      id: 'ch08-a5',
+      question: '哪一种光源不需要位置、也不需要衰减？',
+      options: ['平行光（方向光）', '点光源', '聚光灯', '三种都需要'],
+      answer: 0,
+      explanation: '平行光只有方向，用来模拟太阳这类距离极远的光源，因此既不需要位置也不需要衰减。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch08"
+  title="改光源或材质，说明画面里哪一项在变"
+  goal="在 LitColumns 或 LitWaves 示例里改一处光照参数，并说清这次改动影响的是 A、D、S 中的哪一项。"
+  steps={[
+    '打开 Chapter 8 Lighting/LitColumns 的 .sln，生成并运行（图 8.28）。',
+    '改一个光源的方向，观察柱体明暗分界线怎么移动——这是漫反射项在变。',
+    '把某个材质的 Shininess 调大，观察高光点变小变锐——这是镜面项在变。',
+    '把环境光调高，观察暗部整体提亮——这是环境项在变。',
+  ]}
+  expected="改光源方向使明暗分界线移动；改 Shininess 使高光大小变化；改环境光使暗部整体提亮。"
+  verify={[
+    '我跑通了 LitColumns 示例。',
+    '我改了至少一处光照参数并看到画面变化。',
+    '我能说出这次改动对应 A、D、S 中的哪一项。',
+  ]}
+/>
+</section>

@@ -1,0 +1,256 @@
+import { TransformCompositionActivity } from '@/activities/ch03/TransformCompositionActivity';
+import { CoordinateChangeActivity } from '@/activities/ch03/CoordinateChangeActivity';
+
+<section className="lesson-section lesson-section--intro" id="s31">
+<h2>3.1 线性变换</h2>
+
+<p>这一章回答两个问题：怎样用矩阵表达「缩放 / 旋转 / 平移」，以及怎样在<b>变换物体</b>和<b>变换坐标系</b>之间来回切换。</p>
+
+<h3>定义</h3>
+
+<p>变换 τ 是线性的，当且仅当它满足：</p>
+
+<div className="math-block">τ(u + v) = τ(u) + τ(v)<br />τ(k·u) = k·τ(u)</div>
+
+<p>线性变换不改变原点、不产生平移，它把一个向量映射成另一个向量。缩放和旋转都是线性变换。</p>
+
+<h3>缩放</h3>
+
+<p>缩放矩阵把各坐标分量分别乘以缩放因子：</p>
+
+<div className="math-block">S = ⎡ sx 0 0 ⎤<br />　　⎢ 0 sy 0 ⎥<br />　　⎣ 0 0 sz ⎦</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-1.jpg" alt="左：原始棋子；中：沿 y 轴放大 2 倍；右：再叠加平移" figureNumber="图 3.1" caption="左：原始棋子；中：沿 y 轴放大 2 倍后变高；右：再叠加平移的组合变换。" />
+  <Figure src="images/Fig3-2.jpg" alt="沿 x 轴缩放 1/2、沿 y 轴缩放 2" figureNumber="图 3.2" caption="沿 x 轴缩放 1/2、沿 y 轴缩放 2（从 −z 轴方向观察）。" />
+</div>
+
+<h3>旋转</h3>
+
+<p>绕任意轴 n 旋转 θ 的矩阵由罗德里格斯公式给出。书里先给出绕坐标轴的三个特例，再推广到任意轴。注意方向：左手系下的旋转方向由左手法则确定。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-3.jpg" alt="绕向量 n 旋转的几何示意" figureNumber="图 3.3" caption="绕向量 n 旋转的几何示意。" />
+  <Figure src="images/Fig3-4.jpg" alt="绕 y 轴旋转 −30°" figureNumber="图 3.4" caption="绕 y 轴旋转 −30°（从 +y 轴正端看为顺时针）。" />
+</div>
+
+<Callout tone="note">
+  <b>旋转矩阵的性质</b>
+  <p>旋转矩阵是正交矩阵：它的逆等于它的转置，det = 1，且各列（行）都是单位向量并两两正交。所以旋转一定可逆，而且求逆非常便宜。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s32">
+<h2>3.2 仿射变换</h2>
+
+<p>平移不是线性变换（它移动了原点）。把「线性变换 + 平移」合在一起就是<b>仿射变换</b>：</p>
+
+<div className="math-block">α(u) = τ(u) + b</div>
+
+<p>为了让矩阵能表达平移，要引入<b>齐次坐标</b>：给向量加第四个分量 w。w = 1 表示点（会被平移影响），w = 0 表示方向向量（不受平移影响）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-5.jpg" alt="用位移向量 b 把蚂蚁的位置移动一段距离" figureNumber="图 3.5" caption="用位移向量 b 把蚂蚁的位置移动一段距离。" />
+  <Figure src="images/Fig3-6.jpg" alt="沿 x 轴平移 12、沿 y 轴平移 −10" figureNumber="图 3.6" caption="沿 x 轴平移 12、沿 y 轴平移 −10（从 −z 轴方向观察）。" />
+</div>
+
+<Callout tone="tip">
+  <b>w 分量就是「点 vs 向量」的开关</b>
+  <p>用 <code>XMVectorSet(x, y, z, 1)</code> 变换点、<code>XMVectorSet(x, y, z, 0)</code> 变换方向。方向向量用 w = 0 就不会被平移污染——法线、视线方向都属于这一类。</p>
+</Callout>
+
+<h3>仿射矩阵每一行的几何含义</h3>
+
+<p>仿射变换用 4 × 4 矩阵表示，配合行向量写成 v · M。关键理解：<b>结果的每一行是原矩阵行向量的线性组合</b>，而最后一行（配合行向量）放的是平移量。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-7A.jpg" alt="仿射矩阵行的几何含义" figureNumber="图 3.7" caption="仿射矩阵每一行的几何含义：变换后的点 α(p) 是三个行向量的线性组合再加平移。" />
+  <Figure src="images/Fig3-7B.jpg" alt="仿射矩阵行的几何含义（另一视角）" figureNumber="图 3.7（续）" caption="仿射矩阵行的几何含义（另一视角）。" />
+</div>
+
+<Figure src="images/Fig3-8.jpg" alt="把正方形扭曲成平行四边形的线性变换" figureNumber="图 3.8" caption="把正方形扭曲成平行四边形的线性变换，τ(p)=(x,y) 的求法。" />
+</section>
+
+<section className="lesson-section" id="s33">
+<h2>3.3 变换的组合</h2>
+
+<p>因为矩阵乘法满足结合律，我们可以把一串变换预先乘成一个矩阵。书里的性能对比很直接：20000 个顶点依次做缩放、旋转、平移，逐步做要 20000 × 3 次向量矩阵乘法；先合成 C = SRT 则只要 20000 次向量矩阵乘法加 2 次矩阵乘法。</p>
+
+<Callout tone="warning">
+  <b>顺序不能随便换</b>
+  <p>结合律成立，交换律不成立。图 3.9 就是证据：先旋转再平移（RT）与先平移再旋转（TR）得到完全不同的结果。</p>
+</Callout>
+
+<Figure src="images/Fig3-9.jpg" alt="先旋转再平移与先平移再旋转的对比" figureNumber="图 3.9" caption="(a) 先旋转再平移。(b) 先平移再旋转——顺序不同，结果完全不同。" />
+
+<TransformCompositionActivity />
+</section>
+
+<section className="lesson-section" id="s34">
+<h2>3.4 坐标系变换</h2>
+
+<p>100°C 是水相对于摄氏刻度的沸点。同一个温度换成华氏刻度是多少？要做这个换算，需要知道两个刻度之间的关系。</p>
+
+<Callout tone="tip">
+  <b>最关键的一句话</b>
+  <p>书上强调：<b>坐标系变换中我们不认为几何发生了变化</b>，我们改变的是参考系，于是坐标的表示变了。这和「真的把物体移动／形变」的旋转、平移、缩放是完全不同的两件事。</p>
+</Callout>
+
+<Figure src="images/Fig3-10.jpg" alt="同一向量相对不同坐标系坐标不同" figureNumber="图 3.10" caption="同一向量 v 相对不同坐标系的坐标不同：相对 A 为 (x,y)，相对 B 为另一组值。" />
+
+<h3>向量</h3>
+
+<p>设 p 相对 A 的坐标是 (x, y)，A 的基向量是 u、v。从图上直接得到：</p>
+
+<div className="math-block">p = x·u + y·v</div>
+
+<p>把等式里每个向量都改用 B 的坐标表示：</p>
+
+<div className="math-block">p<sub>B</sub> = x·u<sub>B</sub> + y·v<sub>B</sub></div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-11.jpg" alt="求 p 相对坐标系 B 的坐标" figureNumber="图 3.11" caption="求 p 相对坐标系 B 的坐标（几何图解）。" />
+  <Figure src="images/Fig3-12.jpg" alt="求 p 相对坐标系 B 的坐标（另一种情形）" figureNumber="图 3.12" caption="求 p 相对坐标系 B 的坐标（另一种情形）。" />
+</div>
+
+<p>推广到 3D 就是 p<sub>B</sub> = x·u<sub>B</sub> + y·v<sub>B</sub> + z·w<sub>B</sub>。<b>因为向量没有位置，这里不需要减原点。</b></p>
+
+<h3>点</h3>
+
+<p>点有位置，所以要多一步：先把 p 减掉 B 的原点，再做投影。这就是点与向量在坐标系变换上的差别。</p>
+
+<h3>逆与坐标系变换矩阵</h3>
+
+<p>如果 M 把坐标系 A 映射到 B，那么 M⁻¹ 把 B 映射回 A。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-13.jpg" alt="M 把 A 映射到 B，M⁻¹ 从 B 映射回 A" figureNumber="图 3.13" caption="M 把坐标系 A 映射到 B，M⁻¹ 从 B 映射回 A。" />
+  <Figure src="images/Fig3-14.jpg" alt="A: F→G，B: G→H，AB: F→H；反向顺序要倒过来" figureNumber="图 3.14" caption="A: F→G，B: G→H，AB: F→H；反向 B⁻¹A⁻¹: H→F（顺序要倒过来）。" />
+</div>
+
+<CoordinateChangeActivity />
+</section>
+
+<section className="lesson-section" id="s36">
+<h2>3.6 DirectXMath 变换函数</h2>
+
+<CodeSample
+  title="点与方向要分开算"
+  language="cpp"
+  code={`#include <DirectXMath.h>
+using namespace DirectX;
+
+XMMATRIX S = XMMatrixScaling(0.5f, 2.0f, 1.0f);
+XMMATRIX R = XMMatrixRotationZ(XMConvertToRadians(45.0f));
+XMMATRIX T = XMMatrixTranslation(3.0f, 1.0f, 0.0f);
+
+// 行向量：先 S，再 R，最后 T
+XMMATRIX world = S * R * T;
+
+// 点：w = 1，会被平移影响
+XMVECTOR p = XMVectorSet(0.0f, 1.25f, 0.0f, 1.0f);
+XMVECTOR pWorld = XMVector4Transform(p, world);
+
+// 方向：w = 0，不受平移影响
+XMVECTOR dir = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+XMVECTOR dirWorld = XMVector4Transform(dir, world);
+
+// 坐标系变换：把世界坐标送回本地，用世界矩阵的逆
+XMMATRIX worldInv = XMMatrixInverse(nullptr, world);
+XMVECTOR pLocal = XMVector4Transform(pWorld, worldInv);`}
+  input={<>一个由 S、R、T 组成的世界矩阵，以及棋子上一点 p 与一个方向向量。</>}
+  keyLines={[
+    { code: 'XMVectorSet(..., 1.0f)', note: 'w = 1 表示点，会被矩阵最后一行的平移量影响。' },
+    { code: 'XMVectorSet(..., 0.0f)', note: 'w = 0 表示方向，平移项被乘 0 自动忽略。法线、视线方向都用这个。' },
+    { code: 'XMVector4Transform', note: '带 w 的变换。用 XMVector3Transform 会隐式按 w = 1 处理，方向向量会算错。' },
+    { code: 'XMMatrixInverse(nullptr, world)', note: '世界矩阵的逆把坐标从世界送回本地，正是坐标系变换的实现。' },
+  ]}
+  output={<>p 变换后带上平移量；dir 变换后长度与方向只反映缩放和旋转，不含 (3, 1, 0)。把 pWorld 再用 worldInv 变回去，得到原来的 (0, 1.25, 0)。</>}
+  pitfalls={[
+    '用 XMVector3Transform 变换方向向量：它按 w = 1 处理，平移会错误地加进去。',
+    '忘记 XMMatrixInverse 对奇异矩阵返回 NaN：缩放因子为 0 时逆矩阵无效。',
+    '把变换顺序写成 T * R * S：那是「先平移再旋转再缩放」，平移量会被缩放再乘一次。',
+  ]}
+/>
+
+<Callout tone="note">
+  <b>本章没有独立的仓库项目</b>
+  <p>书籍示例仓库里没有「Chapter 3」目录，所以本章的实践是一段短代码：把上面的代码块粘进第 1 章的 XMVECTOR 工程里，分别变换一个点和一个方向，打印两者的差别。</p>
+</Callout>
+
+<div className="figure-pair">
+  <Figure src="images/Fig3-16.jpg" alt="坐标系变换示例：从 frame A 到 frame B" figureNumber="图 3.16" caption="坐标系变换示例：从 frame A（[−1,1]² 方块）到 frame B（[0,1]² 且 y 轴方向相反）。" />
+  <Figure src="images/Fig3-17.jpg" alt="把正方形映射成平行四边形的变换" figureNumber="图 3.17" caption="把正方形映射成平行四边形的变换。" />
+</div>
+
+<Figure src="images/Fig3-18.jpg" alt="相对原点缩放会把矩形推走，相对中心缩放则位置不变" figureNumber="图 3.18" caption="(a) 相对原点沿 x 轴放大 2 倍导致矩形整体被推走。(b) 相对矩形中心缩放则位置不变。" />
+</section>
+
+<section className="lesson-section" id="s37">
+<h2>本章小结</h2>
+
+<ul>
+  <li>线性变换满足 τ(u+v) = τ(u)+τ(v) 与 τ(ku) = kτ(u)，不改变原点；缩放和旋转是线性的，平移不是。</li>
+  <li>仿射变换 = 线性变换 + 平移。用齐次坐标（w = 1 是点、w = 0 是方向）才能把平移写进矩阵。</li>
+  <li>仿射矩阵的行有几何含义：结果是原矩阵行向量的线性组合，最后一行（行向量约定）承载平移量。</li>
+  <li>利用结合律可以把一串变换预乘成一个矩阵 C，大幅减少向量矩阵乘法次数；但<b>交换律不成立</b>，顺序不能换。</li>
+  <li>标准顺序是 <b>S · R · T</b>（先缩放、再旋转、最后平移）。</li>
+  <li>坐标系变换不改变几何，只改变参考系。向量的公式是 p<sub>B</sub> = x·u<sub>B</sub> + y·v<sub>B</sub> + z·w<sub>B</sub>；点还要先减去 B 的原点。</li>
+  <li>变换矩阵与坐标系变换矩阵互为逆：M 把 A 映射到 B，M⁻¹ 把 B 映射回 A。</li>
+  <li>代码里用 <code>XMVector4Transform</code> 并显式给出 w：点用 1、方向用 0。</li>
+</ul>
+
+<Checkpoint
+  chapterId="ch03"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch03-a1',
+      question: '为什么平移不能用 3 × 3 矩阵表示？',
+      options: ['因为平移会移动原点，不是线性变换', '因为平移需要 4 个数', '因为矩阵必须是方阵', '因为平移会改变手性'],
+      answer: 0,
+      explanation: '线性变换必须保持原点不动，而平移把原点移走了，所以它不是线性的。引入齐次坐标（第四分量 w）之后，4 × 4 矩阵才能表达平移。',
+    },
+    {
+      id: 'ch03-a2',
+      question: '用行向量时，v · S · R · T 表示的变换顺序是？',
+      options: ['先 T 再 R 最后 S', '先 S 再 R 最后 T', '三者同时施加', '取决于矩阵是否奇异'],
+      answer: 1,
+      explanation: '行向量约定下 v · A · B 表示先施加 A 再施加 B，所以 v · S · R · T 是「先缩放、再旋转、最后平移」。',
+    },
+    {
+      id: 'ch03-a3',
+      question: '坐标系变换里，点和向量的公式为什么不同？',
+      options: ['点是三维的、向量是二维的', '因为位置是点的属性而向量没有位置，点要多减一次原点', '因为向量长度必须为 1', '两者其实完全相同'],
+      answer: 1,
+      explanation: 'location is a property of points, but not of vectors。求点的坐标时要先减去新坐标系的原点；向量不需要这一步。',
+    },
+    {
+      id: 'ch03-a4',
+      question: '变换一个法线方向时，w 分量应该设为多少？',
+      options: ['0', '1', '取决于矩阵行列式', '设为方向的长度'],
+      answer: 0,
+      explanation: '方向向量用 w = 0，这样矩阵的平移项被乘 0 自动忽略。用 w = 1 会把平移错误地加到法线上。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch03"
+  title="用一段短代码分别变换点和方向"
+  goal="确认 w = 1 与 w = 0 在变换中的差别，并验证用逆矩阵能把坐标送回本地。"
+  steps={[
+    '把上面「点与方向要分开算」的代码粘进第 1 章 XMVECTOR 工程（仓库里没有 Chapter 3 目录）。',
+    '打印 pWorld 和 dirWorld，确认 dirWorld 不含 (3, 1, 0) 的平移量。',
+    '把 pWorld 再用 XMMatrixInverse 得到的 worldInv 变回本地，确认回到 (0, 1.25, 0)。',
+    '把 worldInv 换成 XMVectorSet(..., 0.0f) 变换一个点，看结果错在哪一步。',
+  ]}
+  expected="pWorld 带平移量；dirWorld 只反映缩放与旋转；pWorld 经 worldInv 变回后约等于 (0, 1.25, 0)（浮点误差内）。"
+  verify={[
+    '我打印出了点与方向两个变换结果，并确认后者不含平移。',
+    '我用逆矩阵把点变回本地，结果回到原点附近。',
+    '我能说出 w = 0 与 w = 1 的区别。',
+  ]}
+  fallbackNote="书籍示例仓库没有第 3 章的独立项目。请把这段代码放进第 1 章的 XMVECTOR 工程里运行，不要另建仓库目录。"
+/>
+</section>

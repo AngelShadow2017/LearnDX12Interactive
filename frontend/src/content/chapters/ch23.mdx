@@ -1,0 +1,150 @@
+import { BoneHierarchyActivity } from '@/activities/ch23/BoneHierarchyActivity';
+import { SkinWeightActivity } from '@/activities/ch23/SkinWeightActivity';
+
+<section className="lesson-section lesson-section--intro" id="s231">
+<h2>23.1 层级框架</h2>
+
+<p>角色用一棵<b>骨骼树</b>描述：每根骨骼由「父骨骼 + 偏移 + 姿态」定义。父骨骼的变换会同时影响自己和所有子孙（图 23.1、23.2）。</p>
+
+<div className="math-block">toRoot(child) = toRoot(parent) · local(child)<small>local(child) 包含「从父骨骼原点到子骨骼原点」的偏移与自身旋转</small></div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig23-1.jpg" alt="层级变换：父骨骼影响自身与所有子孙" figureNumber="图 23.1" caption="层级变换：父骨骼的变换影响自身与所有子孙。" />
+  <Figure src="images/Fig23-2.jpg" alt="用树形层级建模双足人形角色" figureNumber="图 23.2" caption="用更复杂的树形层级建模双足人形角色（下箭头表示「长子」关系）。" />
+</div>
+
+<p>每根骨骼的几何都在自己的<b>局部坐标系</b>里描述（图 23.4），于是各坐标系可以互相转换：<code>toParent</code> / <code>toRoot</code>（图 23.5）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig23-3.jpg" alt="一个简单的层级示例" figureNumber="图 23.3" caption="一个简单的层级示例。" />
+  <Figure src="images/Fig23-4.jpg" alt="每根骨骼的几何相对自身局部坐标系描述" figureNumber="图 23.4" caption="每根骨骼的几何相对自身局部坐标系描述。" />
+</div>
+<Figure src="images/Fig23-5.jpg" alt="各坐标系在同一空间中，可以相互转换" figureNumber="图 23.5" caption="各坐标系在同一空间中，因此可以相互转换（toParent/toRoot）。" />
+
+<BoneHierarchyActivity />
+</section>
+
+<section className="lesson-section" id="s232">
+<h2>23.2 蒙皮网格</h2>
+
+<p>皮肤是覆盖在骨骼上的连续网格。角色网格上，深色多边形表示被这些骨骼影响的皮肤顶点（图 23.6）。</p>
+
+<p>关键概念是<b>绑定姿势</b>与<b>偏移变换</b>：顶点按绑定姿势存进骨骼的本地空间，所以要先用偏移变换把顶点从绑定空间变到骨骼本地空间，再乘当前的 <code>toRoot</code>（图 23.7）。</p>
+
+<div className="math-block">p<sub>skinned</sub> = Σ<sub>i</sub> w<sub>i</sub> · toRoot<sub>i</sub> · offsetTransform<sub>i</sub> · p<sub>bind</sub></div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig23-6.jpg" alt="角色网格：骨骼与受影响的皮肤顶点" figureNumber="图 23.6" caption="角色网格：高亮骨链是骨骼；深色多边形表示被这些骨骼影响的皮肤顶点。" />
+  <Figure src="images/Fig23-7.jpg" alt="先用偏移变换把顶点从绑定空间变到骨骼本地空间" figureNumber="图 23.7" caption="先用偏移变换把顶点从绑定空间变到骨骼本地空间，再乘当前 toRoot。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s233">
+<h2>23.3 顶点混合</h2>
+
+<p>骨骼之间必须连续过渡，否则关节处会裂开或塌陷。所以关节附近的顶点同时受两根骨骼影响（图 23.8）：每个顶点存 4 个骨骼索引和 4 个权重，<b>权重之和必须等于 1</b>。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig23-8.jpg" alt="皮肤是覆盖两根骨骼的连续网格" figureNumber="图 23.8" caption="皮肤是覆盖两根骨骼的连续网格：关节附近的顶点同时受两根骨骼影响。" />
+  <Figure src="images/Fig23-9.jpg" alt="矩阵调色板存放每根骨骼的最终变换" figureNumber="图 23.9" caption="矩阵调色板存放每根骨骼的最终变换：顶点的 4 个骨骼索引查表加权。" />
+</div>
+
+<SkinWeightActivity />
+</section>
+
+<section className="lesson-section" id="s234">
+<h2>23.4 从文件加载动画数据</h2>
+
+<p>动画数据一般以关键帧的形式存放在文件里：每个关键帧给出某些骨骼在某个时间点的姿态，帧间靠插值补出连续运动。</p>
+
+<p>网格也可以按<b>子集</b>划分（图 23.10），每个子集用不同材质或不同纹理——这也解释了为什么很多角色模型是一堆 .fbx/.skel/.anm 文件。</p>
+
+<Figure src="images/Fig23-10.jpg" alt="按子集划分的汽车网格" figureNumber="图 23.10" caption="按子集划分的汽车网格（各子集材质不同，也可挂不同纹理）。" />
+</section>
+
+<section className="lesson-section" id="s235">
+<h2>23.5 角色动画演示</h2>
+
+<p>演示程序把整个流程串起来：每帧更新动画时间 → 插值出每根骨骼的姿态 → 自顶向下重算整棵树的 <code>toRoot</code> → 更新矩阵调色板 → 绘制蒙皮网格（图 23.11）。</p>
+
+<Figure src="images/Fig23-11.jpg" alt="Skinned Mesh 演示截图" figureNumber="图 23.11" caption='"Skinned Mesh" 演示截图。' />
+
+<Callout tone="tip">
+  <b>追踪一个顶点的位置</b>
+  <p>想知道某个顶点最终为什么在这里？按顺序查：它的 4 个骨骼索引与权重 → 矩阵调色板里对应的 4 个矩阵 → 各自作用于绑定姿势顶点 → 加权求和 → 再乘世界矩阵。这条链在上面的互动里已经走通了一遍。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s236">
+<h2>本章小结</h2>
+
+<ul>
+  <li>骨骼树用 <code>toRoot(child) = toRoot(parent) · local(child)</code> 表达层级，父骨骼的变换被所有子孙继承。</li>
+  <li>每根骨骼的几何在自身局部坐标系描述，因此可以在局部空间与世界空间之间来回转换。</li>
+  <li>蒙皮顶点先用<b>偏移变换</b>进入骨骼本地空间，再乘当前 <code>toRoot</code>，最后按权重加权求和。</li>
+  <li>权重之和必须等于 1，否则顶点位置会随姿势漂移。</li>
+  <li>矩阵调色板 = 每根骨骼的 <code>toRoot · offsetTransform</code>，顶点按索引查表即可。</li>
+</ul>
+
+<Figure src="images/Fig23-12.jpg" alt="简单的网格层级" figureNumber="图 23.12" caption="简单的网格层级。" />
+
+<Checkpoint
+  chapterId="ch23"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch23-a1',
+      question: '子骨骼的世界变换怎么算？',
+      options: ['只用父骨骼的旋转', 'toRoot(parent) × local(child)，local 里含从父骨骼原点出发的偏移', '所有兄弟骨骼变换相乘', '直接用自己的局部变换'],
+      answer: 1,
+      explanation: '层级的数学表达就是矩阵连乘：父骨骼的完整世界变换乘上子骨骼的局部变换（含偏移）。',
+    },
+    {
+      id: 'ch23-a2',
+      question: '偏移变换（offsetTransform）的作用是？',
+      options: ['放大顶点', '把绑定空间里的顶点变换到骨骼的本地空间', '把顶点投影到屏幕', '计算法线'],
+      answer: 1,
+      explanation: '顶点按绑定姿势存在骨骼本地空间里，所以要先把「绑定空间中的顶点」变到当前骨骼的本地空间，再乘 toRoot。',
+    },
+    {
+      id: 'ch23-a3',
+      question: '蒙皮顶点的 4 个权重之和必须是多少？',
+      options: ['大于 1', '等于 1', '小于 1', '任意'],
+      answer: 1,
+      explanation: '权重是线性混合的系数，和不为 1 时顶点的位置会随姿势缩放，出现「肢体忽长忽短」。',
+    },
+    {
+      id: 'ch23-a4',
+      question: '矩阵调色板里存的是什么？',
+      options: ['绑定姿势的顶点位置', '每根骨骼的 toRoot · offsetTransform', '光照参数', '纹理坐标'],
+      answer: 1,
+      explanation: '调色板是每根骨骼的「最终变换」，顶点只需按骨骼索引查表加权，不必在着色器里重算。',
+    },
+    {
+      id: 'ch23-a5',
+      question: '关节附近的顶点为什么要受两根骨骼影响？',
+      options: ['为了减少顶点数', '为了让骨骼之间连续过渡，否则关节处会裂开或塌陷', '为了提高光照精度', '为了支持纹理压缩'],
+      answer: 1,
+      explanation: '蒙皮的核心就是连续性。权重插值保证网格跨过关节时不会断裂。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch23"
+  title="切换动画或播放位置，追踪一个顶点的最终位置"
+  goal="在 SkinnedMesh 示例里拖动播放位置，并完整追踪某个顶点在某一帧的位置是怎么算出来的。"
+  steps={[
+    '打开 Chapter 23 Character Animation/SkinnedMesh 的 .sln，生成并运行（图 23.11）。',
+    '把动画播放位置拖到另一个时刻，观察角色姿态变化。',
+    '选一个靠近关节的顶点，记下它的 4 个骨骼索引与权重。',
+    '按「offsetTransform → toRoot → 加权求和 → 乘世界矩阵」的顺序手算一遍，和画面上的位置对照。',
+  ]}
+  expected="拖动播放位置时姿态连续变化；关节附近顶点的位置等于 4 个骨骼变换结果的加权和。"
+  verify={[
+    '我跑通了 SkinnedMesh 示例。',
+    '我切换了动画或播放位置并看到姿态变化。',
+    '我能完整说出某个顶点最终位置的计算链。',
+  ]}
+/>
+</section>

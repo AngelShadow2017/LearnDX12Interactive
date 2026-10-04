@@ -1,0 +1,191 @@
+import { IntroDiagnostic } from '@/activities/IntroDiagnostic';
+import { EnvironmentChecklist } from '@/activities/EnvironmentChecklist';
+import { ErrorTriage } from '@/activities/ErrorTriage';
+
+<section className="lesson-section lesson-section--intro" id="start-goals">
+<h2>这本书会教会什么</h2>
+
+<p>Direct3D 12 是一套贴近硬件的底层图形 API：它把现代显卡暴露给你的方式非常直接，代价是几乎所有同步和资源管理工作都要你自己写清楚。这本书的目标是把「底层」这件事拆开讲明白，而不是让你背 API。</p>
+
+<p>全书分三部分：</p>
+
+<ul>
+  <li><b>第一部分（第 1—3 章）数学基础。</b>向量、矩阵和变换。这部分决定你后面能不能读懂并预测代码的结果。</li>
+  <li><b>第二部分（第 4—11 章）Direct3D 基础。</b>初始化、定义几何体、着色器、光照、纹理、混合、模板。这部分让你从「黑屏」走到「能画出像样的场景」。</li>
+  <li><b>第三部分（第 12—23 章）进阶技术与特效。</b>几何着色器、计算着色器、曲面细分、相机与剔除、拾取、立方体贴图、法线贴图、阴影、环境光遮蔽、四元数与角色动画。</li>
+</ul>
+
+<p>本书难度是递进的：后面每一章都会用到前面已经讲过的做法。所以本站每章都要求你先<b>预测</b>、再<b>动手验证</b>、最后到真实 Windows 示例里改一次代码。</p>
+
+<Callout tone="note">
+  <b>这本书不做什么</b>
+  <p>它不教你做完整游戏引擎，也不讲美术资源制作。它教的是：给定一段 D3D12 代码，你能说出它为什么会画出这个结果，以及怎么改才能得到你想要的结果。</p>
+</Callout>
+
+<Callout tone="tip">
+  <b>关于坐标系的一句提醒</b>
+  <p>Direct3D 使用<b>左手坐标系</b>：x 向右、y 向上、z 指向屏幕内部。本书所有插图和本站所有推演都用这一约定。你在别处看到的 OpenGL / 数学教材通常使用右手系（z 朝向观察者），照抄数值会把物体前后颠倒。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="start-background">
+<h2>你的起点</h2>
+
+<p>原书列出的前置要求是：高中数学（代数、三角函数）、会用 Visual Studio 建工程和指定链接库、中级 C++（指针、数组、运算符重载、链表、继承与多态）。熟悉 Win32 会有帮助，但不是必须——附录 A 提供了 Win32 入门。</p>
+
+<p>如果你主要写 C#，这里有两处需要特别注意，它们在后面每一章都会出现：</p>
+
+<ul>
+  <li><b>没有垃圾回收。</b>COM 对象用引用计数管理，<code>Microsoft::WRL::ComPtr</code> 相当于一个会自动调用 <code>Release()</code> 的作用域锁。但「引用计数归零」不等于「GPU 已经用完」，这是另一件事。</li>
+  <li><b>CPU 和 GPU 是并行执行的。</b>你提交命令之后 GPU 什么时候跑完，CPU 并不知道。所有同步都要用 Fence 显式表达。C# 里那种「写完立刻生效」的直觉在这里不成立。</li>
+</ul>
+
+<p>下面五道题用来定位你该先补哪一块。它不记录成绩，随便做。</p>
+
+<IntroDiagnostic />
+</section>
+
+<section className="lesson-section" id="start-tools">
+<h2>工具与工程准备</h2>
+
+<p>原书要求：Windows 10、Visual Studio 2015 或更高版本、支持 Direct3D 12 的显卡（作者用 Geforce GTX 760 测试了全部示例）。今天对应的是 Windows 10/11 + Visual Studio 2022 + 一块支持功能级别 11_0 的显卡。下面这份清单可以逐项勾选，卡住时点开排查建议。</p>
+
+<EnvironmentChecklist />
+
+<h3>链接哪些库</h3>
+
+<p>D3D12 工程需要链接 <code>d3d12.lib</code>、<code>dxgi.lib</code>、<code>dxguid.lib</code>；如果在运行时用 <code>D3DCompileFromFile</code> 编译着色器，再加 <code>d3dcompiler.lib</code>。<b>DirectXMath 不需要链接任何 .lib</b>——它是纯头文件、全内联实现。</p>
+
+<CodeSample
+  title="一个最小 D3D12 工程的包含与链接"
+  language="cpp"
+  code={`#include <windows.h>
+#include <d3d12.h>          // Windows SDK 提供，不需要旧版 DirectX SDK
+#include <dxgi1_6.h>
+#include <DirectXMath.h>    // 纯头文件，无需链接 DirectXMath.lib
+#include <wrl/client.h>    // Microsoft::WRL::ComPtr
+
+#pragma comment(lib, "d3d12.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "dxguid.lib")
+
+using Microsoft::WRL::ComPtr;
+
+int main()
+{
+    ComPtr<ID3D12Debug> debugController;
+    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+        debugController->EnableDebugLayer();   // 调试层：开发的每一天都该打开
+
+    ComPtr<IDXGIFactory4> factory;
+    CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+
+    ComPtr<ID3D12Device> device;
+    // 功能级别从 11_0 起步，这是 D3D12 的最低要求
+    D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
+    return 0;
+}`}
+  input={<>在「空项目」里新建 <code>main.cpp</code> 粘贴这段代码，并把子系统设为 Windows (/SUBSYSTEM:WINDOWS)。</>}
+  keyLines={[
+    { code: '#include <DirectXMath.h>', note: 'DirectXMath 全内联，包含即可用，没有对应的 .lib。' },
+    { code: 'D3D12GetDebugInterface', note: '调试层是可选组件，取不到也要让程序继续跑，所以这里只判断 SUCCEEDED。' },
+    { code: 'D3D_FEATURE_LEVEL_11_0', note: 'D3D12 硬件的最低要求；取不到设备时先怀疑驱动和功能级别，而不是代码。' },
+  ]}
+  output={<>程序直接退出、返回 0，且输出窗口没有 D3D12 错误。把 <code>device</code> 改成空指针分支打印一句失败信息，确认你确实拿到了设备。</>}
+  pitfalls={[
+    '去下载 June 2010 DirectX SDK——那是 D3D11 时代的做法，D3D12 头文件在 Windows SDK 里，混装反而会造成头文件冲突。',
+    '在链接器里找 DirectXMath.lib——它不存在。链接错误时检查 d3d12.lib / dxgi.lib / dxguid.lib 是否齐全。',
+    '忘记打开调试层就调一整天：调试层能直接告诉你资源状态、根签名和参数错误，是最省时间的工具。',
+  ]}
+/>
+
+<h3>出错时先查这里</h3>
+
+<p>D3D12 的错误信息通常很长，而且第一条之后的往往只是连锁反应。下面这棵树从现象出发，帮你收敛到「第一步该做什么」。</p>
+
+<ErrorTriage />
+</section>
+
+<section className="lesson-section" id="start-route">
+<h2>学习路线</h2>
+
+<p>每章都按同一套节奏走：<b>先预测结果 → 动手操作图解 → 解释为什么 → 到 Windows 示例里改一次代码</b>。章末有 3—5 道应用题，答对 80% 记为「概念过关」；示例练习由你自己核对，不阻塞下一章。</p>
+
+<div className="step-list">
+  <li><b>读。</b>顺着小节读，遇到插图先停一下，看图里发生了什么。</li>
+  <li><b>猜。</b>每个互动都会先问你一个预测。猜错没关系，猜过才记得住。</li>
+  <li><b>动。</b>拖动滑块、改参数、换顺序，把预测和实际情况对上。</li>
+  <li><b>跑。</b>打开本章对应的示例目录，改一处参数，确认画面按你预测的方式变化。</li>
+</div>
+
+<Callout tone="tip">
+  <b>网页和 Windows 各管一半</b>
+  <p>本站的互动是<b>原理模拟</b>，它不在浏览器里运行 D3D12，也不会假装能运行。真实的 D3D12 编程请在 Windows 上用本书示例仓库完成——两边的坐标、矩阵和公式约定完全一致，方便你对照。</p>
+</Callout>
+
+<h3>三部分怎么安排</h3>
+
+<ul>
+  <li><b>第 1—3 章</b>可以连着读完，它们是后面所有章节的工具。</li>
+  <li><b>第 4—6 章</b>一定要真的跑起来。初始化、管线和第一次绘制是劝退高峰，卡住就用上面的排查树。</li>
+  <li><b>第 7—11 章</b>逐个技术点推进，每章都对应一个可运行的示例。</li>
+  <li><b>第 12—23 章</b>可以按需跳读，但每章都依赖第 4—6 章建立的框架代码。</li>
+</ul>
+
+<Practice
+  chapterId="intro"
+  title="先确认仓库能跑起来"
+  repoUrl="https://github.com/d3dcoder/d3d12book"
+  goal="在 Windows 上从示例仓库里找到一个项目、确认它的运行入口，并看到一个运行结果。这一步不要求你读懂代码。"
+  steps={[
+    '克隆 https://github.com/d3dcoder/d3d12book.git，打开仓库根目录。',
+    '确认 Common/ 目录里有 d3dApp.h、d3dUtil.h 等框架代码——各章示例共享它，不要单独复制某个章节目录出去编译。',
+    '进入 Chapter 4 Direct3D Initialization/Init Direct3D，双击 .sln 用 Visual Studio 2022 打开，接受平台工具集升级。',
+    '生成并运行（Debug 或 Release 都行），你应该看到一个窗口。',
+    '打开 Chapter 6 Drawing in Direct3D/Box，同样生成运行，确认能看到一个立方体。',
+  ]}
+  expected="第 4 章示例弹出一个窗口（通常是清屏后的纯色背景）；第 6 章示例弹出一个窗口并显示一个彩色立方体，鼠标可以转动视角。"
+  verify={[
+    '我找到了仓库里 Common/ 共享框架代码的位置。',
+    '我用 Visual Studio 2022 打开并成功生成了 Init Direct3D。',
+    '我至少跑起了一个示例，并看到了画面。',
+    '如果失败了，我记录了第一条错误信息，并知道它是编译期、链接期还是运行期。',
+  ]}
+  fallbackNote="如果暂时没有 Windows 环境，可以先用网页内的推演学习原理，实践部分留到有环境时再补。"
+/>
+
+<Checkpoint
+  chapterId="intro"
+  intro="导读不计入 23 章的掌握进度，这组题只用来确认你已经知道接下来会面对什么。"
+  questions={[
+    {
+      id: 'intro-q1',
+      question: 'Direct3D 使用哪种坐标系？',
+      options: ['右手系，+z 朝向观察者', '左手系，+z 指向屏幕内部', '取决于显卡厂商', '取决于你用不用 DirectXMath'],
+      answer: 1,
+      explanation: 'Direct3D 用左手系：x 向右、y 向上、z 指向屏幕内部。OpenGL 与多数数学教材用右手系，照抄数值会让物体前后颠倒。',
+    },
+    {
+      id: 'intro-q2',
+      question: '下面哪个库是 D3D12 工程不需要链接的？',
+      options: ['d3d12.lib', 'dxgi.lib', 'dxguid.lib', 'DirectXMath.lib'],
+      answer: 3,
+      explanation: 'DirectXMath 是全内联的纯头文件实现，没有对应的 .lib。需要链接的是 d3d12.lib、dxgi.lib、dxguid.lib。',
+    },
+    {
+      id: 'intro-q3',
+      question: 'ComPtr 离开作用域会调用 Release()，这意味着 GPU 一定已经用完这块资源了吗？',
+      options: ['是，Release 会等待 GPU 完成', '不是，引用计数与 GPU 执行进度是两回事，需要用 Fence 等待', '是，但仅限于常量缓冲', '不确定，取决于显卡'],
+      answer: 1,
+      explanation: 'Release 只减少引用计数。GPU 是否还在用这块资源要用 Fence 显式等待，否则就会出现画面闪烁等随机错误。',
+    },
+    {
+      id: 'intro-q4',
+      question: '本书示例要求的最低功能级别是？',
+      options: ['9_1', '10_0', '11_0', '12_1'],
+      answer: 2,
+      explanation: 'D3D12 要求适配器至少支持功能级别 11_0。设备创建失败时先怀疑驱动和功能级别。',
+    },
+  ]}
+/>
+</section>

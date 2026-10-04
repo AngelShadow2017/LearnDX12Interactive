@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 19 章 法线贴图 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 19 章 法线贴图</h1>
+    <div class="sub en-title">Normal Mapping</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s191">19.1 动机</a></li>
+      <li><a href="#s192">19.2 法线图</a></li>
+      <li><a href="#s193">19.3 纹理/切线空间</a></li>
+      <li><a href="#s194">19.4 顶点切线空间</a></li>
+      <li><a href="#s196">19.6 法线贴图着色器代码</a></li>
+      <li><a href="#s197">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：Normal Map Demo（砖墙/地砖）</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解"低模 + 法线贴图 = 高模观感"的思想；</li>
+        <li>掌握切线空间（TBN）与法线图的关系；</li>
+        <li>理解顶点切线向量的计算（握手算法）与空间变换；</li>
+        <li>实现法线贴图着色器。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s191">19.1 动机（Motivation）</h2>
+      <p>砖墙真的要建出每块砖的几何吗？不用——<b>凹凸感主要来自光照变化</b>。把"细节表面的法线"存进贴图，逐像素扰动光照计算的法线，视觉上出现凹凸（书中光滑球 vs 凹凸球的对比图非常直观），三角形数却不变。这是法线贴图（bump mapping 的现代实现）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s192">19.2 法线图（Normal Maps）</h2>
+      <p>法线图是一张 RGB 贴图：R=x、G=y、B=z（各通道 [0,255] 映射到 [−1,1]：n = 2·pixel/255 − 1），存的是"扰动后的法线方向"。这些法线是相对<b>切线空间</b>定义的。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s193">19.3 纹理/切线空间（Texture/Tangent Space）</h2>
+      <p>切线空间：以贴图 uv 为坐标轴的局部坐标系——<b>T（tangent，u 方向）、B（bitangent，v 方向）、N（表面法线）</b>。法线图里的法线在 TBN 中表达；同一个盒子六个面各有一套 TBN（书中图示盒子每面不同）。之所以用这个空间：贴图是"共享资产"，与具体物体摆放无关。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s194">19.4 顶点切线空间（Vertex Tangent Space）</h2>
+      <p>对每个三角形求 T：三角形两点差 Δp₀、Δp₁ 对应贴图差 Δ(u₀,v₀)、Δ(u₁,v₁)，解 2×2 线性方程组得 T 与 B；再对 T 做格拉姆-施密特正交化（扣掉 N 分量，图中 T−proj_N(T)）。逐顶点切线 = 共享顶点的面切线平均（与顶点法线同理），存进顶点结构（BINORMAL 可在着色器里 cross 算出，省一个属性）。</p>
+      <pre class="code"><span class="cm">// 顶点结构新增切线</span>
+<span class="kw">struct</span> Vertex { float3 Pos; float3 Normal; float2 Tex; float3 Tangent; };</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="s195">19.5 切线空间 ↔ 物体空间（Transforming Between Spaces）</h2>
+      <p>两种做法：① 把法线图里的法线由 TBN 变换到世界空间（TBN 矩阵 = [T B N] 各行由世界矩阵变换）；② 把光向量 L、视线 V 变到切线空间再点积——效果等价，选实现方便的。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s196">19.6 法线贴图着色器代码（Normal Mapping Shader Code）</h2>
+      <pre class="code"><span class="cm">// PS 里（简化自书中代码）</span>
+<span class="kw">float3</span> normalT = 2.0f * gNormalMap.Sample(gsamAnisotropicWrap, pin.Tex).rgb - 1.0f;
+<span class="kw">float3</span> N = normalize(pin.NormalW);      <span class="cm">// 世界法线</span>
+<span class="kw">float3</span> T = normalize(pin.TangentW - dot(pin.TangentW, N) * N); <span class="cm">// 正交化</span>
+<span class="kw">float3</span> B = cross(N, T);                 <span class="cm">// 副切线</span>
+<span class="kw">float3x3</span> TBN = float3x3(T, B, N);
+<span class="kw">float3</span> bumpedN = normalize(mul(normalT, TBN)); <span class="cm">// 扰动后的世界法线</span>
+<span class="cm">// 用 bumpedN 代替 N 参与光照即可</span></pre>
+      <p>demo：砖墙地面 + 地砖墙面，贴图还带 alpha 通道控制光泽度（"这个位置光滑/粗糙"）。法线图通常与漫反射图配套制作（高模烘焙）。</p>
+      <div class="tip"><b>💡 读完做实验：</b>关掉法线贴图对比平面感；把 TBN 乘错看光照"反光"；换书中 DVD 里的其他法线图材质。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s197">本章小结</h2>
+      <ul>
+        <li>法线图存切线空间法线，扰动逐像素光照——低模高质感。</li>
+        <li>TBN 三轴：T=u 方向、B=v 方向、N=法线；顶点 T 由 Δp/Δuv 方程解出并正交化。</li>
+        <li>PS：n = 2·tex−1 → mul(n, TBN) → 世界空间法线 → 正常光照。</li>
+        <li>alpha 通道还能存光泽度/高度等第二信息。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（9 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig19-1.jpg" alt="Fig19-1.jpg"><figcaption>图19.1 平滑的高光。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-2.jpg" alt="Fig19-2.jpg"><figcaption>图19.2 凹凸不平的高光——法线贴图的视觉动机。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-3.jpg" alt="Fig19-3.jpg"><figcaption>图19.3 法线图中的法线相对切线空间（T 为 u 轴、B 为 v 轴、N 为法线）存储。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-4.jpg" alt="Fig19-4.jpg"><figcaption>图19.4 三角形纹理空间与物体空间的关系：3D 切线向量 T 沿 u 方向。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-5.jpg" alt="Fig19-5.jpg"><figcaption>图19.5 盒子每个面的切线空间都不同。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-6.jpg" alt="Fig19-6.jpg"><figcaption>图19.6 由 ‖N‖=1 得 projN(T)=(T·N)N；T−projN(T) 是 T 中垂直于 N 的分量（正交化）。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-7.jpg" alt="Fig19-7.jpg"><figcaption>图19.7 地砖法线图的 alpha 通道：alpha 值表示该处的光泽度。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-8.jpg" alt="Fig19-8.jpg"><figcaption>图19.8 用高度图、法线图与环境贴图模拟的海浪。</figcaption></figure><figure><img loading="lazy" src="images/Fig19-9.jpg" alt="Fig19-9.jpg"><figcaption>图19.9 上排：高频碎浪的法线图与高度图；下排：低频波浪的法线图与高度图。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch18.html"><span class="dir">← 上一章</span>第 18 章 立方体贴图</a>
+      <a class="next" href="ch20.html"><span class="dir">下一章 →</span>第 20 章 阴影贴图</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

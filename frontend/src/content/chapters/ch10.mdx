@@ -1,0 +1,196 @@
+import { BlendEquationActivity } from '@/activities/BlendEquationActivity';
+import { FogClipBlendActivity } from '@/activities/FogClipBlendActivity';
+
+<section className="lesson-section lesson-section--intro" id="s101">
+<h2>10.1 混合方程</h2>
+
+<p>混合发生在输出合并阶段：源色（当前像素着色器的输出）与目标色（后台缓冲里已有的值）按一个方程组合。</p>
+
+<div className="math-block">C = F<sub>src</sub> ⊗ C<sub>src</sub> &nbsp;op&nbsp; F<sub>dst</sub> ⊗ C<sub>dst</sub><small>⊗ 表示逐分量相乘，op 默认是 ADD</small></div>
+
+<Figure src="images/Fig10-1.jpg" alt="半透明的水面——透过它能看见水下的东西" figureNumber="图 10.1" caption="半透明的水面——透过它能看见水下的东西。" />
+
+<Callout tone="note">
+  <b>混合是逐通道做的</b>
+  <p>RGB 和 alpha 可以各用一套因子与运算（<code>SrcBlendAlpha</code> / <code>DestBlendAlpha</code> / <code>BlendOpAlpha</code>）。大多数情况下两者设成一样即可。</p>
+</Callout>
+
+<BlendEquationActivity />
+</section>
+
+<section className="lesson-section" id="s103">
+<h2>10.3 混合因子</h2>
+
+<p>常用的因子有：</p>
+
+<ul>
+  <li><b>ZERO / ONE</b>：0 与 1，用来完全忽略或完全保留某一侧。</li>
+  <li><b>SRC_ALPHA / INV_SRC_ALPHA</b>：源 alpha 与它的补，标准 alpha 混合的两块拼图。</li>
+  <li><b>SRC_COLOR / INV_SRC_COLOR</b>：用源色本身当权重，常用来做乘法混合。</li>
+  <li><b>DEST_ALPHA / INV_DEST_ALPHA</b>：用目标 alpha 当权重。</li>
+</ul>
+
+<p>运算（<code>BlendOp</code>）除了默认的 ADD，还有 SUBTRACT、REV_SUBTRACT、MIN、MAX。</p>
+</section>
+
+<section className="lesson-section" id="s104">
+<h2>10.4 混合状态</h2>
+
+<p>D3D12 里混合状态是 PSO 的一部分（<code>D3D12_BLEND_DESC</code>），没有独立的「设置混合」调用。每个渲染目标槽位可以各配一套，还可以用 <code>BlendEnable</code> 开关。</p>
+
+<Callout tone="tip">
+  <b>一个常见技巧</b>
+  <p>图 10.2 提到的「不写颜色」（<code>RenderTargetWriteMask = 0</code>）只写深度/模板，常用来先「占住深度」再做后续绘制。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s105">
+<h2>10.5 例子</h2>
+
+<div className="figure-pair">
+  <Figure src="images/Fig10-2.jpg" alt="加法混合：颜色相加，画面变亮" figureNumber="图 10.2" caption="加法混合：颜色相加，画面变亮。" />
+  <Figure src="images/Fig10-3.jpg" alt="减法混合：颜色相减，画面变暗" figureNumber="图 10.3" caption="减法混合：颜色相减，画面变暗。" />
+</div>
+<div className="figure-pair">
+  <Figure src="images/Fig10-4.jpg" alt="乘法混合：源色与目标色相乘" figureNumber="图 10.4" caption="乘法混合：源色与目标色相乘。" />
+  <Figure src="images/Fig10-5.jpg" alt="加法混合下粒子重叠越多越亮" figureNumber="图 10.5" caption="加法混合下，粒子重叠越多的地方越亮（火焰/光效常用）。" />
+</div>
+
+<Callout tone="warning">
+  <b>混合与深度缓冲</b>
+  <p>图 10.5 那种加法混合通常要<b>关闭深度写入</b>（<code>DepthWriteMask = ZERO</code>）但保留深度测试，否则粒子之间会互相遮挡导致结果依赖绘制顺序。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s106">
+<h2>10.6 Alpha 通道</h2>
+
+<p>alpha 不只是「透明度」：它可以是镂空掩码、材质遮罩或任意自定义数据。关键区别在于你拿它做什么——参与混合方程，还是拿去 clip。</p>
+</section>
+
+<section className="lesson-section" id="s107">
+<h2>10.7 裁剪像素</h2>
+
+<p><code>clip(x)</code> 在 HLSL 里丢弃当前像素（x &lt; 0 时）。对铁丝网这类带镂空的纹理（图 10.6），它比混合更合适：不需要排序，也不会出现排序错误。</p>
+
+<Figure src="images/Fig10-6.jpg" alt="铁丝网纹理及其 alpha 通道" figureNumber="图 10.6" caption="铁丝网纹理及其 alpha 通道：alpha 为黑的像素会被 clip 丢弃，形成镂空。" />
+
+<CodeSample
+  title="像素着色器里的 clip"
+  language="hlsl"
+  code={`float4 PS(VertexOut pin) : SV_Target
+{
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.TexC);
+
+    // alpha 低于阈值的像素直接丢弃，不再参与后续任何阶段
+    clip(diffuseAlbedo.a - 0.1f);
+
+    // 剩下的和正常光照流程一样
+    float3 lit = ...;
+    return float4(lit, diffuseAlbedo.a);
+}`}
+  input={<>一张带 alpha 通道的纹理与一个各向异性 wrap 采样器。</>}
+  keyLines={[
+    { code: 'clip(diffuseAlbedo.a - 0.1f)', note: '参数小于 0 就丢弃该像素。阈值可以调，太小会留下黑边，太大会把细节剪掉。' },
+    { code: 'gsamAnisotropicWrap', note: '静态采样器名；各向异性 + wrap 是地表/围墙类纹理的常见搭配。' },
+  ]}
+  output={<>网孔处完全透明，能看到后面的物体；边缘是硬边，没有半透明过渡。</>}
+  pitfalls={[
+    'clip 阈值定得太低：纹理边缘残留黑边（因为 alpha 是插值出来的中间值）。',
+    '把需要半透明过渡的效果用 clip 实现：边缘会变成锯齿，需要配合 MSAA 或 alpha-to-coverage。',
+    'clip 之后仍然开启混合：两者混用会让结果难以预测，先想清楚要哪种效果。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s108">
+<h2>10.8 雾效</h2>
+
+<p>雾效与混合无关：它按像素到眼睛的距离，把受光颜色插值到雾色（图 10.9、10.10）。</p>
+
+<div className="math-block">s = saturate((dist(p, E) − fogStart) / fogRange)<br />foggedColor = (1 − s) · litColor + s · fogColor</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig10-9.jpg" alt="点到眼睛的距离与 fogStart、fogRange 的关系" figureNumber="图 10.9" caption="点到眼睛的距离与 fogStart、fogRange 参数的关系。" />
+  <Figure src="images/Fig10-10.jpg" alt="雾色权重 s 与受光色权重 1−s" figureNumber="图 10.10" caption="左：雾色权重 s 随距离的变化；右：受光颜色权重 1−s 的变化。" />
+</div>
+
+<Figure src="images/Fig10-8.jpg" alt="Blend 演示开启雾效后的截图" figureNumber="图 10.8" caption='"Blend" 演示开启雾效后的截图。' />
+
+<FogClipBlendActivity />
+</section>
+
+<section className="lesson-section" id="s109">
+<h2>本章小结</h2>
+
+<ul>
+  <li>混合方程 C = F<sub>src</sub> ⊗ C<sub>src</sub> op F<sub>dst</sub> ⊗ C<sub>dst</sub>，逐通道执行；RGB 与 alpha 可分开设置。</li>
+  <li>标准 alpha 混合是 <code>SRC_ALPHA</code> + <code>INV_SRC_ALPHA</code> + ADD。</li>
+  <li>混合状态属于 PSO；可以用 <code>RenderTargetWriteMask = 0</code> 只写深度不写颜色。</li>
+  <li>加法混合常用在火焰与光效；这类效果通常关闭深度写入但保留深度测试。</li>
+  <li><code>clip</code> 直接丢弃像素，适合镂空纹理，不需要排序、没有排序错误，但边缘是硬边。</li>
+  <li>雾效按距离把颜色插值到雾色，与混合是完全不同的机制。</li>
+</ul>
+
+<Figure src="images/Fig10-7.jpg" alt="Blend 演示截图" figureNumber="图 10.7" caption='"Blend" 演示截图。' />
+
+<Checkpoint
+  chapterId="ch10"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch10-a1',
+      question: '标准 alpha 混合在 aₛ = 0 时结果是什么？',
+      options: ['源色', '目标色', '黑色', '两者平均'],
+      answer: 1,
+      explanation: 'C = a·Cs + (1−a)·Cd，a = 0 时结果就是 Cd，也就是完全透明。',
+    },
+    {
+      id: 'ch10-a2',
+      question: '绘制半透明物体时，为什么通常要放到不透明物体之后并按深度排序？',
+      options: ['因为半透明物体颜色更亮', '因为混合依赖绘制顺序：源色要盖在「已经画好的背景」上', '因为深度缓冲无法写入', '因为 PSO 限制'],
+      answer: 1,
+      explanation: '混合是把源色盖到目标色上，目标色必须是「背后的东西」。所以要先画不透明物体，半透明物体按从后往前排序绘制。',
+    },
+    {
+      id: 'ch10-a3',
+      question: '铁丝网这类镂空纹理，更合适的做法是？',
+      options: ['开启 alpha 混合', '在像素着色器里 clip', '用雾效', '关掉深度测试'],
+      answer: 1,
+      explanation: 'clip 直接丢弃像素，不需要按深度排序，也不会出现排序错误，是镂空纹理的首选。代价是硬边。',
+    },
+    {
+      id: 'ch10-a4',
+      question: '加法混合做粒子光效时，深度缓冲通常怎么设？',
+      options: ['正常写深度', '关闭深度写入但保留深度测试', '关闭深度测试', '反转深度函数'],
+      answer: 1,
+      explanation: '粒子之间不应互相遮挡，所以关闭深度写入；但仍要被不透明物体遮挡，所以保留深度测试。',
+    },
+    {
+      id: 'ch10-a5',
+      question: '雾效的实现方式是？',
+      options: ['把源色与目标色混合', '按距离把受光颜色插值到雾色', '调低纹理分辨率', '关闭光照'],
+      answer: 1,
+      explanation: 's = saturate((dist − fogStart)/fogRange)，foggedColor = (1−s)·litColor + s·fogColor。它与混合是不同机制。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch10"
+  title="改混合配置或雾范围，核对预期与画面"
+  goal="在 Blend 示例里改一处混合/雾参数，先写下预期，再运行核对，并解释差异。"
+  steps={[
+    '打开 Chapter 10 Blending/BlendDemo 的 .sln，生成并运行（图 10.7）。',
+    '先写下预期：把某个半透明物体的混合因子从 SRC_ALPHA/INV_SRC_ALPHA 改成 ONE/ONE，画面会怎样？',
+    '改完重新运行，核对你的预期是否成立。',
+    '把雾的 fogStart / fogRange 改小，确认远处物体淡出得更早。',
+  ]}
+  expected="改成 ONE/ONE（加法混合）后重叠区域明显变亮；把 fogStart/fogRange 改小后，更近的物体就开始淡出到雾色。"
+  verify={[
+    '我跑通了 Blend 示例。',
+    '我改了混合配置并写下、核对了预期。',
+    '我改了雾范围并看到淡出距离变化。',
+  ]}
+/>
+</section>

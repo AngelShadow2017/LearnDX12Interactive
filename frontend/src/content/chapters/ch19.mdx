@@ -1,0 +1,189 @@
+import { TangentSpaceActivity } from '@/activities/ch19/TangentSpaceActivity';
+import { NormalStrengthActivity } from '@/activities/ch19/NormalStrengthActivity';
+
+<section className="lesson-section lesson-section--intro" id="s191">
+<h2>19.1 动机</h2>
+
+<p>光滑球面的高光是一个干净的圆盘；真实表面往往凹凸不平，高光会碎得多（图 19.1 对比图 19.2）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig19-1.jpg" alt="平滑的高光" figureNumber="图 19.1" caption="平滑的高光。" />
+  <Figure src="images/Fig19-2.jpg" alt="凹凸不平的高光" figureNumber="图 19.2" caption="凹凸不平的高光——法线贴图的视觉动机。" />
+</div>
+
+<p>用几何去表达这些细节意味着成倍增加顶点数。<b>法线贴图</b>的思路是：一个顶点都不加，只把光照使用的法线按贴图扰动。</p>
+</section>
+
+<section className="lesson-section" id="s192">
+<h2>19.2 法线图</h2>
+
+<p>法线图和普通颜色贴图一样是 RGB 纹理，只是每个像素存的是一条<b>法线</b>。它存的是三个 [−1, 1] 的分量，采样后要做 <code>2·c − 1</code> 的解包。</p>
+
+<p>关键点：这条法线是<b>相对表面</b>的，不是相对世界坐标系的（图 19.3）。</p>
+
+<Figure src="images/Fig19-3.jpg" alt="法线图中的法线相对切线空间存储" figureNumber="图 19.3" caption="法线图中的法线相对切线空间（T 为 u 轴、B 为 v 轴、N 为法线）存储。" />
+
+<Callout tone="tip">
+  <b>一个额外通道</b>
+  <p>法线贴图的 alpha 通道常被复用来存「光泽度」之类的遮罩（图 19.7），这样一张贴图就能同时控制凹凸与反光。</p>
+</Callout>
+
+<Figure src="images/Fig19-7.jpg" alt="地砖法线图的 alpha 通道表示光泽度" figureNumber="图 19.7" caption="地砖法线图的 alpha 通道：alpha 值表示该处的光泽度。" />
+</section>
+
+<section className="lesson-section" id="s193">
+<h2>19.3 纹理/切线空间</h2>
+
+<p>为了让「相对表面」变得明确，每个顶点要带一组<b>切线空间</b>基向量（图 19.4）：</p>
+
+<ul>
+  <li><b>T（切线）</b>：沿纹理 u 方向；</li>
+  <li><b>B（双切线）</b>：沿纹理 v 方向，<code>B = cross(N, T) × handedness</code>；</li>
+  <li><b>N（法线）</b>：几何法线。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig19-4.jpg" alt="三角形纹理空间与物体空间的关系" figureNumber="图 19.4" caption="三角形纹理空间与物体空间的关系：3D 切线向量 T 沿 u 方向。" />
+  <Figure src="images/Fig19-5.jpg" alt="盒子每个面的切线空间都不同" figureNumber="图 19.5" caption="盒子每个面的切线空间都不同。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s194">
+<h2>19.4 顶点切线空间</h2>
+
+<p>由于每个面的切线空间都不同（图 19.5），切线必须作为<b>逐顶点属性</b>存进顶点缓冲。顶点着色器里用 <code>float3x3(T, B, N)</code> 打包传给像素着色器。</p>
+
+<Callout tone="warning">
+  <b>手性（handedness）</b>
+  <p>镜像 UV 会让 TBN 变成左手系，着色结果会左右颠倒。用 <code>cross(N, T)</code> 的 z 分量的符号判断手性，必要时翻转 B 或整个基。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s195">
+<h2>19.5 切线空间与物体空间</h2>
+
+<p>贴图法线 (x, y, z) 还原到世界空间就是一次线性组合：<b>n = T·x + B·y + N·z</b>，再归一化。</p>
+
+<p>图 19.6 说明 T 里平行于 N 的分量必须先减掉（正交化），否则组合出来的法线不严格垂直于表面。</p>
+
+<Figure src="images/Fig19-6.jpg" alt="由 ‖N‖=1 得 projN(T)=(T·N)N，正交化示意" figureNumber="图 19.6" caption="由 ‖N‖=1 得 projN(T)=(T·N)N；T−projN(T) 是 T 中垂直于 N 的分量（正交化）。" />
+
+<TangentSpaceActivity />
+</section>
+
+<section className="lesson-section" id="s196">
+<h2>19.6 法线贴图着色器代码</h2>
+
+<CodeSample
+  title="法线贴图着色器"
+  language="hlsl"
+  code={`// 顶点着色器：把 TBN 打包传下去
+out VSOut
+{
+    float3 PosW  : POSITION;
+    float2 TexC  : TEXCOORD;
+    float3 Normal : NORMAL;
+    float3 TangentW : TANGENT;
+    float3 BitangentW : BINORMAL;
+}
+
+// 像素着色器：采样 → 解包 → 缩放 → 组合
+float4 PS(VSOut pin) : SV_Target
+{
+    float3 n = normalize(pin.Normal);
+    float3 t = normalize(pin.TangentW);
+    float3 b = cross(n, t);
+
+    float3 packedN = gNormalMap.Sample(gSampler, pin.TexC).rgb;
+    packedN = 2.0f * packedN - 1.0f;          // 解包到 [-1, 1]
+    packedN.xy *= gNormalMapStrength;         // 法线强度
+
+    n = normalize(t * packedN.x + b * packedN.y + n * packedN.z);
+    // ... 用 n 继续第 8 章的光照
+}`}
+  input={<>一张切线空间法线贴图，以及逐顶点的 N / T。</>}
+  keyLines={[
+    { code: '2.0f * packedN - 1.0f', note: '解包：[0,1] → [−1,1]。漏掉这步，法线全都偏向 (0,0,1)。' },
+    { code: 'packedN.xy *= gNormalMapStrength', note: '强度为 0 等于关闭；过大时高光会「浮」在表面上。' },
+    { code: 't * packedN.x + b * packedN.y + n * packedN.z', note: '用 TBN 基把切线空间法线还原到世界空间，最后归一化。' },
+  ]}
+  output={<>几何完全没变，但表面出现凹凸细节，高光也随之碎裂。</>}
+  pitfalls={[
+    '忘记解包 2·c−1：凹凸方向整体偏移，画面像「贴反了」。',
+    '法线强度开得过大：高光与真实几何对不上，看起来像浮在表面。',
+    'T 没有逐顶点传入：整个网格共用一条切线，弯曲表面上会明显出错。',
+  ]}
+/>
+
+<NormalStrengthActivity />
+</section>
+
+<section className="lesson-section" id="s197">
+<h2>本章小结</h2>
+
+<ul>
+  <li>法线贴图不移动任何顶点，只扰动光照使用的法线——用一张 2D 纹理换来源表面细节。</li>
+  <li>贴图里存的是切线空间法线，必须先 <code>2·c−1</code> 解包。</li>
+  <li>每个顶点要带切线 T（沿 u），双切线 B = cross(N, T) × handedness。</li>
+  <li>还原到世界空间：<code>n = normalize(T·x + B·y + N·z)</code>；T 需先正交化。</li>
+  <li>手性标志处理镜像 UV；法线强度要适中，过大会让高光「浮」在表面上。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig19-8.jpg" alt="用高度图、法线图与环境贴图模拟的海浪" figureNumber="图 19.8" caption="用高度图、法线图与环境贴图模拟的海浪。" />
+  <Figure src="images/Fig19-9.jpg" alt="高频与低频波浪的法线图与高度图" figureNumber="图 19.9" caption="上排：高频碎浪的法线图与高度图；下排：低频波浪的法线图与高度图。" />
+</div>
+
+<Checkpoint
+  chapterId="ch19"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch19-a1',
+      question: '法线贴图改变的是什么？',
+      options: ['几何形状', '光照使用的法线方向', '顶点位置', '顶点数量'],
+      answer: 1,
+      explanation: '法线贴图不移动任何顶点，只改变着色时使用的法线方向，因此几何完全不变。',
+    },
+    {
+      id: 'ch19-a2',
+      question: '采样出来的法线贴图分量要先做什么处理？',
+      options: ['归一化到单位长度', '解包：2·c − 1 映射到 [−1, 1]', '转置', '取 z 分量'],
+      answer: 1,
+      explanation: '贴图存的是 [0,1] 编码的 [−1,1] 分量，必须先解包再使用。',
+    },
+    {
+      id: 'ch19-a3',
+      question: '切线 T 应该沿什么方向？',
+      options: ['法线方向', '纹理 u 方向', '视线方向', '世界坐标 x 轴'],
+      answer: 1,
+      explanation: '切线沿纹理 u 方向，这样贴图法线的 x 分量才对应「沿 u 的凹凸」。它必须逐顶点存储。',
+    },
+    {
+      id: 'ch19-a4',
+      question: '法线强度开得过大会出现什么？',
+      options: ['画面变暗', '高光「浮」在表面上，与真实几何对不上', '贴图丢失', '顶点被推移'],
+      answer: 1,
+      explanation: '法线偏离真实几何太多时，高光位置会明显不贴合表面，看起来像浮在空中。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch19"
+  title="切换法线图并解释高光变化"
+  goal="在 NormalMap 示例里换一张法线图，描述高光形态的变化，并说明它为什么与几何无关。"
+  steps={[
+    '打开 Chapter 19 Normal Mapping/NormalMap 的 .sln，生成并运行。',
+    '把某个物体的法线贴图换成另一张（地砖、木纹等），观察高光碎裂方式的变化。',
+    '把法线强度从小往大调，找到高光开始「浮」起来的临界点。',
+    '确认网格的顶点数没有变化——所有细节都来自贴图。',
+  ]}
+  expected="换法线图后高光的碎裂方式明显不同；强度过大时高光与表面细节对不上。顶点数始终不变。"
+  verify={[
+    '我跑通了 NormalMap 示例。',
+    '我切换了法线图并观察到高光变化。',
+    '我能说明几何没有改变这一点。',
+  ]}
+/>
+</section>

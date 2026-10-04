@@ -1,0 +1,173 @@
+import { TessFactorActivity } from '@/activities/ch14/TessFactorActivity';
+import { BezierPatchActivity } from '@/activities/ch14/BezierPatchActivity';
+
+<section className="lesson-section lesson-section--intro" id="s141">
+<h2>14.1 细分图元类型</h2>
+
+<p>曲面细分把「一个粗糙的 patch」在 GPU 上切成细密的三角形。它分三个阶段（图 14.1）：<b>外壳着色器</b>（Hull Shader）→ <b>镶嵌器</b>（Tessellator，固定功能）→ <b>域着色器</b>（Domain Shader）。</p>
+
+<Figure src="images/Fig14-1.jpg" alt="渲染管线中曲面细分三个阶段的示意" figureNumber="图 14.1" caption="渲染管线中曲面细分三个阶段的示意。" />
+
+<p>绘制时要使用 patch 拓扑：<code>D3D_PRIMITIVE_TOPOLOGY_N_CONTROL_POINT_PATCHLIST</code>，并指定每个 patch 有几个控制点。常用的是 3 控制点（三角形 patch）与 4 控制点（四边形 patch）。</p>
+</section>
+
+<section className="lesson-section" id="s142">
+<h2>14.2 外壳着色器</h2>
+
+<p>HS 分两部分：</p>
+
+<ul>
+  <li><b>控制点函数</b>：每个输出控制点执行一次，可以变换控制点或透传。</li>
+  <li><b>Patch 常量函数</b>：每个 patch 执行一次，输出<b>细分因子</b>——这是控制 LOD 的地方。</li>
+</ul>
+
+<CodeSample
+  title="Patch 常量函数：按距离算细分因子"
+  language="hlsl"
+  code={`struct PatchTess { float EdgeTess[4] : SV_TessFactor;
+                   float InsideTess[2] : SV_InsideTessFactor; };
+
+PatchTess ConstantHS(InputPatch<VertexOut, 4> patch, uint patchID : SV_PrimitiveID)
+{
+    PatchTess pt;
+    float3 center = 0.25f * (patch[0].PosW + patch[1].PosW
+                           + patch[2].PosW + patch[3].PosW);
+    float d = distance(center, gEyePosW);
+
+    // 距离越近细分越密：在 [20, 100] 之间从 64 降到 1
+    float tess = saturate((100.0f - d) / (100.0f - 20.0f));
+    tess = lerp(1.0f, 64.0f, tess);
+
+    pt.EdgeTess[0] = tess; pt.EdgeTess[1] = tess;
+    pt.EdgeTess[2] = tess; pt.EdgeTess[3] = tess;
+    pt.InsideTess[0] = tess; pt.InsideTess[1] = tess;
+    return pt;
+}`}
+  input={<>四个控制点与相机世界坐标 <code>gEyePosW</code>。</>}
+  keyLines={[
+    { code: 'SV_TessFactor / SV_InsideTessFactor', note: '边缘因子控制四条边，内部因子控制内部区域；两者要匹配，否则相邻 patch 之间会裂开。' },
+    { code: 'saturate((100 − d) / 80)', note: '把距离映射到 0—1 再插值到因子范围，这就是距离 LOD 的核心。' },
+    { code: 'distance(center, gEyePosW)', note: '常用 patch 中心到相机的距离；也可以用包围盒最近点，更精确。' },
+  ]}
+  output={<>图 14.5：离相机越近网格越密、越远越疏。</>}
+  pitfalls={[
+    '边缘因子与内部因子不一致：相邻 patch 边界细分程度不同，会出现可见裂缝。',
+    '因子设成 0：该 patch 会被整个剔除（这正是剔除看不见的 patch 的手段，但也可能是 bug）。',
+    '忘记声明拓扑为 N_CONTROL_POINT_PATCHLIST：细分阶段不会生效。',
+  ]}
+/>
+
+<TessFactorActivity />
+</section>
+
+<section className="lesson-section" id="s143">
+<h2>14.3 镶嵌器</h2>
+
+<p>镶嵌器是固定功能阶段，它按 HS 给出的细分因子把规范域切成小片，但<b>不计算顶点位置</b>——位置留给域着色器。图 14.2、14.3 分别展示了四边形 patch 与三角形 patch 在不同因子下的细分结果。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig14-2.jpg" alt="四边形 patch 的细分结果" figureNumber="图 14.2" caption="四边形 patch 由边缘与内部细分因子决定的细分结果。" />
+  <Figure src="images/Fig14-3.jpg" alt="三角形 patch 的细分结果" figureNumber="图 14.3" caption="三角形 patch 由边缘与内部细分因子决定的细分结果。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s144">
+<h2>14.4 域着色器</h2>
+
+<p>域着色器为镶嵌器生成的<b>每一个新顶点</b>执行一次，输入是 <code>SV_DomainLocation</code> 给出的 (u, v)（或三角形 patch 的 (u, v, w)）。它在这里把规范域坐标映射回真实位置——比如采样高度图、求值贝塞尔曲面。</p>
+
+<Figure src="images/Fig14-4.jpg" alt="4 控制点的 quad patch 在规范 uv 空间细分成 16 个顶点" figureNumber="图 14.4" caption="4 控制点的 quad patch 在规范 uv 空间细分成 16 个顶点。" />
+</section>
+
+<section className="lesson-section" id="s145">
+<h2>14.5 四边形细分</h2>
+
+<p>把上一节的机制用在四边形网格上，就得到最实用的效果：距离 LOD（图 14.5）。离相机近的 patch 因子大、网格密；远的因子小、网格疏。</p>
+
+<Figure src="images/Fig14-5.jpg" alt="离相机越近的网格细分越密" figureNumber="图 14.5" caption="离相机越近的网格细分越密（动态 LOD）。" />
+
+<Callout tone="tip">
+  <b>什么时候值得用</b>
+  <p>曲面细分的价值在于「用少量顶点换来大量细节」，并且能按距离连续变化。但它也有固定开销：patch 数量很多时，HS/DS 的调用次数本身就会成为瓶颈。先用它做地形、水面这类大面积曲面最划算。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s146">
+<h2>14.6 三次贝塞尔四边形</h2>
+
+<p>三次贝塞尔曲线由四个控制点定义（图 14.6），曲线只保证经过首末两个控制点。把控制点换成 4 × 4 网格就得到<b>贝塞尔曲面</b>（图 14.7、14.8）。</p>
+
+<Figure src="images/Fig14-6.jpg" alt="三次贝塞尔曲线的 De Casteljau 递归插值" figureNumber="图 14.6" caption="三次贝塞尔曲线的 De Casteljau 递归插值（t=0.5）。" />
+
+<BezierPatchActivity />
+
+<div className="figure-pair">
+  <Figure src="images/Fig14-7.jpg" alt="构造贝塞尔曲面" figureNumber="图 14.7" caption="构造贝塞尔曲面（为便于理解做了简化）。" />
+  <Figure src="images/Fig14-8.jpg" alt="贝塞尔曲面演示截图" figureNumber="图 14.8" caption="贝塞尔曲面演示截图。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s147">
+<h2>本章小结</h2>
+
+<ul>
+  <li>曲面细分三阶段：HS（输出控制点与因子）→ 镶嵌器（按因子切分，固定功能）→ DS（算每个新顶点的位置）。</li>
+  <li>拓扑必须用 <code>N_CONTROL_POINT_PATCHLIST</code>；常用 3 或 4 控制点。</li>
+  <li>边缘因子与内部因子要匹配，否则相邻 patch 之间会裂缝；因子为 0 会剔除整个 patch。</li>
+  <li>距离 LOD 是它最有价值的应用：patch 中心到相机的距离映射到因子范围。</li>
+  <li>三次贝塞尔只保证经过首末控制点；4 × 4 控制点网格构成贝塞尔曲面。</li>
+</ul>
+
+<Checkpoint
+  chapterId="ch14"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch14-a1',
+      question: '曲面细分的三个阶段顺序是？',
+      options: ['域着色器 → 镶嵌器 → 外壳着色器', '外壳着色器 → 镶嵌器 → 域着色器', '镶嵌器 → 外壳着色器 → 域着色器', '外壳着色器 → 域着色器 → 镶嵌器'],
+      answer: 1,
+      explanation: 'HS 输出控制点与细分因子，镶嵌器（固定功能）按因子切分规范域，DS 为每个新顶点计算最终位置。',
+    },
+    {
+      id: 'ch14-a2',
+      question: '边缘细分因子与内部细分因子不一致会导致什么？',
+      options: ['性能下降', '相邻 patch 边界细分程度不同，出现可见裂缝', '因子被硬件自动修正', '域着色器报错'],
+      answer: 1,
+      explanation: '相邻 patch 共享的那条边必须由两侧给出相同的因子，否则一边切得细一边切得粗，就会出现裂缝。',
+    },
+    {
+      id: 'ch14-a3',
+      question: '三次贝塞尔曲线一定经过哪些控制点？',
+      options: ['四个都经过', '只经过 P0 与 P3', '只经过 P1 与 P2', '一个都不经过'],
+      answer: 1,
+      explanation: '曲线插值于首末控制点；P1、P2 只控制切线方向，一般不在曲线上。',
+    },
+    {
+      id: 'ch14-a4',
+      question: '域着色器拿到的 SV_DomainLocation 是什么？',
+      options: ['世界坐标', '规范域上的 (u, v) 参数坐标', '屏幕坐标', '纹理坐标'],
+      answer: 1,
+      explanation: '镶嵌器输出的是规范域上的参数坐标 (u, v)；DS 负责把它映射成真实顶点位置（采样高度图、求贝塞尔等）。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch14"
+  title="调 tess factor，核对线框密度与距离变化"
+  goal="在细分示例里改细分因子，确认线框密度变化，并说明密度与距离的关系。"
+  steps={[
+    '打开 Chapter 14 The Tessellation Stages 下的工程，生成并运行（图 14.8）。',
+    '切换到线框模式（把 FillMode 设成 WIREFRAME），观察网格密度。',
+    '把 ConstantHS 里的最大因子从 64 改成 8，重新运行，比较线框密度。',
+    '把相机推近/推远，确认密度随距离变化（图 14.5）。',
+  ]}
+  expected="最大因子改小后线框明显变疏；相机推近时网格变密、推远时变疏。"
+  verify={[
+    '我跑通了细分示例并看到线框。',
+    '我改了细分因子并确认线框密度变化。',
+    '我确认了密度随相机距离变化。',
+  ]}
+/>
+</section>

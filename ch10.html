@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 10 章 混合 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第二部分 Direct3D 基础</div>
+    <h1>第 10 章 混合</h1>
+    <div class="sub en-title">Blending</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s101">10.1 混合方程</a></li>
+      <li><a href="#s103">10.3 混合因子</a></li>
+      <li><a href="#s104">10.4 混合状态</a></li>
+      <li><a href="#s105">10.5 例子</a></li>
+      <li><a href="#s106">10.6 alpha 通道</a></li>
+      <li><a href="#s107">10.7 裁剪像素</a></li>
+      <li><a href="#s108">10.8 雾效</a></li>
+      <li><a href="#s109">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第二部分 · Direct3D 基础</span>
+      <span class="badge green">对应示例：Blend Demo（半透明玻璃）</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解混合方程与混合因子，掌握常见混合模式；</li>
+        <li>配置混合状态（BlendState），实现半透明玻璃；</li>
+        <li>用 alpha 通道与 clip() 做"镂空"（铁丝网）；</li>
+        <li>实现距离雾效。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s101">10.1 混合方程（The Blending Equation）</h2>
+      <p>输出合并阶段把"当前像素（源）"与"后台缓冲已有颜色（目标）"按公式混合：</p>
+      <div class="formula">C = F<sub>src</sub> ⊗ C<sub>src</sub> ⊕ F<sub>dst</sub> ⊗ C<sub>dst</sub></div>
+      <p>⊕ 可以是加、减、乘、Min、Max 等；F 是混合因子。经典<b>透明混合</b>：</p>
+      <div class="formula">C = α·C<sub>src</sub> + (1−α)·C<sub>dst</sub></div>
+      <p>α 是不透明度：0 全透明、1 不透明。玻璃、水面、幽灵都用它。注意混合直接影响 alpha 值本身也有独立的一套设置。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s103">10.3 混合因子（Blend Factors）</h2>
+      <p>常用因子：ZERO、ONE、SRC_ALPHA、INV_SRC_ALPHA、DEST_ALPHA、DEST_COLOR 等。排列组合出各种效果——加法混合（火焰/粒子，越叠越亮）、乘法混合（越叠越暗）等。书中图示加/减/乘三种混合的视觉效果对比。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s104">10.4 混合状态（Blend State）</h2>
+      <p>混合属于 OM 阶段状态，打包进 PSO：</p>
+      <pre class="code">D3D12_BLEND_DESC transparentDesc = {};
+transparentDesc.AlphaToCoverageEnable = <span class="kw">false</span>;
+transparentDesc.IndependentBlendEnable = <span class="kw">false</span>;
+transparentDesc.RenderTarget[0].BlendEnable = <span class="kw">true</span>;
+transparentDesc.RenderTarget[0].SrcBlend  = D3D12_BLEND_SRC_ALPHA;
+transparentDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+transparentDesc.RenderTarget[0].BlendOp   = D3D12_BLEND_OP_ADD;</pre>
+      <p><b>透明物体绘制三原则：</b>①关闭深度写入（DepthWriteMask = ZERO），但深度测试仍开；②按"由远及近"排序绘制；③不透明物体先画。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s105">10.5 例子（Examples）</h2>
+      <p>书中逐一推导：只显示源、只显示目标、加法、乘法、透明——全部用混合因子组合表达。Blend demo：玻璃水箱里放骷髅与柱子，透过玻璃能看到后面场景且玻璃有 tint 色。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s106">10.6 alpha 通道（Alpha Channels）</h2>
+      <p>除了整体透明，还能把 alpha 存在<b>纹理里</b>（DDS 的 alpha 通道），实现逐像素透明——树叶、铁丝网。采样后把 α 传给混合。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s107">10.7 裁剪像素（Clipping Pixels / clip）</h2>
+      <p>HLSL 的 <code class="inline">clip(x)</code>：x &lt; 0 时丢弃该像素——比混合更"硬"，适合完全镂空（铁丝网孔洞、树叶）：</p>
+      <pre class="code"><span class="cm">// 铁丝网：alpha &lt; 0.1 的像素直接丢弃</span>
+<span class="kw">float4</span> texColor = gDiffuseMap.Sample(gsamAnisotropicWrap, pin.Tex);
+clip(texColor.a - 0.1f);</pre>
+      <p>注意 clip 会让 GPU 的提前深度测试失效一部分，慎用在大面积上。Alpha-to-Coverage（第 12 章）是它的抗锯齿替代。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s108">10.8 雾效（Fog）</h2>
+      <p>距离眼睛越远，颜色越接近雾色，营造大气感并遮住"场景尽头"：</p>
+      <div class="formula">s = saturate((dist(p, E) − fogStart) / fogRange)&nbsp;&nbsp;;&nbsp;&nbsp;litColor = lerp(litColor, fogColor, s)</div>
+      <p>在像素着色器里实现（书中在 PS 尾部插雾）。Blend demo 开雾前后对比一目了然。</p>
+      <div class="tip"><b>💡 读完做实验：</b>调 fogStart/fogRange；换雾色做"黄昏"；把玻璃 alpha 改成纹理 alpha 做逐像素透明。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s109">本章小结</h2>
+      <ul>
+        <li>混合发生在 OM 阶段；透明 = SRC_ALPHA + INV_SRC_ALPHA + ADD。</li>
+        <li>透明物绘制：关深度写、先不透明后透明、由远及近排序。</li>
+        <li>clip() 硬镂空（铁丝网/树叶），alpha 通道提供逐像素 α。</li>
+        <li>雾 = 距离插值到雾色，在 PS 完成。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（10 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig10-1.jpg" alt="Fig10-1.jpg"><figcaption>图10.1 半透明的水面——透过它能看见水下的东西。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-2.jpg" alt="Fig10-2.jpg"><figcaption>图10.2 加法混合：颜色相加，画面变亮。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-3.jpg" alt="Fig10-3.jpg"><figcaption>图10.3 减法混合：颜色相减，画面变暗。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-4.jpg" alt="Fig10-4.jpg"><figcaption>图10.4 乘法混合：源色与目标色相乘。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-5.jpg" alt="Fig10-5.jpg"><figcaption>图10.5 加法混合下，粒子重叠越多的地方越亮（火焰/光效常用）。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-6.jpg" alt="Fig10-6.jpg"><figcaption>图10.6 铁丝网纹理及其 alpha 通道：alpha 为黑的像素会被 clip 丢弃，形成镂空。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-7.jpg" alt="Fig10-7.jpg"><figcaption>图10.7 "Blend" 演示截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-8.jpg" alt="Fig10-8.jpg"><figcaption>图10.8 "Blend" 演示开启雾效后的截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-9.jpg" alt="Fig10-9.jpg"><figcaption>图10.9 点到眼睛的距离与 fogStart、fogRange 参数的关系。</figcaption></figure><figure><img loading="lazy" src="images/Fig10-10.jpg" alt="Fig10-10.jpg"><figcaption>图10.10 左：雾色权重 s 随距离的变化；右：受光颜色权重 1−s 的变化。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch09.html"><span class="dir">← 上一章</span>第 9 章 纹理</a>
+      <a class="next" href="ch11.html"><span class="dir">下一章 →</span>第 11 章 模板测试</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

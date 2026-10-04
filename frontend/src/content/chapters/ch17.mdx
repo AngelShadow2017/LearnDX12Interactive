@@ -1,0 +1,153 @@
+import { PickRayActivity } from '@/activities/ch17/PickRayActivity';
+
+<section className="lesson-section lesson-section--intro" id="s171">
+<h2>17.1 屏幕点到投影窗口</h2>
+
+<p>拾取要回答的问题是：「我点的这个屏幕位置，对应 3D 世界里的哪个物体？」</p>
+
+<p>图 17.2 说明了关键事实：<b>多个 3D 空间中的点会投影到投影窗口的同一点</b>。所以「屏幕上的一点」不是 3D 位置，而是一条<b>射线</b>（图 17.3）：从眼睛穿过这个点的射线，会命中「投影覆盖 p」的那个物体。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig17-2.jpg" alt="视锥侧视：多个 3D 点投影到投影窗口同一点" figureNumber="图 17.2" caption="视锥侧视：多个 3D 空间中的点可以投影到投影窗口的同一点。" />
+  <Figure src="images/Fig17-3.jpg" alt="从眼睛穿过点 p 的射线会命中物体" figureNumber="图 17.3" caption="从眼睛穿过点 p 的射线会命中「投影覆盖 p」的物体。" />
+</div>
+
+<p>推导用的是相似三角形（图 17.4）：把归一化设备坐标除以投影矩阵里的两个缩放项，再令 z = 1，就得到视空间里射线的方向。</p>
+
+<Figure src="images/Fig17-4.jpg" alt="用相似三角形推导射线参数" figureNumber="图 17.4" caption="用相似三角形推导射线参数。" />
+
+<div className="math-block">v<sub>view</sub> = (x<sub>ndc</sub> / p₀₀, y<sub>ndc</sub> / p₁₁, 1)<small>Direct3D 左手系：相机在原点、看向 +z</small></div>
+
+<Callout tone="tip">
+  <b>屏幕坐标要翻成 NDC</b>
+  <p>窗口坐标原点在左上、y 向下；NDC 的 y 向上、范围 [−1, 1]。所以要先除以宽高，再把 y 取反。漏掉这一步的典型症状是「拾取位置上下颠倒」。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s172">
+<h2>17.2 世界/本地空间拾取射线</h2>
+
+<p>视空间射线要变成世界空间射线：用<b>视图矩阵的逆</b>（也就是相机的世界矩阵）变换它的方向即可。方向向量用 w = 0，所以平移不会影响它。</p>
+
+<CodeSample
+  title="把点击变成世界空间射线"
+  language="cpp"
+  code={`// 1) 窗口坐标 -> NDC（y 要翻转）
+float ndcX =  (x * 2.0f - mClientWidth)  / mClientWidth;
+float ndcY = -(y * 2.0f - mClientHeight) / mClientHeight;
+
+// 2) NDC -> 视空间方向：除以投影矩阵的两个缩放项，z 取 1
+XMVECTOR projScale = XMVectorSet(1.0f / mProj[0][0], 1.0f / mProj[1][1],
+                                 1.0f, 0.0f);
+XMVECTOR vView = XMVectorMultiply(projScale, XMVectorSet(ndcX, ndcY, 1.0f, 0.0f));
+
+// 3) 视空间 -> 世界空间：用相机世界矩阵变换方向（w = 0，不含平移）
+XMVECTOR vWorld = XMVector3Transform(vView, mCamera.GetWorld());`}
+  input={<>鼠标窗口坐标、投影矩阵的 p00 / p11，以及相机世界矩阵。</>}
+  keyLines={[
+    { code: '1.0f / mProj[0][0]', note: '投影矩阵的两个缩放项就是这一步要除的数；写成倒数直接相乘更快。' },
+    { code: 'XMVectorSet(..., 0.0f)', note: 'w = 0 表示方向向量，变换时不会带上平移。' },
+    { code: 'mCamera.GetWorld()', note: '就是视图矩阵的逆，避免另推一套旋转矩阵。' },
+  ]}
+  output={<>一条从相机出发、穿过被点击屏幕点的世界空间射线。</>}
+  pitfalls={[
+    '忘记翻转 y：拾取位置上下颠倒。',
+    '用 w = 1 变换方向：射线会被平移到奇怪的位置，表现为「点击时高亮了别的东西」。',
+    '没有用视图矩阵的逆而是重算旋转矩阵：容易与相机状态不一致。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s173">
+<h2>17.3 射线与网格求交</h2>
+
+<p>有了射线，接下来遍历网格求交。书中用 Möller–Trumbore 算法：先把射线投影到三角形的平面里，用斜坐标系下的 (u, v) 重心坐标判断是否落在三角形内（图 17.5），再算出沿射线的距离 t。</p>
+
+<p>命中条件有三个：<code>u ≥ 0</code>、<code>v ≥ 0</code>、<code>u + v ≤ 1</code>，以及 <code>t &gt; 0</code>（交点必须在射线前方）。</p>
+
+<Figure src="images/Fig17-5.jpg" alt="三角形平面内的点 p 相对斜坐标系的 u、v 坐标" figureNumber="图 17.5" caption="三角形平面内的点 p 相对以 v0 为原点的斜坐标系的 (u,v) 坐标（重心坐标）。" />
+
+<PickRayActivity />
+
+<Callout tone="note">
+  <b>为什么一定要比 t</b>
+  <p>射线常常同时穿过多个三角形（前面的物体和它背后的物体）。拾取必须取<b>视线前方最近</b>的那个，否则会选中被遮挡的物体——这就是图 17.6 里「被选中的三角形高亮成绿色」所需要的 t 比较。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s174">
+<h2>17.4 演示程序</h2>
+
+<p>Picking 演示支持四种选择模式：点选、按三角形拖拽、按包围体拖拽、按视锥拖拽。鼠标按下时先做一次射线拾取，命中后进入相应的拖拽模式。</p>
+
+<Figure src="images/Fig17-6.jpg" alt="被选中的三角形以绿色高亮" figureNumber="图 17.6" caption="被选中的三角形以绿色高亮。" />
+
+<p>调试拾取时最有用的一步，是先把射线画出来：这样能立刻看出问题出在「射线方向算错了」还是「求交判断错了」。</p>
+</section>
+
+<section className="lesson-section" id="s175">
+<h2>本章小结</h2>
+
+<ul>
+  <li>屏幕上一个点对应一条射线，不是一个 3D 位置。</li>
+  <li>视空间射线方向 = (ndcX / p00, ndcY / p11, 1)；窗口坐标要先转 NDC 并翻转 y。</li>
+  <li>方向向量用 w = 0 变换，避免带上平移；用相机世界矩阵（视图矩阵的逆）转到世界空间。</li>
+  <li>Möller–Trumbore 求交：u ≥ 0、v ≥ 0、u + v ≤ 1 且 t &gt; 0。</li>
+  <li>多个三角形同时命中时，取 <b>t 最小</b>的那个，否则会选中被遮挡的物体。</li>
+</ul>
+
+<Figure src="images/Fig17-1.jpg" alt="用户点选十二面体" figureNumber="图 17.1" caption="用户点选十二面体。" />
+
+<Checkpoint
+  chapterId="ch17"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch17-a1',
+      question: '点击屏幕上的一个点，对应 3D 世界里的什么？',
+      options: ['一个精确的 3D 位置', '一条从相机出发的射线', '一个平面', '一个深度值'],
+      answer: 1,
+      explanation: '多个 3D 点会投影到同一点，所以屏幕点只能确定一条射线；真正的 3D 位置要靠与物体求交才能确定。',
+    },
+    {
+      id: 'ch17-a2',
+      question: '视空间拾取射线的方向向量是什么？',
+      options: ['(ndcX, ndcY, 1)', '(ndcX / p00, ndcY / p11, 1)', '(ndcX / p00, ndcY / p11, 0)', '(x, y, z)'],
+      answer: 1,
+      explanation: '除以投影矩阵的两个缩放项并令 z = 1，就是视空间里射线的方向（左手系下相机看向 +z）。',
+    },
+    {
+      id: 'ch17-a3',
+      question: '变换射线方向时，w 分量应该取多少？',
+      options: ['1', '0', '取射线长度', '与投影矩阵有关'],
+      answer: 1,
+      explanation: 'w = 0 表示方向向量，矩阵的平移项会被乘 0 自动忽略；w = 1 会把平移错误地加到方向上。',
+    },
+    {
+      id: 'ch17-a4',
+      question: '射线同时命中前后两个三角形，拾取应该选哪一个？',
+      options: ['第一个检测到的', 't 最小（视线前方最近）的那个', '面积更大的', '索引更小的'],
+      answer: 1,
+      explanation: '必须取视线前方最近的那个，否则会选中被遮挡的物体。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch17"
+  title="记录一次命中与一次未命中，并追踪判定步骤"
+  goal="跑通 Picking 示例，亲手走一遍「屏幕点 → 射线 → 求交 → 选中」的全过程。"
+  steps={[
+    '打开 Chapter 17 Picking/Picking 的 .sln，生成并运行。',
+    '点中一个三角形，确认它被高亮成绿色（图 17.6），记下命中的是哪个三角形。',
+    '点中空背景（未命中），确认没有高亮。',
+    '在代码里给射线方向和最近命中距离 t 各加一句 printf，重跑一次核对数值。',
+  ]}
+  expected="点中物体时对应三角形高亮；点空背景时没有高亮；打印出的 t 与命中位置一致。"
+  verify={[
+    '我跑通了 Picking 示例。',
+    '我记录了一次命中和一次未命中。',
+    '我能按顺序说出拾取的四个步骤。',
+  ]}
+/>
+</section>

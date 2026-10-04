@@ -1,0 +1,306 @@
+import { PipelineWalkActivity } from '@/activities/PipelineWalkActivity';
+import { PerspectiveClipActivity } from '@/activities/PerspectiveClipActivity';
+import { WindingCullActivity } from '@/activities/WindingCullActivity';
+
+<section className="lesson-section lesson-section--intro" id="s51">
+<h2>5.1 3D 视觉的原理</h2>
+
+<p>要在 2D 屏幕上让人相信看到的是 3D 世界，靠的是几条视觉线索。</p>
+
+<Figure src="images/Fig5-1.jpg" alt="左：3D 世界中的物体与相机布置；右：相机看到的画面" figureNumber="图 5.1" caption="左：3D 世界中的物体与相机布置（侧视图）；右：相机「看到」的画面。" />
+
+<ul>
+  <li><b>线性透视：</b>平行的视线汇聚到消失点（图 5.2）。</li>
+  <li><b>近大远小：</b>同样的柱子，近处看起来更大（图 5.3）。</li>
+  <li><b>遮挡：</b>前面的物体挡住后面的，需要深度判定（图 5.4）。</li>
+  <li><b>光照：</b>没有光照的球看起来就是个 2D 圆盘（图 5.5）。</li>
+  <li><b>阴影：</b>影子暗示光源位置，并给物体提供空间参照（图 5.6）。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-2.jpg" alt="平行的视线汇聚到消失点" figureNumber="图 5.2" caption="平行的视线汇聚到消失点——艺术家所说的「线性透视」。" />
+  <Figure src="images/Fig5-3.jpg" alt="所有柱子实际同样大小，但看起来近大远小" figureNumber="图 5.3" caption="所有柱子实际同样大小，但观察者看到近大远小。" />
+</div>
+<div className="figure-pair">
+  <Figure src="images/Fig5-4.jpg" alt="物体相互遮挡" figureNumber="图 5.4" caption="物体相互遮挡（前面的挡住后面的），需要深度判定。" />
+  <Figure src="images/Fig5-5.jpg" alt="无光照的球像 2D 圆盘，有光照后有了立体感" figureNumber="图 5.5" caption="(a) 无光照的球看起来像 2D 圆盘；(b) 有光照的球立刻有了立体感。" />
+</div>
+<Figure src="images/Fig5-6.jpg" alt="飞船与其影子" figureNumber="图 5.6" caption="飞船与其影子：阴影暗示光源位置并给物体提供空间参照。" />
+
+</section>
+
+<section className="lesson-section" id="s52">
+<h2>5.2 模型表示</h2>
+
+<p>真实物体用<b>三角形网格</b>近似。三角形是最简单的多边形，永远共面，而且任何多边形都能三角化。</p>
+
+<Figure src="images/Fig5-7.jpg" alt="用三角形网格近似的汽车与骷髅" figureNumber="图 5.7" caption="用三角形网格近似的汽车（左）与骷髅（右）。" />
+</section>
+
+<section className="lesson-section" id="s53">
+<h2>5.3 基本颜色</h2>
+
+<p>颜色由红、绿、蓝三个分量混合而成，每个分量的强度决定最终色相与亮度。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-8.jpg" alt="纯红绿蓝混合出新颜色，以及不同亮度的红色" figureNumber="图 5.8" caption="上：纯红绿蓝混合出新颜色；下：不同亮度的红色。" />
+  <Figure src="images/Fig5-9.jpg" alt="Windows 的 ChooseColor 调色对话框" figureNumber="图 5.9" caption="Windows 的 ChooseColor 调色对话框。" />
+</div>
+
+<h3>32 位颜色</h3>
+
+<p>一个 32 位颜色里 alpha、红、绿、蓝各占 1 字节，通常打包成一个 <code>XMCOLOR</code>（ARGB）。着色器里用的是 0—1 的浮点四元组。</p>
+
+<Figure src="images/Fig5-10.jpg" alt="一个 32 位颜色：alpha、红、绿、蓝各占 1 字节" figureNumber="图 5.10" caption="一个 32 位颜色：alpha、红、绿、蓝各占 1 字节。" />
+
+<Callout tone="note">
+  <b>注意颜色空间</b>
+  <p>交换链格式常用 <code>R8G8B8A8_UNORM</code>。现在主流做法是配合 <code>_SRGB</code> 格式做伽马正确的渲染；书里的示例为了简化大多直接用 UNORM。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s54">
+<h2>5.4 渲染管线总览</h2>
+
+<p>渲染管线就是「从顶点数据到屏幕像素」的固定流程。图 5.11 是全貌：输入装配 → 顶点着色器 →（曲面细分、几何着色器）→ 裁剪 → 光栅化 → 像素着色器 → 输出合并。</p>
+
+<Figure src="images/Fig5-11.jpg" alt="渲染管线的各阶段总览" figureNumber="图 5.11" caption="渲染管线的各阶段总览。" />
+
+<Callout tone="tip">
+  <b>怎么记这条管线</b>
+  <p>不要背名字，记每站的<b>输入</b>和<b>输出</b>。这样当你看到「黑屏」「物体上下颠倒」「纹理歪斜」时，才能反推出该查哪一站。</p>
+</Callout>
+
+<PipelineWalkActivity />
+</section>
+
+<section className="lesson-section" id="s55">
+<h2>5.5 输入装配阶段</h2>
+
+<p>IA 从顶点缓冲和索引缓冲里读数据，按图元拓扑把顶点组装成图元。</p>
+
+<Figure src="images/Fig5-12.jpg" alt="三个顶点定义三角形，两个定义线段，一个定义点" figureNumber="图 5.12" caption="三个顶点定义三角形；两个顶点定义线段；一个顶点定义点。" />
+
+<h3>图元拓扑</h3>
+
+<p>常用的是<b>三角形列表</b>（每三个顶点一个三角形）和<b>三角形条带</b>（复用前两个顶点）。带邻接的三角形列表供几何着色器使用。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-13.jpg" alt="点列表、线条带、线列表、三角形条带" figureNumber="图 5.13" caption="(a) 点列表；(b) 线条带；(c) 线列表；(d) 三角形条带。" />
+  <Figure src="images/Fig5-14.jpg" alt="三角形列表与带邻接的三角形列表" figureNumber="图 5.14" caption="(a) 三角形列表；(b) 带邻接的三角形列表（每个三角形需 6 个顶点）。" />
+</div>
+
+<h3>索引</h3>
+
+<p>索引让多个三角形共用同一个顶点，既省内存又省顶点着色器的执行次数。没有索引时，共享顶点会被重复处理。</p>
+
+<Figure src="images/Fig5-15.jpg" alt="两个三角形拼成四边形，八个三角形拼成八边形" figureNumber="图 5.15" caption="(a) 两个三角形拼成四边形；(b) 八个三角形拼成八边形。" />
+</section>
+
+<section className="lesson-section" id="s56">
+<h2>5.6 顶点着色器阶段</h2>
+
+<h3>本地空间与世界空间</h3>
+
+<p>每个物体的顶点先在它自己的<b>本地空间</b>里定义，再由世界矩阵摆进世界空间。以原点为中心、轴对齐建模时顶点坐标最好写（图 5.17）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-16.jpg" alt="各物体的顶点先在本地坐标系定义，再由世界矩阵摆进世界" figureNumber="图 5.16" caption="各物体的顶点先在自身本地坐标系中定义，再由世界矩阵摆进世界。" />
+  <Figure src="images/Fig5-17.jpg" alt="立方体以原点为中心、轴对齐时顶点坐标最容易给出" figureNumber="图 5.17" caption="立方体以原点为中心、轴对齐时顶点坐标最容易给出。" />
+</div>
+
+<Figure src="images/Fig5-18.jpg" alt="世界矩阵的行向量等于本地坐标系各轴在世界坐标系中的描述" figureNumber="图 5.18" caption="世界矩阵的行向量 = 本地坐标系各轴在世界坐标系中的描述。" />
+
+<h3>视图空间</h3>
+
+<p>把顶点从世界空间变换到<b>视图空间</b>（以相机为原点）。构造相机坐标系需要相机位置、目标点和世界「上」方向。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-19.jpg" alt="把顶点从世界空间转换到相对相机的视图空间" figureNumber="图 5.19" caption="把顶点从世界空间坐标转换为相对相机（视角）空间的坐标。" />
+  <Figure src="images/Fig5-20.jpg" alt="由相机位置、目标点与世界上方向构造相机坐标系" figureNumber="图 5.20" caption="由相机位置、目标点与世界「上」方向构造相机坐标系。" />
+</div>
+
+<Callout tone="warning">
+  <b>约定校正：相机朝向与深度范围</b>
+  <p>在 Direct3D 的<b>左手系</b>里，视图空间的相机看向 <b>+z</b>：<code>XMMatrixLookAtLH</code> 构造出的 z 轴是 focus − eye。因此「在相机前方」意味着 z &gt; 0。</p>
+  <p>投影之后，D3D12 的裁剪条件是 <b>0 ≤ z ≤ w</b>（不是 −w ≤ z ≤ w）。透视除法后归一化深度落在 <b>[0, 1]</b>，近平面为 0、远平面为 1。这与 OpenGL 的 [−1, 1] 不同，本站早期版本沿用了错误表述，这里更正。</p>
+</Callout>
+
+<h3>投影与齐次裁剪空间</h3>
+
+<p>视锥定义了相机「看得到」的体积（图 5.21）。投影矩阵把它映射成一个规整的盒子，同时完成透视缩小（图 5.22）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-21.jpg" alt="视锥定义了相机看得到的空间体积" figureNumber="图 5.21" caption="视锥（frustum）定义了相机「看得到」的空间体积。" />
+  <Figure src="images/Fig5-22.jpg" alt="同样大小的圆柱放在不同深度，投影后远处更小" figureNumber="图 5.22" caption="同样大小的圆柱放在不同深度：投影后远处更小（透视缩小）。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-23.jpg" alt="由垂直视场角 α 与宽高比推导水平视场角 β" figureNumber="图 5.23" caption="由垂直视场角 α 与宽高比推导水平视场角 β。" />
+  <Figure src="images/Fig5-24.jpg" alt="相似三角形——透视投影矩阵推导的几何基础" figureNumber="图 5.24" caption="相似三角形——透视投影矩阵推导的几何基础。" />
+</div>
+
+<h3>归一化深度值</h3>
+
+<Figure src="images/Fig5-25.jpg" alt="不同近平面取值下 g(z) 的曲线" figureNumber="图 5.25" caption="不同近平面取值下 g(z) 的曲线。" />
+
+<PerspectiveClipActivity />
+</section>
+
+<section className="lesson-section" id="s58">
+<h2>5.7/5.8 曲面细分与几何着色器</h2>
+
+<p>这两个是可选阶段：曲面细分把一个 patch 细分成更多三角形（图 5.26），几何着色器以整个图元为输入、可以增删顶点。它们分别在第 14 章和第 12 章详细讲。</p>
+
+<Figure src="images/Fig5-26.jpg" alt="左：原始网格；右：细分后的网格" figureNumber="图 5.26" caption="左：原始网格；右：细分后的网格。" />
+</section>
+
+<section className="lesson-section" id="s59">
+<h2>5.9 裁剪</h2>
+
+<p>裁剪逐图元进行：完全在视锥外的被丢弃，与之相交的被切掉外面那部分并<b>生成新顶点</b>。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-27.jpg" alt="裁剪前与裁剪后" figureNumber="图 5.27" caption="(a) 裁剪前；(b) 裁剪后（只保留视锥内部分）。" />
+  <Figure src="images/Fig5-28.jpg" alt="用平面裁剪三角形，裁剪结果需要重新三角化" figureNumber="图 5.28" caption="(a) 用平面裁剪三角形；(b) 裁剪结果不再是三角形，需要重新三角化。" />
+</div>
+
+<Figure src="images/Fig5-29.jpg" alt="齐次裁剪空间中视锥边界在 xw 平面上的表示" figureNumber="图 5.29" caption="齐次裁剪空间中视锥边界在 xw 平面上的表示。" />
+</section>
+
+<section className="lesson-section" id="s510">
+<h2>5.10 光栅化阶段</h2>
+
+<h3>背面剔除</h3>
+
+<p>绕序决定三角形是正面还是背面。D3D12 默认 <code>CullMode = BACK</code> 且 <code>FrontCounterClockwise = FALSE</code>，也就是从相机看<b>顺时针为正面</b>。</p>
+
+<Figure src="images/Fig5-30.jpg" alt="左：正面三角形；右：背面三角形" figureNumber="图 5.30" caption="左：从我们视角看的正面三角形；右：背面三角形。" />
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-31.jpg" alt="实心物体由正面与背面三角形构成；剔除背面后的场景" figureNumber="图 5.31" caption="(a) 实心物体由正面与背面三角形构成；(b) 剔除背面三角形后的场景。" />
+  <Figure src="images/Fig5-32.jpg" alt="半透明立方体可见六个面；实心立方体只画正面" figureNumber="图 5.32" caption="左：半透明立方体可见六个面；右：实心立方体只画正面。" />
+</div>
+
+<h3>顶点属性插值</h3>
+
+<p>三角形内的属性值由三个顶点属性按重心坐标做<b>透视正确</b>的插值得到（图 5.33）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-33.jpg" alt="三角形上的属性值由三个顶点属性线性插值得到" figureNumber="图 5.33" caption="三角形上的属性值 p(s,t) 由三个顶点属性线性插值（重心坐标）得到。" />
+  <Figure src="images/Fig5-34.jpg" alt="3D 线段投影为屏幕空间的 2D 线段" figureNumber="图 5.34" caption="3D 线段投影为屏幕空间的 2D 线段：像素点只有「覆盖」与「不覆盖」之分。" />
+</div>
+
+<WindingCullActivity />
+</section>
+
+<section className="lesson-section" id="s511">
+<h2>5.11 像素着色器阶段</h2>
+
+<p>PS 对每个像素片段执行一次，输入是插值后的顶点属性，输出一个颜色值。它也可以直接 <code>discard</code> 把片段丢掉——第 10 章的 alpha 裁剪就用这个。</p>
+
+<Callout tone="tip">
+  <b>顶点着色器 vs 像素着色器</b>
+  <p>VS 每个顶点跑一次，PS 每个像素片段跑一次。屏幕上通常有大量像素，所以 PS 往往是性能瓶颈；把可以预计算的东西挪到 VS 里是常见优化。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s512">
+<h2>5.12 输出合并阶段</h2>
+
+<p>OM 是最后一道关：它做深度测试、模板测试和混合，决定这个像素最终是否写入后台缓冲、写入什么值。</p>
+
+<ul>
+  <li><b>深度测试：</b>比当前深度小的才通过（默认 <code>DepthFunc = LESS</code>）。</li>
+  <li><b>模板测试：</b>用模板缓冲限制绘制区域（第 11 章）。</li>
+  <li><b>混合：</b>把源色与目标色按混合方程组合（第 10 章）。</li>
+</ul>
+
+<Callout tone="note">
+  <b>顺序很重要</b>
+  <p>模板测试 → 深度测试 → 混合。任何一个环节判定为「丢弃」，后面的混合就不会发生。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s513">
+<h2>本章小结</h2>
+
+<ul>
+  <li>3D 错觉来自线性透视、近大远小、遮挡、光照和阴影这几条线索；实体用三角形网格近似。</li>
+  <li>管线顺序：IA → VS →（曲面细分 / GS）→ 裁剪 → RS → PS → OM。记每站的输入输出比背名字有用。</li>
+  <li>IA 按拓扑组装图元，索引让顶点能被复用。</li>
+  <li>空间链路：本地 → 世界 → 视图 → 齐次裁剪空间 →（透视除法）NDC → 屏幕。</li>
+  <li><b>约定校正：</b>左手系下相机看向 +z；D3D12 裁剪条件是 0 ≤ z ≤ w，归一化深度范围 [0, 1]。</li>
+  <li>裁剪逐图元进行，与视锥相交的图元会被切割并生成新顶点。</li>
+  <li>绕序在光栅化阶段判定，改矩阵或相机不改变绕序；D3D12 默认剔除背面、顺时针为正面。</li>
+  <li>PS 每个像素片段执行一次，可以 discard；OM 做模板 → 深度 → 混合，决定最终写入。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig5-35.jpg" alt="金字塔的三角形构成" figureNumber="图 5.35" caption="金字塔（四棱锥）的三角形构成。" />
+  <Figure src="images/Fig5-36.jpg" alt="习题 2 的形状要求" figureNumber="图 5.36" caption="习题 2 的形状要求。" />
+</div>
+<Figure src="images/Fig5-37.jpg" alt="x、y 坐标按 z 值错切" figureNumber="图 5.37" caption="x、y 坐标按 z 值错切（shear）：盒子上表面落到 z=1 平面。" />
+
+<Checkpoint
+  chapterId="ch05"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch05-a1',
+      question: '顶点着色器的输出是什么？',
+      options: ['屏幕像素坐标', '齐次裁剪空间的顶点', '最终颜色', '深度值'],
+      answer: 1,
+      explanation: 'VS 完成世界、视图、投影变换，输出齐次裁剪空间坐标（w 分量还在）。透视除法在裁剪之后进行。',
+    },
+    {
+      id: 'ch05-a2',
+      question: '在 D3D12（左手系）里，视图空间中「相机前方」是哪个方向？',
+      options: ['−z', '+z', '−y', '取决于视场角'],
+      answer: 1,
+      explanation: 'XMMatrixLookAtLH 构造的 z 轴是 focus − eye，相机看向 +z。这是左手系的约定。',
+    },
+    {
+      id: 'ch05-a3',
+      question: 'D3D12 的裁剪条件是什么？',
+      options: ['−w ≤ z ≤ w', '0 ≤ z ≤ w', '−1 ≤ z ≤ 1', '0 ≤ z ≤ 1'],
+      answer: 1,
+      explanation: 'D3D12 使用 0 ≤ z ≤ w（另外还有 −w ≤ x, y ≤ w）。除以 w 之后归一化深度落在 [0, 1]，与 OpenGL 的 [−1, 1] 不同。',
+    },
+    {
+      id: 'ch05-a4',
+      question: '改了顶点顺序后物体消失了，最可能的原因是？',
+      options: ['顶点着色器报错', '绕序翻转后被判定为背面而剔除', '深度缓冲没清除', '投影矩阵写错了'],
+      answer: 1,
+      explanation: '绕序在光栅化阶段判定，默认剔除背面。改顶点顺序会翻转正/背面判定，使整片三角形被剔除。',
+    },
+    {
+      id: 'ch05-a5',
+      question: '输出合并阶段按什么顺序处理？',
+      options: ['混合 → 深度测试 → 模板测试', '模板测试 → 深度测试 → 混合', '深度测试 → 混合 → 模板测试', '三者并行'],
+      answer: 1,
+      explanation: '顺序是模板测试 → 深度测试 → 混合。任何一步判定丢弃，后面的混合就不会发生。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch05"
+  title="给三个现象标出首先排查的管线阶段"
+  goal="不看代码也能把「黑屏、物体倒置、纹理歪斜」映射到最该先查的那一站，并能在第 6 章的 Box 示例里验证。"
+  steps={[
+    '拿第 6 章的 Box 示例当作实验对象（仓库里没有 Chapter 5 目录，本章以推理为主）。',
+    '现象 A「全黑」：按 IA → VS → 裁剪 → RS → PS → OM 的顺序自查，先怀疑资源屏障与视口（第 4 章），再怀疑 VS 的矩阵。',
+    '现象 B「物体倒置」：绕序与剔除在 RS，UV 方向在 PS；先判断是几何倒了还是贴图倒了。',
+    '现象 C「纹理歪斜」：插值在 RS，采样在 PS；先确认 UV 是否随顶点正确插值。',
+    '把你标出的阶段写下来，再回到 Box 示例里改一处参数验证你的判断。',
+  ]}
+  expected="三个现象各自对应一个「首先排查」的阶段：黑屏 → 确认命令是否被提交（IA/OM 与资源状态）；物体倒置 → RS 的绕序与剔除；纹理歪斜 → RS 的插值 + PS 的采样/UV。"
+  verify={[
+    '我为三个现象各写下了首先排查的阶段。',
+    '我能说明为什么「物体倒置」不能在 VS 里改矩阵来解决。',
+    '我在 Box 示例里至少改了一处参数验证判断。',
+  ]}
+  fallbackNote="书籍示例仓库没有第 5 章的独立项目。本章练习以网页推演为主，验证环节请借用第 6 章的 Box 示例。"
+/>
+</section>

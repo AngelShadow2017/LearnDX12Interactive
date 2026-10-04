@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 13 章 计算着色器 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 13 章 计算着色器</h1>
+    <div class="sub en-title">The Compute Shader</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s131">13.1 线程与线程组</a></li>
+      <li><a href="#s132">13.2 一个简单的计算着色器</a></li>
+      <li><a href="#s133">13.3 输入输出资源</a></li>
+      <li><a href="#s134">13.4 线程 ID</a></li>
+      <li><a href="#s136">13.6 共享内存与同步</a></li>
+      <li><a href="#s137">13.7 Blur 演示</a></li>
+      <li><a href="#s139">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：VecAdd / Wave / Blur Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解线程、线程组与 Dispatch；</li>
+        <li>读写结构化缓冲（StructuredBuffer / RWStructuredBuffer）；</li>
+        <li>掌握 SV_GroupID / SV_GroupThreadID / SV_DispatchThreadID；</li>
+        <li>Append/Consume 缓冲、组内共享内存与同步；</li>
+        <li>实战：波动模拟与高斯模糊。</li>
+      </ul>
+      <p class="lead">计算着色器（CS）脱离渲染管线，把 GPU 当<b>通用并行计算机</b>用——图形后处理、物理、AI 推理都在用它。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s131">13.1 线程与线程组（Threads and Thread Groups）</h2>
+      <p>CS 以<b>线程组</b>为单位调度：CPU 调 <code class="inline">Dispatch(gx, gy, gz)</code> 启动 gx×gy×gz 个组，每组内 numthreads(nx, ny, nz) 声明的线程并行执行。比如 3×2 个组、每组 8×8 线程 = 共 384 个线程。一个 Warp（硬件层 32 线程）内的线程"锁步"执行——因此组内线程数取 8×8、16×16 这类 32 的倍数最合适。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s132">13.2 一个简单的计算着色器（A Simple Compute Shader）</h2>
+      <pre class="code"><span class="cm">// 向量加法：c[i] = a[i] + b[i]</span>
+StructuredBuffer&lt;<span class="kw">float</span>&gt; gInA : register(t0);
+StructuredBuffer&lt;<span class="kw">float</span>&gt; gInB : register(t0-1);
+RWStructuredBuffer&lt;<span class="kw">float</span>&gt; gOut : register(u0);
+
+[numthreads(32, 1, 1)]
+<span class="kw">void</span> CS(<span class="kw">int3</span> dtid : SV_DispatchThreadID) {
+  gOut[dtid.x] = gInA[dtid.x] + gInB[dtid.x];
+}</pre>
+      <p>SRV 只读（t）、UAV 可读写（u）。程序化思想：每个线程"认领"一个数据下标，互相独立地算。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s133">13.3 数据输入输出资源（Data Input and Output Resources）</h2>
+      <p>默认堆上创建 Buffer/Texture2D，用 SRV（读）与 UAV（读写）两种视图绑定。注意：UAV 并发冲突——同一 UAV 同一时刻不能既作为输入又作为输出被写。CPU↔GPU 之间用上传/读回缓冲搬运数据。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s134">13.4 线程 ID 系统值（Thread Identification System Values）</h2>
+      <ul>
+        <li><b>SV_GroupThreadID</b>：我在组内的坐标（0~numthreads-1）；</li>
+        <li><b>SV_GroupID</b>：我在 Dispatch 网格里的组坐标；</li>
+        <li><b>SV_GroupIndex</b>：组内一维编号（展平）；</li>
+        <li><b>SV_DispatchThreadID</b>：<b>全局线程坐标</b> = GroupID×numthreads + GroupThreadID——99% 的场合你只需要它。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s135">13.5 Append 与 Consume 缓冲</h2>
+      <p>特殊 UAV 类型：ConsumeStructuredBuffer 用 <code class="inline">Consume()</code> 弹出一个元素，AppendStructuredBuffer 用 <code class="inline">Append(x)</code> 压入——内部自动维护原子计数，天然适合"筛选/过滤"场景（活着的粒子 → 新列表）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s136">13.6 共享内存与同步（Shared Memory and Synchronization）</h2>
+      <p>每组有 32KB 级的 <b>组内共享内存（groupshared）</b>，速度堪比缓存。用 <code class="inline">GroupMemoryBarrierWithGroupSync()</code> 保证组内所有线程写完再读。书中警告：跨组无法同步，需要全局同步就再 Dispatch 一次；UAV 之间还要 Barrier（UAVBarrier）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s137">13.7 Blur 演示（高斯模糊实战）</h2>
+      <p>思路：高斯权重 G(x, σ) 对半径 R 内的像素加权平均。直接 2D 模糊是 R² 次采样，拆成<b>横一遍 + 纵一遍</b>两个 1D pass 只需 2R 次（可分离滤波）。难点是线程组边缘要读组外 texel——技巧：组内线程先协作把"组范围 + 半径"的纹理区段搬进共享内存，同步后再算，让读共享内存替代读全局纹理。书中逐图讲解这一经典优化。</p>
+      <div class="tip"><b>💡 读完做实验：</b>改 σ 与模糊遍数；把 vecAdd 的 numthreads 改成 64×1×1；给波形模拟加个"鼠标扰动"。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s139">本章小结</h2>
+      <ul>
+        <li>Dispatch(组网格) → numthreads(组内线程)；SV_DispatchThreadID 定位数据。</li>
+        <li>StructuredBuffer(t) 读、RWStructuredBuffer(u) 写；Append/Consume 做队列。</li>
+        <li>groupshared + 组内 barrier = 组内协作；跨组靠再 Dispatch。</li>
+        <li>可分离滤波（横+纵）+ 共享内存搬运 = 教科书级 CS 优化案例。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（15 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig13-1.jpg" alt="Fig13-1.jpg"><figcaption>图13.1 CPU 与内存、CPU 与 GPU、GPU 与显存之间的相对带宽速度对比。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-2.jpg" alt="Fig13-2.jpg"><figcaption>图13.2 计算着色器不在渲染管线内，独立读写 GPU 资源。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-3.jpg" alt="Fig13-3.jpg"><figcaption>图13.3 Dispatch 启动 3×2 个线程组，每组 8×8 个线程。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-4.jpg" alt="Fig13-4.jpg"><figcaption>图13.4 标记线程 T：组 ID (1,1,0)，组内 ID (1,5,0)，全局 Dispatch 线程 ID 由两者算出。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-5.jpg" alt="Fig13-5.jpg"><figcaption>图13.5 模糊像素 Pij：以它为中心的 m×n 像素矩阵的加权平均。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-6.jpg" alt="Fig13-6.jpg"><figcaption>图13.6 σ=1,2,3 的高斯函数 G(x) 曲线：σ 越大曲线越平、权重越散。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-7.jpg" alt="Fig13-7.jpg"><figcaption>图13.7 相机从玩家上方俯瞰，把场景渲染到离屏纹理（鸟瞰小地图效果）。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-8.jpg" alt="Fig13-8.jpg"><figcaption>图13.8 28×14 纹理：水平线程组 8×1、垂直线程组 1×8 的划分。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-9.jpg" alt="Fig13-9.jpg"><figcaption>图13.9 左：模糊两遍后的 "Blur" 演示截图；右：未模糊截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-10.jpg" alt="Fig13-10.jpg"><figcaption>图13.10 相邻两个像素的模糊核重叠：一维分离滤波大幅减少重复读取。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-11.jpg" alt="Fig13-11.jpg"><figcaption>图13.11 靠近组边界的线程因模糊半径需要读取组外像素。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-12.jpg" alt="Fig13-12.jpg"><figcaption>图13.12 R=4：边界线程协作把额外 texel 搬进共享内存。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-13.jpg" alt="Fig13-13.jpg"><figcaption>图13.13 读到图像边界外的情况。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-14.jpg" alt="Fig13-14.jpg"><figcaption>图13.14 左：Sobel 算子后白色像素表示边缘；右：反转后的边缘图。</figcaption></figure><figure><img loading="lazy" src="images/Fig13-15.jpg" alt="Fig13-15.jpg"><figcaption>图13.15 原图乘以反转边缘图：边缘描线的风格化效果。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch12.html"><span class="dir">← 上一章</span>第 12 章 几何着色器</a>
+      <a class="next" href="ch14.html"><span class="dir">下一章 →</span>第 14 章 曲面细分阶段</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

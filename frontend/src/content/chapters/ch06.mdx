@@ -1,0 +1,257 @@
+import { IndexBufferActivity } from '@/activities/IndexBufferActivity';
+import { BindingPuzzleActivity } from '@/activities/BindingPuzzleActivity';
+
+<section className="lesson-section lesson-section--intro" id="s61">
+<h2>6.1 顶点与输入布局</h2>
+
+<p>一个顶点不只存位置，还可以带颜色、法线、纹理坐标。要让 GPU 知道这段二进制数据怎么读，需要一份<b>输入布局</b>：一个 <code>D3D12_INPUT_ELEMENT_DESC</code> 数组，每个元素描述一个字段。</p>
+
+<Figure src="images/Fig6-1.jpg" alt="顶点结构的每个元素由输入布局数组中的对应元素描述" figureNumber="图 6.1" caption="顶点结构的每个元素都由 D3D12_INPUT_ELEMENT_DESC 数组中对应的元素描述。" />
+
+<CodeSample
+  title="顶点结构与输入布局"
+  language="cpp"
+  code={`struct Vertex
+{
+    XMFLOAT3 Pos;
+    XMFLOAT4 Color;
+};
+
+// 描述：这个字段是什么语义、第几个、什么格式、绑到哪个输入槽、偏移多少字节
+static const D3D12_INPUT_ELEMENT_DESC vertexDesc[] =
+{
+    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
+      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12,
+      D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+};`}
+  input={<>一个含位置（12 字节）与颜色（16 字节）的顶点结构体，共 28 字节。</>}
+  keyLines={[
+    { code: '"POSITION", 0', note: '语义名 + 语义索引，必须与 HLSL 入口参数上的语义完全一致，大小写敏感。' },
+    { code: 'DXGI_FORMAT_R32G32B32_FLOAT', note: '告诉硬件这个字段有多少个分量、每个分量什么类型。' },
+    { code: '0, 12,', note: '第二个字段的字节偏移：前面 XMFLOAT3 占了 12 字节。' },
+  ]}
+  output={<>输入布局本身没有可见输出；它决定顶点着色器里 <code>POSITION</code> / <code>COLOR</code> 能不能拿到正确数值。</>}
+  pitfalls={[
+    '语义名拼错或大小写不一致：顶点数据全部变成 0，物体缩成一个点。',
+    '字节偏移算错：颜色会读到位置的残余字节，画面出现诡异色块。',
+    'AlignedByteOffset 用 0 之外的默认值：显式写出偏移最安全。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s62">
+<h2>6.2 顶点缓冲</h2>
+
+<p>顶点数据放在 <code>D3D12_RESOURCE_DIMENSION_BUFFER</code> 类型的资源里。因为要长期留在 GPU 上，通常先上传到上传堆，再用 <code>CopyBufferRegion</code> 拷到默认堆。</p>
+
+<Figure src="images/Fig6-2.jpg" alt="StartVertexLocation 指定从顶点缓冲第几个顶点开始绘制" figureNumber="图 6.2" caption="StartVertexLocation 指定从顶点缓冲第几个顶点（从 0 开始）开始绘制。" />
+
+<Callout tone="tip">
+  <b>把多个小缓冲拼成一个大缓冲</b>
+  <p>图 6.3 说明了这个做法：多个网格的顶点放进同一个大缓冲，用起始偏移区分。这样可以减少缓冲切换和资源创建开销。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s63">
+<h2>6.3 索引与索引缓冲</h2>
+
+<p>索引把「顶点数据」和「顶点使用顺序」分开。两个三角形共用的顶点只存一份，顶点着色器也只执行一次。</p>
+
+<Figure src="images/Fig6-3.jpg" alt="把多个小顶点缓冲拼接成一个大顶点缓冲；索引缓冲同理" figureNumber="图 6.3" caption="把多个小顶点缓冲拼接成一个大顶点缓冲；索引缓冲同理。" />
+
+<IndexBufferActivity />
+</section>
+
+<section className="lesson-section" id="s66">
+<h2>6.6 常量缓冲</h2>
+
+<p>常量缓冲是 GPU 读取的只读数据块，用来传每帧变化的世界矩阵、视图投影矩阵、材质等。</p>
+
+<Callout tone="warning">
+  <b>256 字节对齐</b>
+  <p>D3D12 要求常量缓冲大小向上对齐到 256 字节。示例里用 <code>d3dUtil::CalcConstantBufferByteSize</code> 做这件事。</p>
+</Callout>
+
+<h3>着色器语义</h3>
+
+<p>图 6.4、图 6.5 展示了语义的对应关系：顶点结构里的每个元素都有一个语义名，与顶点着色器入口参数的语义一一对应。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig6-4.jpg" alt="每个顶点元素都有语义名，与 VS 入口参数的语义一一对应" figureNumber="图 6.4" caption="每个顶点元素都有语义名，与 VS 入口参数的语义一一对应。" />
+  <Figure src="images/Fig6-5.jpg" alt="语义对应关系（续）" figureNumber="图 6.5" caption="语义对应关系（续）。" />
+</div>
+
+<BindingPuzzleActivity />
+</section>
+
+<section className="lesson-section" id="s67">
+<h2>6.7 编译着色器</h2>
+
+<p>HLSL 可以在运行时用 <code>D3DCompileFromFile</code> 编译，也可以在生成时用 fxc 离线编译成 .cso。图 6.6 展示了在 Visual Studio 里给 .hlsl 加自定义生成工具的做法。</p>
+
+<Figure src="images/Fig6-6.jpg" alt="给工程添加自定义生成工具（编译 HLSL）" figureNumber="图 6.6" caption="给工程添加自定义生成工具（编译 HLSL）。" />
+
+<CodeSample
+  title="运行时编译 HLSL"
+  language="cpp"
+  code={`ComPtr<ID3DBlob> vertexShader;
+ComPtr<ID3DBlob> errors;
+HRESULT hr = D3DCompileFromFile(L"Shaders\\color.hlsl", nullptr, nullptr,
+    "VS", "vs_5_0",
+    D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION,
+    0, &vertexShader, &errors);
+if (errors) OutputDebugStringA((char*)errors->GetBufferPointer());
+ThrowIfFailed(hr);`}
+  input={<>一个 <code>.hlsl</code> 文件与入口函数名；Debug 配置下建议打开 D3DCOMPILE_DEBUG。</>}
+  keyLines={[
+    { code: '"VS", "vs_5_0"', note: '入口函数名与目标 profile，两者都要与 HLSL 里的函数名匹配。' },
+    { code: 'errors->GetBufferPointer()', note: '编译错误不会抛异常，一定要把这块文本打到输出窗口，否则你会面对一个「没有着色器」的黑屏。' },
+  ]}
+  output={<>得到一个 <code>ID3DBlob</code>，它的指针和大小会被填进 PSO 的 <code>D3D12_SHADER_BYTECODE</code>。</>}
+  pitfalls={[
+    '忽略编译错误 blob：着色器编译失败时 D3DCompileFromFile 返回失败，但真正有用的信息在 errors 里。',
+    'profile 写错（比如把 vs_5_0 写成 ps_5_0）：创建 PSO 时会失败。',
+    'Release 里忘记关掉 D3DCOMPILE_DEBUG：会影响着色器优化。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s68">
+<h2>6.8 光栅器状态</h2>
+
+<p><code>D3D12_RASTERIZER_DESC</code> 控制绕序判定、剔除模式、填充模式、深度偏移等。它是 PSO 的一部分——D3D12 不再有「单独设置光栅器状态」的调用。</p>
+
+<ul>
+  <li><code>FillMode</code>：SOLID 或 WIREFRAME（调试线框很有用）。</li>
+  <li><code>CullMode</code>：NONE / FRONT / BACK，默认 BACK。</li>
+  <li><code>FrontCounterClockwise</code>：默认 FALSE，即顺时针为正面。</li>
+  <li><code>DepthBias</code> 系列：第 20 章阴影贴图用得到。</li>
+</ul>
+</section>
+
+<section className="lesson-section" id="s69">
+<h2>6.9 管线状态对象</h2>
+
+<p>D3D12 把大多数管线状态打包进一个 <b>PSO</b>（<code>ID3D12PipelineState</code>）。一次 <code>SetPipelineState</code> 就完成全部绑定，硬件也因此能提前做优化。</p>
+
+<Callout tone="note">
+  <b>代价是灵活性</b>
+  <p>PSO 创建开销大，而且状态组合会爆炸。实践做法是：启动时把所有会用到的 PSO 一次性建好，运行时只切换；不要每帧创建。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s611">
+<h2>6.11 Box 演示</h2>
+
+<p>Box 演示把这一章全部串起来：定义 8 个顶点与 36 个索引、创建常量缓冲传世界视图投影矩阵、编译着色器、建根签名与 PSO，然后每帧更新常量缓冲并绘制。</p>
+
+<Figure src="images/Fig6-7.jpg" alt="Box 演示截图：旋转的彩色立方体" figureNumber="图 6.7" caption='"Box" 演示截图：旋转的彩色立方体。' />
+
+<CodeSample
+  title="每帧更新常量缓冲"
+  language="cpp"
+  code={`// 每帧只更新属于当前帧资源的那一份常量缓冲
+XMMATRIX world  = XMLoadFloat4x4(&mWorld);
+XMMATRIX view   = XMLoadFloat4x4(&mView);
+XMMATRIX proj   = XMLoadFloat4x4(&mProj);
+XMMATRIX wvp    = world * view * proj;
+
+ObjectConstants objConstants;
+XMStoreFloat4x4(&objConstants.WorldViewProj, XMMatrixTranspose(wvp));
+objConstants.Time = gt.TotalTime();
+
+// currFrameResource 是三个帧资源里轮到的那一个
+auto cb = mCurrFrameResource->ObjectCB.get();
+cb->CopyData(0, objConstants);`}
+  input={<>三个帧资源轮转；当前帧的常量缓冲上传堆尚未被 GPU 使用（已由 Fence 保证）。</>}
+  keyLines={[
+    { code: 'world * view * proj', note: '行向量约定，先世界、再视图、最后投影。' },
+    { code: 'XMMatrixTranspose(wvp)', note: 'HLSL 默认按列主序存放矩阵，所以要转置后再上传；也可以在 HLSL 里用 row_major 声明。' },
+    { code: 'cb->CopyData(0, objConstants)', note: '写入当前帧资源自己的上传堆，避免与 GPU 产生数据竞争。' },
+  ]}
+  output={<>图 6.7：一个随时间旋转的彩色立方体。</>}
+  pitfalls={[
+    '忘记转置：立方体形状会错乱，因为矩阵被按列主序解释了。',
+    '所有帧共用一份常量缓冲：会出现闪烁——这是第 4 章的数据竞争。',
+    '常量缓冲大小没对齐到 256 字节：创建资源时会失败。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s612">
+<h2>本章小结</h2>
+
+<ul>
+  <li>输入布局用 <code>D3D12_INPUT_ELEMENT_DESC</code> 描述顶点每个字段的语义、格式与字节偏移。</li>
+  <li>顶点缓冲放 GPU 资源里；多个网格可以拼进同一个大缓冲，用起始偏移区分。</li>
+  <li>索引让共享顶点只存一份、顶点着色器只跑一次；绘制用 <code>DrawIndexedInstanced</code>。</li>
+  <li>常量缓冲传每帧参数，大小必须向上对齐到 256 字节；每个帧资源要各有一份。</li>
+  <li>语义是顶点字段与 HLSL 形参的对号方式；根签名是 CPU 与着色器之间的资源契约；PSO 把全部状态打包。</li>
+  <li>HLSL 编译错误不会抛异常，一定要打印 <code>ID3DBlob</code> 里的错误信息。</li>
+  <li>上传矩阵到 HLSL 时要转置（或在 HLSL 里声明 row_major）。</li>
+</ul>
+
+<Figure src="images/Fig6-8.jpg" alt="金字塔的三角形" figureNumber="图 6.8" caption="金字塔（四棱锥）的三角形。" />
+
+<Checkpoint
+  chapterId="ch06"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch06-a1',
+      question: '输入布局（D3D12_INPUT_ELEMENT_DESC）负责什么？',
+      options: ['声明着色器需要哪些资源', '描述顶点结构里每个字段的语义、格式与字节偏移', '把状态打包成一次设置', '决定三角形是否被剔除'],
+      answer: 1,
+      explanation: '输入布局描述「字节怎么读」：语义名、格式、输入槽和字节偏移。资源声明属于根签名。',
+    },
+    {
+      id: 'ch06-a2',
+      question: '一个四边形拆成两个三角形，使用索引时需要多少顶点数据和多少索引？',
+      options: ['4 顶点 + 4 索引', '4 顶点 + 6 索引', '6 顶点 + 6 索引', '6 顶点 + 4 索引'],
+      answer: 1,
+      explanation: '两个三角形需要 6 个顶点位置，但共享顶点只存一份，所以是 4 个顶点数据 + 6 个索引。',
+    },
+    {
+      id: 'ch06-a3',
+      question: '常量缓冲大小的硬要求是？',
+      options: ['16 字节对齐', '64 字节对齐', '向上对齐到 256 字节', '没有要求'],
+      answer: 2,
+      explanation: 'D3D12 要求常量缓冲大小向上对齐到 256 字节，这是创建常量缓冲视图时的常见错误来源。',
+    },
+    {
+      id: 'ch06-a4',
+      question: '把世界视图投影矩阵上传到 HLSL 时为什么常常要转置？',
+      options: ['因为 D3D12 要求列主序', '因为 DirectXMath 是行主序而 HLSL 默认按列主序存放矩阵', '因为要兼容右手系', '因为能提升精度'],
+      answer: 1,
+      explanation: 'DirectXMath 用行主序、行向量；HLSL 默认按列主序存放。所以要 XMMatrixTranspose 后再上传，或者在 HLSL 里声明 row_major。',
+    },
+    {
+      id: 'ch06-a5',
+      question: '根签名与着色器不一致会导致什么？',
+      options: ['画面颜色偏暗', '调试层报根签名/寄存器不匹配，绘制结果不可预期', '帧率下降', '自动重编译着色器'],
+      answer: 1,
+      explanation: '根签名是 CPU 与着色器之间的契约：着色器用了 register(b0)，根签名里就必须有对应的 CBV 参数，否则调试层会报错。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch06"
+  title="改立方体的颜色或旋转，指出数据从 CPU 到着色器的路径"
+  goal="在真实的 D3D12 工程里改一次参数，并能完整说出这份数据是怎么到达像素的。"
+  steps={[
+    '打开 Chapter 6 Drawing in Direct3D/Box 的 .sln，生成并运行，确认看到旋转的彩色立方体（图 6.7）。',
+    '修改顶点数组里的某个 Color 分量，重新运行，确认对应面的颜色变化。',
+    '把 Update 里绕 y 轴的旋转速度改成原来的两倍，确认旋转变快。',
+    '沿着这条链说出路径：顶点数组 → 上传堆 → CopyBufferRegion → 默认堆 → IASetVertexBuffers → VS → PS。',
+  ]}
+  expected="改颜色后立方体对应面颜色变化；改旋转速度后旋转加快。"
+  verify={[
+    '我跑通了 Box 示例并看到了立方体。',
+    '我改了顶点颜色并看到画面变化。',
+    '我能说出数据从 CPU 顶点数组到像素的完整路径。',
+    '我能指出常量缓冲在这个路径里的位置。',
+  ]}
+/>
+</section>

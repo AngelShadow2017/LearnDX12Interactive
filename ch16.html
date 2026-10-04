@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 16 章 实例化与视锥剔除 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 16 章 实例化与视锥剔除</h1>
+    <div class="sub en-title">Instancing and Frustum Culling</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s161">16.1 硬件实例化</a></li>
+      <li><a href="#s162">16.2 包围体与视锥</a></li>
+      <li><a href="#s163">16.3 视锥剔除</a></li>
+      <li><a href="#s164">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：Instancing and Culling Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>用硬件实例化一次 Draw 画出成百上千个物体；</li>
+        <li>掌握包围体（球/AABB）与视锥的数学；</li>
+        <li>实现视锥剔除：看不见的不画。</li>
+      </ul>
+      <p class="lead">"画得多"与"画得快"的两件法宝，正是开放世界游戏的性能基石。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s161">16.1 硬件实例化（Hardware Instancing）</h2>
+      <p>同模型多个副本（1000 棵同款树）逐个 Draw 是浪费。实例化 = <b>一次 DrawInstanced(N)</b>，几何体共享，"每个实例的差异"（世界矩阵、材质下标…）放<b>实例缓冲（instance buffer）</b>作为第二顶点流，VS 里接住：</p>
+      <pre class="code"><span class="kw">struct</span> InstanceData {
+  float4x4 World;       <span class="cm">// 每实例一份</span>
+  uint MaterialIndex;
+};
+VS(VertexIn vin, InstanceData inst) { ... }
+
+<span class="cm">// C++：按步长 stride=sizeof(InstanceData) 声明实例缓冲视图</span>
+mCommandList-&gt;DrawInstanced(indexCount, instanceCount, 0, 0);</pre>
+      <p>实例数据也可以不显式建缓冲，而是每实例写常量缓冲、VS 用 SV_InstanceID 取——书里两种都讲。性能对比：125 个骷髅，剔除+实例化前后帧时间差距显著（书中给出 ms 级数据）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s162">16.2 包围体与视锥（Bounding Volumes and Frustums）</h2>
+      <ul>
+        <li><b>包围球：</b>球心 + 半径；<b>AABB：</b>用 min/max 两点或中心+半边长表示——比真网格便宜得多；</li>
+        <li>物体旋转后 AABB 会变大（重算更紧的），书中讲"何时用世界 AABB"；</li>
+        <li><b>视锥 = 6 个平面</b>（近/远/左/右/上/下）的正半空间交集。平面从视图-投影矩阵行组合提取（书给出公式），每帧做一次。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s163">16.3 视锥剔除（Frustum Culling）</h2>
+      <p>逐物体测试"包围体是否在视锥外"：对每个平面算带符号距离，三种结果（全在正侧→在锥内该面；全在负侧→整个被剔除；跨越→待定）。球用"距离 &lt; −r 则剔除"；AABB 用"最远角点"（p-vertex）技巧。只要有<b>一个</b>平面判定完全在外，物体整个跳过不画。</p>
+      <div class="formula">平面 n·p + d = 0；点在正侧 ⇔ n·p + d &gt; 0；球心距离 = n·c + d</div>
+      <div class="tip"><b>💡 读完做实验：</b>把剔除开关（demo 有切换键）对比帧时间；故意把近平面调远看物体被"切头"。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s164">本章小结</h2>
+      <ul>
+        <li>DrawInstanced + 实例缓冲 = 一次调用画千军万马；SV_InstanceID 或实例流取差异。</li>
+        <li>包围球/AABB 粗判可见性；视锥平面从 VP 矩阵提取。</li>
+        <li>剔除规则：包围体在任一平面负侧外 → 整体不画。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（13 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig16-1.jpg" alt="Fig16-1.jpg"><figcaption>图16.1 网格与其 AABB、包围球一起渲染。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-2.jpg" alt="Fig16-2.jpg"><figcaption>图16.2 用最小点/最大点表示的点集 AABB。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-3.jpg" alt="Fig16-3.jpg"><figcaption>图16.3 用中心点+半边长表示的 AABB。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-4.jpg" alt="Fig16-4.jpg"><figcaption>图16.4 包围盒与 xy 坐标系轴对齐，但与旋转后的 XY 坐标系不对齐。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-5.jpg" alt="Fig16-5.jpg"><figcaption>图16.5 包围盒与旋转后的 XY 坐标系轴对齐（相对性）。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-6.jpg" alt="Fig16-6.jpg"><figcaption>图16.6 视锥 6 个平面的正半空间交集即视锥体积。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-7.jpg" alt="Fig16-7.jpg"><figcaption>图16.7 球/平面相交测试：(a) k>r 球在正侧；(b) k<−r 球完全在负侧（剔除）。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-8.jpg" alt="Fig16-8.jpg"><figcaption>图16.8 AABB/平面相交测试：取沿法线方向"最远"的对角点。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-9.jpg" alt="Fig16-9.jpg"><figcaption>图16.9 法线在第 i 轴分量为正时选 Pi=vMin[i]、Qi=vMax[i]（反之亦然）。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-10.jpg" alt="Fig16-10.jpg"><figcaption>图16.10 包围体 A、D 完全在视锥外不画；B、C 与视锥相交要画。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-11.jpg" alt="Fig16-11.jpg"><figcaption>图16.11 "Instancing and Culling" 演示截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-12.jpg" alt="Fig16-12.jpg"><figcaption>图16.12 左：关闭剔除渲染全部 125 个实例约需 33ms；右：开启后大幅提速。</figcaption></figure><figure><img loading="lazy" src="images/Fig16-13.jpg" alt="Fig16-13.jpg"><figcaption>图16.13 平面/OBB 相交测试的设置。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch15.html"><span class="dir">← 上一章</span>第 15 章 相机与动态索引</a>
+      <a class="next" href="ch17.html"><span class="dir">下一章 →</span>第 17 章 拾取</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

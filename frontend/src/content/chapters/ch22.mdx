@@ -1,0 +1,182 @@
+import { QuaternionRotationActivity } from '@/activities/ch22/QuaternionRotationActivity';
+import { SlerpShortArcActivity } from '@/activities/ch22/SlerpShortArcActivity';
+
+<section className="lesson-section lesson-section--intro" id="s221">
+<h2>22.1 复数回顾</h2>
+
+<p>复数 <b>z = a + bi</b>（i² = −1）可以看成平面上的一个点（图 22.1、22.2）。它的加减法就是平面上的向量加减法。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig22-1.jpg" alt="复数加法让人想起平面内的向量加法" figureNumber="图 22.1" caption="复数加法让人想起平面内的向量加法。" />
+  <Figure src="images/Fig22-2.jpg" alt="复数的模" figureNumber="图 22.2" caption="复数的模。" />
+</div>
+
+<p>极坐标表示 z = (r, θ)（图 22.3）。复数相乘的效果非常有意思：<b>z₁z₂ 相当于把 z₁ 旋转 θ₂ 并放大 r₂ 倍</b>（图 22.4）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig22-3.jpg" alt="复数的极坐标表示" figureNumber="图 22.3" caption="复数的极坐标表示。" />
+  <Figure src="images/Fig22-4.jpg" alt="z1z2 相乘等于把 z1 旋转 θ2 并缩放 r2" figureNumber="图 22.4" caption="z1z2 相乘等于把 z1 旋转 θ2 并缩放 r2——复数乘法即旋转。" />
+</div>
+
+<Figure src="images/Fig22-5.jpg" alt="对 [−1,1] 中的数 y 存在角度 θ 使 y=cosθ" figureNumber="图 22.5" caption="对 [−1,1] 中的数 y 存在角度 θ 使 y=cosθ。" />
+
+<Callout tone="tip">
+  <b>关键限制</b>
+  <p>复数只有 2 个实数分量，只能表达<b>平面内</b>的旋转。要表达 3D 旋转，需要把它推广到四元数。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s222">
+<h2>22.2 四元数代数</h2>
+
+<p>四元数 <b>q = (x, y, z, w)</b> 定义在四维空间上，单位四元数有 3 个自由度，正好够描述 3D 旋转。</p>
+
+<p>其中 i² = j² = k² = ijk = −1，乘法规则可以在图 22.5 那样的示意里建立直觉：<b>虚数部分之间的乘法等价于叉积</b>，实数部分与虚数部分相乘等价于点积。</p>
+
+<p>平行四边形恒等式是四元数最重要的性质：</p>
+
+<div className="math-block">‖q₁ ⊗ q₂‖ = ‖q₁‖ ‖q₂‖<small>范数可乘，这正是它不丢长度、不退化的原因</small></div>
+</section>
+
+<section className="lesson-section" id="s223">
+<h2>22.3 单位四元数与旋转</h2>
+
+<p><b>单位四元数</b>（‖q‖ = 1）与「绕单位轴 n 转 θ」一一对应：</p>
+
+<div className="math-block">q = (n·sin(θ/2), cos(θ/2))<small>前三个分量是 (x, y, z)，第四个是 w；n 必须是单位向量</small></div>
+
+<p>在精确算术中，单位四元数相乘仍为单位四元数；实际浮点计算会有舍入误差，长时间复合旋转时仍可能需要重新归一化。四元数不会遇到欧拉角参数化的万向锁。</p>
+
+<QuaternionRotationActivity />
+
+<Callout tone="note">
+  <b>四元数乘法不可交换</b>
+  <p><code>q₁ · q₂ ≠ q₂ · q₁</code>（对应旋转的复合顺序不同），但满足结合律，可以像矩阵一样预乘。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s224">
+<h2>22.4 四元数插值</h2>
+
+<p>插值是四元数最有价值的用途。三种常见做法（图 22.6—22.8）：</p>
+
+<ul>
+  <li><b>LERP + 归一化</b>：最简单，但球面上并非匀速（图 22.8）。</li>
+  <li><b>SLERP</b>：沿单位球面的大圆匀速走，是标准做法（图 22.6）。</li>
+  <li><b>SQUAD</b>：需要控制点，能保证角速度连续，代价更高。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig22-6.jpg" alt="在 4D 单位球上从 a 到 b 的球面插值" figureNumber="图 22.6" caption="在 4D 单位球上从 a 到 b 走 tθ 的球面插值（θ 是 a、b 的夹角）。" />
+  <Figure src="images/Fig22-7.jpg" alt="夹角很小时 LERP 近似 SLERP，大角度则差别明显" figureNumber="图 22.7" caption="夹角很小时线性插值近似球面插值；大角度则差别明显。" />
+</div>
+
+<Figure src="images/Fig22-8.jpg" alt="线性插值后归一化在球面上并非匀速" figureNumber="图 22.8" caption="线性插值后归一化在球面上并非匀速——旋转速度会不均匀。" />
+
+<h3>q 与 −q：短弧问题</h3>
+
+<p>最容易忽略的一点是：<b>q 与 −q 表示同一个旋转</b>（图 22.9）。R<sub>q</sub> 绕 n 转 θ，而 R<sub>−q</sub> 绕 −n 转 2π−θ，结果完全一样。</p>
+
+<p>但插值路径不同（图 22.10）：从 a 到 b 可能走 10° 的短弧，也可能走 350° 的长弧——后者看起来就像「转了一大圈再回来」。解决办法就是先判断点积：</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig22-9.jpg" alt="Rq 绕 n 转 θ，R−q 绕 −n 转 2π−θ" figureNumber="图 22.9" caption="Rq 绕 n 转 θ，R−q 绕 −n 转 2π−θ：q 与 −q 表示同一旋转。" />
+  <Figure src="images/Fig22-10.jpg" alt="从 a 插值到 b 走大弧，先把 b 取负则走短弧" figureNumber="图 22.10" caption="从 a 插值到 b 走大弧 θ1；先把 b 取负则走短弧——最短路径修正。" />
+</div>
+
+<div className="math-block">if (a·b &lt; 0) b = −b;</div>
+
+<SlerpShortArcActivity />
+</section>
+
+<section className="lesson-section" id="s225">
+<h2>22.5 DirectXMath 四元数函数</h2>
+
+<ul>
+  <li><code>XMQuaternionRotationAxis(axis, angle)</code>：绕轴旋转。</li>
+  <li><code>XMQuaternionMultiply</code>：复合两个旋转四元数；<code>XMVector3Rotate</code>：用四元数旋转 3D 向量。</li>
+  <li><code>XMQuaternionSlerp</code>：对单位四元数做球面插值，并处理短弧选择。</li>
+  <li><code>XMQuaternionRotationMatrix</code> 与 <code>XMMatrixRotationQuaternion</code>：矩阵与四元数互转；<code>XMQuaternionNormalize</code>：归一化。</li>
+</ul>
+
+<Callout tone="warning">
+  <b>自己写插值时别忘了短弧判断</b>
+  <p><code>XMQuaternionSlerp</code> 已经处理好了；但如果自己实现 LERP/SLERP，漏掉 <code>a·b &lt; 0</code> 的处理就会出现「转一大圈」的动画 bug。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s226">
+<h2>22.6 旋转演示</h2>
+
+<p>关键帧定义「关键姿势」，帧与帧之间用插值得到连续动画（图 22.11、22.12）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig22-11.jpg" alt="关键帧插值" figureNumber="图 22.11" caption="关键帧插值：关键帧定义「关键姿势」，帧间插值。" />
+  <Figure src="images/Fig22-12.jpg" alt="四元数演示截图" figureNumber="图 22.12" caption="四元数演示截图。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s227">
+<h2>本章小结</h2>
+
+<ul>
+  <li>复数乘法 = 平面内旋转 + 缩放；四元数把它推广到 3D。</li>
+  <li>单位四元数 q = (n·sin(θ/2), cos(θ/2)) 与「绕单位轴 n 转 θ」一一对应。</li>
+  <li>平行四边形恒等式保证 ‖q‖ 不漂移，所以没有万向锁；代价是四元数乘法不可交换。</li>
+  <li>SLERP 沿球面大圆匀速插值；LERP 归一化简单但速度不均。</li>
+  <li><b>q 与 −q 表示同一旋转</b>：插值前必须判断点积并取反，否则会走长弧。</li>
+</ul>
+
+<Checkpoint
+  chapterId="ch22"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch22-a1',
+      question: '绕单位轴 n 转 θ 对应的四元数是？',
+      options: ['(n·sin θ, cos θ)', '(n·sin(θ/2), cos(θ/2))', '(n·cos(θ/2), sin(θ/2))', '(n, θ)'],
+      answer: 1,
+      explanation: '轴用 sin(θ/2) 缩放、标量部分用 cos(θ/2)。这与矩阵转成四元数时的「半角」形式一致。',
+    },
+    {
+      id: 'ch22-a2',
+      question: '四元数相比欧拉角最主要的优势是？',
+      options: ['可以表示缩放', '始终保持单位长度，不会出现万向锁与数值漂移', '运算更快', '分量更少'],
+      answer: 1,
+      explanation: '平行四边形恒等式保证范数可乘，旋转矩阵始终正交，因此没有万向锁、也不会累积漂移。四元数不能表示缩放。',
+    },
+    {
+      id: 'ch22-a3',
+      question: 'q 与 −q 的关系是？',
+      options: ['表示不同的旋转', '表示同一个旋转（相差 360°）', '互为逆', '互为共轭'],
+      answer: 1,
+      explanation: 'R_q 绕 n 转 θ，R_{−q} 绕 −n 转 2π−θ，结果完全相同——这正是插值要走短弧判断的原因。',
+    },
+    {
+      id: 'ch22-a4',
+      question: 'Slerp 前为什么要判断 a·b < 0？',
+      options: ['提高精度', '把 b 取反，让路径走短弧，避免物体「转一大圈」', '避免除零', '让结果归一化'],
+      answer: 1,
+      explanation: '取反不改变它表示的旋转，但会把插值路径从 350° 的长弧换成 10° 的短弧。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch22"
+  title="改插值端点，检查旋转路径与速度"
+  goal="在 QuatDemo 里改插值端点，亲眼看到长弧与短弧的区别，以及 LERP 与 SLERP 的速度差异。"
+  steps={[
+    '打开 Chapter 22 Quaternions/QuatDemo 的 .sln，生成并运行（图 22.12）。',
+    '把插值方式从 SLERP 改成 LERP + 归一化，观察旋转速度是否均匀。',
+    '（可选）把终点四元数取负，观察动画是否突然「转一大圈」。',
+    '记录两种方式下中间帧的姿态差别。',
+  ]}
+  expected="LERP 下速度不均匀；终点取负时若缺少短弧修正，动画会绕远路。SLERP 全程匀速。"
+  verify={[
+    '我跑通了 QuatDemo 示例。',
+    '我对比过 LERP 与 SLERP 的速度差异。',
+    '我能解释短弧判断为什么必要。',
+  ]}
+/>
+</section>

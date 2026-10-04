@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>导读 · 准备工作 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a></div>
+    <h1>导读：本书讲什么，怎么开始</h1>
+    <div class="sub">Introduction（前言）· 读者对象 · 前置要求 · 工具与硬件 · 示例工程搭建</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s1">这本书讲什么</a></li>
+      <li><a href="#s2">你适合读吗</a></li>
+      <li><a href="#s3">必备工具与硬件</a></li>
+      <li><a href="#s4">搭建第一个示例工程</a></li>
+      <li><a href="#s5">怎么用好这本书</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <section class="card">
+      <h2 id="s1">1. 这本书讲什么</h2>
+      <p>这本书的目标只有一句话：<b>教你用 Direct3D 12（DX12）从头写出交互式 3D 游戏程序的技术</b>。它不依赖任何引擎，从窗口和设备初始化开始，一路讲到光照、纹理、阴影、环境光遮蔽和角色动画。</p>
+      <p>全书分三部分，是一条循序渐进的路线：</p>
+      <p><b>第一部分（第 1–3 章）数学预备：</b>向量代数、矩阵代数、变换。3D 图形本质上是数学，不懂这部分后面寸步难行。好消息是每章都会把数学和 DirectXMath 库的实际用法对应起来，不空谈。</p>
+      <p><b>第二部分（第 4–11 章）Direct3D 基础：</b>初始化 DX12、理解渲染管线、绘制几何体、使用常量缓冲、光照、纹理、混合（半透明）、模板测试（镜面与平面阴影）。读完这部分你就掌握了"画出一切"的基本功。</p>
+      <p><b>第三部分（第 12–23 章）进阶专题：</b>几何着色器、计算着色器、曲面细分、相机与动态索引、实例化与视锥剔除、拾取、天空盒与环境反射、法线贴图、阴影贴图、SSAO、四元数、蒙皮角色动画。这些是商业游戏里真实在用的技术。</p>
+      <div class="note"><b>📖 每章怎么读：</b>每章开头有"学习目标（Objectives）"，结尾有"小结（Summary）"和"习题（Exercises）"。本书风格是<b>围绕示例程序讲解</b>——每章都对应一个（或几个）可编译运行的 Demo，强烈建议边读书边跑代码、改代码。</div>
+    </section>
+
+    <section class="card">
+      <h2 id="s2">2. 你适合读吗</h2>
+      <p><b>预期读者：</b>想学习 Direct3D 12 或游戏图形编程、有一定 C++ 基础的程序员；也适合想从 D3D11 迁移到 DX12 的开发者（DX12 的设备初始化、描述符、根签名、PSO、显式同步等新概念书中都有专门讲解）。</p>
+      <p><b>前置要求：</b></p>
+      <ul>
+        <li><b>C++：</b>熟悉类、继承、多态、运算符重载、模板的基本用法。不需要 STL 全精通，但要能看懂指针和内存管理。</li>
+        <li><b>Visual Studio：</b>会用 VS 创建、编译、调试 Win32 工程。</li>
+        <li><b>数学：</b>高中代数与三角函数是底线。三维线性代数（向量/矩阵）会在第 1–3 章从零教起，但如果你已学过会轻松很多。</li>
+        <li><b>不要求：</b>有 Direct3D 11 或 OpenGL 经验——本书从 DX12 讲起；不过有旧 API 经验的人对"渲染管线"的心智模型会更快建立。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s3">3. 必备工具与硬件</h2>
+      <ul>
+        <li><b>操作系统：</b>Windows 10（或更高）。DX12 是 Windows 10 引入的 API。</li>
+        <li><b>IDE：</b>Visual Studio 2013 及以上（书成文时用 VS2015 示例）。社区版免费够用。</li>
+        <li><b>Direct3D 12：</b>Windows 10 SDK 自带 d3d12.h / d3d12.lib，无需额外安装 SDK 包。</li>
+        <li><b>显卡：</b>支持 Direct3D 11 的显卡即可——书中示例只用到 DX12 特性级（Feature Level）11.0，不要求高端卡。</li>
+        <li><b>调试利器：</b>DirectX 调试层（Debug Layer）与图形诊断工具（Graphics Diagnostics），第 4 章会教你怎么开。</li>
+      </ul>
+      <div class="tip"><b>💡 提示：</b>本书所有示例都用<b>单一头文件+cpp 的自包含结构</b>，直接打开书中配套源码目录下的 .sln 即可编译。示例源码可从出版社网站（www.merclearning.com）或作者页面下载。</div>
+    </section>
+
+    <section class="card">
+      <h2 id="s4">4. 搭建第一个示例工程（书中"Demo Project Setup"一节的流程）</h2>
+      <p>如果你不用配套源码、想自己从零建工程，书中给出的步骤是：</p>
+      <ol>
+        <li><b>新建 Win32 项目：</b>在 VS 中创建"Win32 Project"（桌面应用），把示例源码（如 Box.cpp）加进工程。</li>
+        <li><b>链接 DirectX 库：</b>DX12 只需 d3d12.lib；示例工程还需要 d3dcompiler.lib（运行时编译着色器）与 dxguid.lib 等。在 项目属性 → 链接器 → 输入 → 附加依赖项 里加入。</li>
+        <li><b>字符集与运行库：</b>书里示例默认 Unicode 字符集、Release 用静态运行库（/MT），Debug 用 /MTd，按需保持一致。</li>
+        <li><b>编译运行：</b>F5 编译运行。若报"找不到 d3d12.h"，检查是否装了 Windows 10 SDK。</li>
+      </ol>
+      <pre class="code"><span class="cm">// 书中示例常见的链接库（项目属性 → 链接器 → 输入）</span>
+d3d12.lib; d3dcompiler.lib; dxgi.lib; dxguid.lib</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="s5">5. 怎么用好这本书</h2>
+      <ul>
+        <li><b>跑代码优先：</b>每个 Demo 都是精心设计的最小教学程序。先让它跑起来，再对照讲解读懂每一行，然后做"实验"——改参数看效果（书中常给出 Should you wish… 的实验建议）。</li>
+        <li><b>习题要做：</b>习题大多是"改代码加功能"，比阅读更能巩固理解。附录 D 提供了部分习题的解答。</li>
+        <li><b>数学章别跳：</b>第 1–3 章的 DirectXMath 函数（XMVector*、XMMATRIX*）在全书代码里反复出现，先熟悉再往后读。</li>
+        <li><b>卡住时：</b>用 DX12 调试层看错误输出（第 4.6 节），再对照原书配套源码 diff。</li>
+      </ul>
+      <div class="done-row"><label><input type="checkbox"> 我已完成导读，准备开始第 1 章</label></div>
+    </section>
+
+    <div class="pager">
+      <a href="index.html"><span class="dir">← 返回</span>目录</a>
+      <a class="next" href="ch01.html"><span class="dir">第一部分 · 数学基础</span>第 1 章 · 向量代数 →</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

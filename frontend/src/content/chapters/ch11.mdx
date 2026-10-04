@@ -1,0 +1,185 @@
+import { StencilMaskActivity } from '@/activities/StencilMaskActivity';
+import { MirrorPassOrderActivity } from '@/activities/MirrorPassOrderActivity';
+
+<section className="lesson-section lesson-section--intro" id="s111">
+<h2>11.1 深度/模板格式与清除</h2>
+
+<p>深度与模板通常共用同一个资源，最常见格式是 <code>DXGI_FORMAT_D24_UNORM_S8_UINT</code>：24 位深度 + 8 位模板。清除时可以一次清两者，也可以只清其中一个。</p>
+
+<CodeSample
+  title="清除深度与模板"
+  language="cpp"
+  code={`// 一次清掉深度与模板
+mCommandList->ClearDepthStencilView(
+    DepthStencilView(),
+    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+    1.0f,   // 深度清成 1.0
+    0,      // 模板清成 0
+    0, nullptr);`}
+  input={<>已创建的深度/模板缓冲与其 DSV。</>}
+  keyLines={[
+    { code: 'D3D12_CLEAR_FLAG_STENCIL', note: '模板必须每帧清掉，否则上一帧留下的掩码会污染这一帧。' },
+    { code: '0', note: '模板清成 0，作为「未标记」的默认值；后面用 1 标记镜面像素。' },
+  ]}
+  output={<>深度缓冲全部为 1.0、模板缓冲全部为 0，可以开始新的一帧。</>}
+  pitfalls={[
+    '忘记清模板：镜面掩码会残留，倒影出现在错误的位置。',
+    '把深度和模板当成两个独立资源：它们在同一块资源里，用一个 DSV 表示。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s112">
+<h2>11.2 模板测试</h2>
+
+<p>模板测试发生在深度测试<b>之前</b>。形式如下：</p>
+
+<div className="math-block">(StencilRef &amp; StencilReadMask) ⊴ (Value &amp; StencilReadMask)<small>Value 是模板缓冲里的当前值；⊴ 是比较函数；不通过则丢弃像素</small></div>
+
+<p>不通过的像素<b>既不写颜色也不写深度</b>，连后续阶段都不会进入。这正是「倒影不穿墙」的实现方式（图 11.1）。</p>
+
+<Figure src="images/Fig11-1.jpg" alt="骷髅倒影正确显示在镜子里，没有透过砖墙显示" figureNumber="图 11.1" caption="左：骷髅倒影正确显示在镜子里；倒影没有透过砖墙显示——模板把「镜子外」的倒影像素挡住了。" />
+
+<StencilMaskActivity />
+</section>
+
+<section className="lesson-section" id="s113">
+<h2>11.3 描述深度/模板状态</h2>
+
+<p>D3D12 的深度/模板状态写在 PSO 的 <code>D3D12_DEPTH_STENCIL_DESC</code> 里，关键字段：</p>
+
+<ul>
+  <li><code>DepthEnable</code> / <code>DepthWriteMask</code> / <code>DepthFunc</code>：深度测试开关、是否写深度、比较函数（默认 LESS）。</li>
+  <li><code>StencilEnable</code> / <code>StencilReadMask</code> / <code>StencilWriteMask</code>。</li>
+  <li><code>FrontFace</code> / <code>BackFace</code>：正面与背面可以各配一套 <code>StencilFailOp</code>、<code>StencilDepthFailOp</code>、<code>StencilPassOp</code>、<code>StencilFunc</code>。</li>
+</ul>
+
+<Callout tone="tip">
+  <b>「只写模板不写颜色」怎么配</b>
+  <p>把 <code>RenderTargetWriteMask</code> 设为 0、<code>DepthWriteMask</code> 设为 ZERO，同时 <code>StencilEnable = TRUE</code>、<code>StencilFunc = ALWAYS</code>、<code>StencilPassOp = REPLACE</code>。这样只更新模板。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s114">
+<h2>11.4 平面镜实现</h2>
+
+<p>思路很直接（图 11.2）：把物体关于镜面做反射变换再画一遍，就能模拟出倒影。难点是<b>把倒影限制在镜面内</b>——这靠模板缓冲完成（图 11.3、11.4）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig11-2.jpg" alt="眼睛透过镜子看到盒子的倒影" figureNumber="图 11.2" caption="眼睛透过镜子看到盒子的倒影：把盒子关于镜面反射后再绘制即可模拟。" />
+  <Figure src="images/Fig11-3.jpg" alt="先画地板、墙壁和骷髅，模板缓冲清 0" figureNumber="图 11.3" caption="先画地板、墙壁和骷髅到后台缓冲，模板缓冲清 0（浅灰表示 0）。" />
+</div>
+
+<Figure src="images/Fig11-4.jpg" alt="把镜面绘制到模板缓冲，标记出镜面覆盖的像素" figureNumber="图 11.4" caption="把镜面绘制到模板缓冲：把镜面覆盖的像素标记出来。" />
+
+<MirrorPassOrderActivity />
+
+<Callout tone="warning">
+  <b>绕序也要反过来</b>
+  <p>图 11.5 提醒：反射不会自动翻转多边形法线。反射矩阵会翻转绕序，所以这一 pass 要把 <code>FrontCounterClockwise</code> 取反（或者改 CullMode），否则倒影的正反面会画反。</p>
+</Callout>
+
+<Figure src="images/Fig11-5.jpg" alt="反射不自动翻转法线，反射后法线朝内" figureNumber="图 11.5" caption="反射不会自动翻转多边形法线，反射后法线朝内——需要修正剔除方向。" />
+</section>
+
+<section className="lesson-section" id="s115">
+<h2>11.5 平面阴影实现</h2>
+
+<p>平面阴影是把物体沿光线方向投影到一个平面上（图 11.6、11.7）。平行光和点光源的投影矩阵不同，但思路一致。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig11-6.jpg" alt="Mirror 演示中主光源投射的平面阴影" figureNumber="图 11.6" caption='"Mirror" 演示中主光源投射的平面阴影。' />
+  <Figure src="images/Fig11-7.jpg" alt="平行光源投射的平面阴影" figureNumber="图 11.7" caption="平行光源投射的平面阴影。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig11-8.jpg" alt="n·L 小于 0 时投影矩阵退化" figureNumber="图 11.8" caption="n·L 小于 0 的情形：光源照不到投影面，投影矩阵退化——需要处理。" />
+  <Figure src="images/Fig11-9.jpg" alt="点光源投射的平面阴影" figureNumber="图 11.9" caption="点光源投射的平面阴影。" />
+</div>
+
+<Callout tone="note">
+  <b>双重混合问题</b>
+  <p>阴影用半透明黑色绘制，如果多个三角形投到同一个像素，就会被混合多次，出现图 11.10 那种深色「痘痘」。书里的解决办法是<b>用模板缓冲计数</b>：只有第一次通过的像素才混合。</p>
+</Callout>
+
+<Figure src="images/Fig11-10.jpg" alt="阴影里的双重混合深色区域" figureNumber="图 11.10" caption="左图阴影里的深色「痘痘」（双重混合区域）：多个三角形压到同一像素。" />
+</section>
+
+<section className="lesson-section" id="s116">
+<h2>本章小结</h2>
+
+<ul>
+  <li>深度与模板共用资源，常见格式 <code>D24_UNORM_S8_UINT</code>；两者可以一起清，也可以只清一个。</li>
+  <li>模板测试在深度测试之前；不通过的像素既不写颜色也不写深度。</li>
+  <li>深度/模板状态写在 PSO 的 <code>D3D12_DEPTH_STENCIL_DESC</code> 里，正反面可分别配置。</li>
+  <li>平面镜四步：画不透明场景 → 写镜面掩码 → 模板测试内画倒影 → 半透明画镜面。</li>
+  <li>反射会翻转绕序，倒影那一 pass 必须把剔除方向反过来。</li>
+  <li>平面阴影把物体投影到平面；用模板计数可以避免双重混合造成的深色斑点。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig11-12.jpg" alt="多个像素片元竞争写入同一个像素" figureNumber="图 11.12" caption="多个像素片元竞争写入投影窗口上的同一个像素。" />
+  <Figure src="images/Fig11-11.jpg" alt="习题 7 解答截图" figureNumber="图 11.11" caption="习题 7 解答截图。" />
+</div>
+<Figure src="images/Fig11-13.jpg" alt="习题 8 解答截图" figureNumber="图 11.13" caption="习题 8 解答截图。" />
+
+<Checkpoint
+  chapterId="ch11"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch11-a1',
+      question: '模板测试与深度测试的先后顺序是？',
+      options: ['深度测试在先', '模板测试在先', '两者并行', '取决于 PSO 顺序'],
+      answer: 1,
+      explanation: '模板测试在深度测试之前。模板不通过的像素连深度测试都不会做，也不写颜色与深度。',
+    },
+    {
+      id: 'ch11-a2',
+      question: '镜面渲染中，把「画倒影」排在「写掩码」之前会导致？',
+      options: ['没有倒影', '倒影穿墙，出现在镜子之外', '镜子变不透明', '深度缓冲失效'],
+      answer: 1,
+      explanation: '模板里还没有掩码时，模板测试挡不住任何像素，倒影会画到镜面之外。',
+    },
+    {
+      id: 'ch11-a3',
+      question: '绘制反射后的倒影时，绕序/剔除要怎么处理？',
+      options: ['不用处理', '把 FrontCounterClockwise 取反（或改 CullMode）', '关闭深度测试', '关闭模板测试'],
+      answer: 1,
+      explanation: '反射矩阵会翻转绕序，如果不反转剔除方向，倒影的正反面会画反。',
+    },
+    {
+      id: 'ch11-a4',
+      question: '平面阴影里出现深色「痘痘」的原因是？',
+      options: ['深度精度不足', '多个三角形投到同一像素，半透明黑色被混合多次', '模板缓冲没清', '光照计算错误'],
+      answer: 1,
+      explanation: '这就是双重混合。解决办法是用模板缓冲计数，只让第一次通过的像素参与混合。',
+    },
+    {
+      id: 'ch11-a5',
+      question: '「只写模板不写颜色」这一 pass 该怎么配？',
+      options: ['RenderTargetWriteMask = 0，DepthWriteMask = ZERO，StencilFunc = ALWAYS / StencilPassOp = REPLACE', '关闭模板测试', 'BlendEnable = TRUE', '把深度函数设成 ALWAYS'],
+      answer: 0,
+      explanation: '不写颜色、不写深度，只更新模板：StencilFunc = ALWAYS 保证总是通过，StencilPassOp = REPLACE 把参考值写进去。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch11"
+  title="定位并修改镜面/阴影的一处状态设置"
+  goal="在 Stencil 示例里找到控制倒影范围的那一行状态，改一次并观察画面变化。"
+  steps={[
+    '打开 Chapter 11 Stenciling/StencilDemo 的 .sln，生成并运行，确认看到镜子里的骷髅倒影（图 11.1）。',
+    '找到绘制倒影那一 pass 的 PSO，把 StencilFunc 从 EQUAL 改成 ALWAYS，重新运行，观察倒影是否穿出镜子。',
+    '改回 EQUAL，再把 FrontCounterClockwise 取反，观察倒影的正反面变化（图 11.5）。',
+    '把模板参考值 OMSetStencilRef 从 1 改成 0，观察倒影是否消失。',
+  ]}
+  expected="StencilFunc 改成 ALWAYS 后倒影穿出镜面；FrontCounterClockwise 取反后倒影正反面异常；参考值改成 0 后倒影消失（因为掩码是 1）。"
+  verify={[
+    '我跑通了 Stencil 示例并看到倒影。',
+    '我改了模板比较函数并看到倒影范围变化。',
+    '我能指出哪一处的状态决定了倒影的显示范围。',
+  ]}
+/>
+</section>

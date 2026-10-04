@@ -1,0 +1,134 @@
+import { CubeFacePickActivity } from '@/activities/ch18/CubeFacePickActivity';
+import { DynamicCubeMapActivity } from '@/activities/ch18/DynamicCubeMapActivity';
+
+<section className="lesson-section lesson-section--intro" id="s181">
+<h2>18.1 立方体贴图</h2>
+
+<p>立方体贴图用一个<b>3D 方向</b>而不是坐标来寻址：给定方向 r，从立方体中心沿 r 射出，撞到哪一面就用那一面的纹素。</p>
+
+<Figure src="images/Fig18-1.jpg" alt="立方体贴图：六个面各存一张图，用 3D 方向采样" figureNumber="图 18.1" caption="（2D 简化）立方体贴图：以物体为中心、轴对齐的立方体各面存图，用 3D 方向采样。" />
+
+<p>「撞到哪一面」由方向各分量<b>绝对值最大的那个</b>决定（主轴规则），它的符号区分正负面；剩下两个分量除以主轴分量就得到该面内的 (u, v)。</p>
+
+<CubeFacePickActivity />
+
+<div className="figure-pair">
+  <Figure src="images/Fig18-2.jpg" alt="展开后的环境贴图：六面拼在一起" figureNumber="图 18.2" caption="「展开」后的环境贴图：六面拼在一起，可以想象再折回立方体。" />
+  <Figure src="images/Fig18-3.jpg" alt="Cube Map 演示截图" figureNumber="图 18.3" caption='"Cube Map" 演示截图。' />
+</div>
+
+<Callout tone="tip">
+  <b>硬件帮你做分支</b>
+  <p>上面这套「先判断主轴、再算 uv」的逻辑可以完全展开成条件分支，但硬件会用固定功能插值直接算出来。着色器只需要写一行采样。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s183">
+<h2>18.3 天空绘制</h2>
+
+<p>天空盒的做法很直接：画一个以相机为中心、足够大的立方体（或全屏三角形），按视线方向采样立方体贴图（图 18.4）。</p>
+
+<Figure src="images/Fig18-4.jpg" alt="天空盒：假设立方体足够大，位置平移带来的误差可忽略" figureNumber="图 18.4" caption="（2D 简化）天空盒：假设立方体足够大，位置平移带来的误差可忽略。" />
+
+<Callout tone="note">
+  <b>为什么盒子要足够大</b>
+  <p>天空盒的顶点随相机平移。如果盒子不够大，相机平移会让顶点跑到盒子外面，画面出现缺口。把它做得足够大（或干脆画全屏三角形），误差就可以忽略。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s184">
+<h2>18.4 模拟反射</h2>
+
+<p>反射的采样方向由<b>反射向量</b>给出：r = d − 2(d·n)n，其中 d 是视线方向、n 是表面法线（图 18.5）。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig18-5.jpg" alt="E 为眼睛，n 为 p 点法线：反射光对应的 texel 由反射向量 r 求出" figureNumber="图 18.5" caption="E 为眼睛，n 为 p 点法线：反射光对应的 texel 由反射向量 r 求出。" />
+  <Figure src="images/Fig18-6.jpg" alt="同一表面两点在眼睛位置 E、E′ 下对应不同反射向量" figureNumber="图 18.6" caption="同一表面两点 p 与 p′ 在眼睛位置 E、E′ 下对应不同的反射向量。" />
+</div>
+
+<p>实现上不直接用 r，而是求反射射线与立方体的交点 v = p + t₀·r，用 v 的方向查贴图（图 18.7）——这样与立方体贴图的寻址方式一致。</p>
+
+<Figure src="images/Fig18-7.jpg" alt="用反射射线与立方体的交点求采样方向" figureNumber="图 18.7" caption="不直接用反射向量 r 查询，而用 r 与立方体的交点 v=p+t0r 求采样方向。" />
+</section>
+
+<section className="lesson-section" id="s185">
+<h2>18.5 动态立方体贴图</h2>
+
+<p>静态环境贴图是<b>预过滤</b>的：相机一移动，反射方向就与贴图对不上（图 18.6）。动态立方体贴图把相机放到待反光物体的中心，<b>重新渲染周围环境 6 个面</b>，所以反射永远正确。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig18-8.jpg" alt="相机放在物体中心渲染周围环境生成动态立方体贴图" figureNumber="图 18.8" caption="相机放在场景中 O 点（待反光物体中心），渲染周围环境生成动态立方体贴图。" />
+  <Figure src="images/Fig18-9.jpg" alt="Dynamic CubeMap 演示截图" figureNumber="图 18.9" caption='"Dynamic CubeMap" 演示截图：骷髅绕中心球转动，球面反射实时变化。' />
+</div>
+
+<DynamicCubeMapActivity />
+</section>
+
+<section className="lesson-section" id="s186">
+<h2>本章小结</h2>
+
+<ul>
+  <li>立方体贴图用 3D 方向寻址；命中哪一面由绝对值最大的分量（及其符号）决定。</li>
+  <li>天空盒用视线方向采样，通常画一个跟随相机的巨大立方体或全屏三角形。</li>
+  <li>反射采样方向 = 反射向量 r = d − 2(d·n)n，实际用 r 与立方体交点的方向查贴图。</li>
+  <li>静态环境贴图是预过滤的，相机移动时反射会「跟不上」；动态立方体贴图每帧多 6 次渲染换正确性。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig18-10.jpg" alt="入射光进入透明材质时发生折射" figureNumber="图 18.10" caption="入射光在折射率 n1 的介质中传播，进入透明材质 n2 时发生折射。" />
+  <Figure src="images/Fig18-11.jpg" alt="Cube 演示改用折射而非反射" figureNumber="图 18.11" caption='"Cube" 演示改用折射而非反射（玻璃骷髅效果）。' />
+</div>
+
+<Checkpoint
+  chapterId="ch18"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch18-a1',
+      question: '立方体贴图用方向 (1, 0, 0) 采样时命中哪一面？',
+      options: ['+z', '−z', '+x', '取决于相机位置'],
+      answer: 2,
+      explanation: '主轴规则：绝对值最大的分量是 x，且为正，所以命中 +x 面。',
+    },
+    {
+      id: 'ch18-a2',
+      question: '反射采样方向怎么算？',
+      options: ['视线方向 d', '反射向量 r = d − 2(d·n)n', '法线 n', '顶点到相机的连线'],
+      answer: 1,
+      explanation: '先用反射公式算出 r，再用 r（更准确地说 r 与立方体交点的方向）查立方体贴图。',
+    },
+    {
+      id: 'ch18-a3',
+      question: '静态环境贴图在什么时候会「跟不上」？',
+      options: ['物体移动时', '相机移动导致反射方向改变时', '改粗糙度时', '永远不会'],
+      answer: 1,
+      explanation: '静态贴图的采样方向都相对同一个点拍摄；相机一动，反射方向就与贴图对不上。',
+    },
+    {
+      id: 'ch18-a4',
+      question: '动态立方体贴图每帧的额外开销是多少？',
+      options: ['0 次渲染，只多一次采样', '6 次渲染（6 个面）', '1 次渲染', '6 次采样'],
+      answer: 1,
+      explanation: '要把相机放到物体中心分别朝 6 个方向渲染一遍，所以是 6 次额外渲染。实践中常按重要程度降低更新频率。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch18"
+  title="移动物体，解释反射何时更新"
+  goal="在动态立方体贴图示例里移动物体，观察反射的变化，并说明静态与动态两种方案的区别。"
+  steps={[
+    '打开 Chapter 18 Cube Mapping 下的 DynamicCubeMap 工程，生成并运行（图 18.9）。',
+    '让骷髅绕中心球转动，确认球面反射实时变化。',
+    '把动态立方体贴图的更新改成「每 4 帧更新一次」，观察反射的延迟感。',
+    '对比：如果是静态环境贴图，转动相机时反射会明显「跟不上」。',
+  ]}
+  expected="物体绕球转动时反射实时变化；降低更新频率后能看出延迟；静态方案下移动相机会出现明显不对。"
+  verify={[
+    '我跑通了 DynamicCubeMap 示例。',
+    '我观察到反射随物体移动而变化。',
+    '我能说明动态贴图每帧的 6 次渲染开销。',
+  ]}
+/>
+</section>

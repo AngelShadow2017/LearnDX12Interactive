@@ -1,0 +1,278 @@
+import { CpuGpuTimelineActivity } from '@/activities/CpuGpuTimelineActivity';
+import { SwapChainOrderActivity } from '@/activities/SwapChainOrderActivity';
+
+<section className="lesson-section lesson-section--intro" id="s41">
+<h2>4.1 预备知识</h2>
+
+<p>这一章把「初始化 Direct3D」拆成四件事：理解 CPU 与 GPU 怎么协作、把设备与交换链建起来、给动画准备可靠的时间、以及用调试层把错误暴露出来。</p>
+
+<h3>交换链与页翻动</h3>
+
+<p>为了避免在屏幕上看到正在绘制的画面，D3D 用两个缓冲：<b>前台缓冲</b>正在显示，<b>后台缓冲</b>正在被绘制。画完一帧就交换（flip）两者。</p>
+
+<Figure src="images/Fig4-1.jpg" alt="双缓冲页翻动：第 n 帧时缓冲 A 在显示，下一帧渲染到缓冲 B" figureNumber="图 4.1" caption="第 n 帧时：缓冲 A 正在显示，下一帧渲染到缓冲 B（双缓冲页翻动）。" />
+
+<h3>深度缓冲</h3>
+
+<p>深度缓冲为每个像素保存一个深度值，用来决定谁挡住谁。它不是颜色，而是一张「每个像素最近有多远」的表。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig4-2.jpg" alt="一组相互遮挡的物体" figureNumber="图 4.2" caption="一组相互遮挡的物体——需要深度缓冲决定谁在前。" />
+  <Figure src="images/Fig4-3.jpg" alt="视口窗口对应生成的 2D 图像" figureNumber="图 4.3" caption="视口窗口对应生成的 2D 图像（后台缓冲）；三个像素各自对应场景中不同位置。" />
+</div>
+
+<h3>多重采样（MSAA）原理</h3>
+
+<p>只用像素中心采样会出现锯齿（楼梯效应）。MSAA 在一个像素内取多个子采样点，再做加权平均，从而平滑边缘。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig4-4.jpg" alt="上：锯齿；下：MSAA 平滑后的效果" figureNumber="图 4.4" caption="上：锯齿（用像素矩阵表示直线的楼梯效应）；下：MSAA 多重采样平滑后的效果。" />
+  <Figure src="images/Fig4-5.jpg" alt="跨越多边形边缘的像素的单采样与多采样对比" figureNumber="图 4.5" caption="跨越多边形边缘的一个像素：(a) 像素中心采样得到的绿色被存入缓冲，(b) 多采样后取加权平均。" />
+</div>
+
+<Callout tone="note">
+  <b>书中版本 vs 现在</b>
+  <p>D3D12 的交换链本身不支持 MSAA（<code>SampleDesc.Count</code> 必须为 1）。需要抗锯齿时，要创建额外的多重采样离屏缓冲，再解析（resolve）到后台缓冲。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s42">
+<h2>4.2 CPU/GPU 交互</h2>
+
+<h3>命令队列与命令列表</h3>
+
+<p>CPU 把命令记录进命令列表，再提交到命令队列；GPU 从队列里取出命令按序执行。命令列表可以复用，但每次复用前要 Reset。</p>
+
+<Figure src="images/Fig4-6.jpg" alt="命令队列：CPU 提交命令列表，GPU 按序执行" figureNumber="图 4.6" caption="命令队列：CPU 提交命令列表，GPU 按序执行。" />
+
+<h3>CPU/GPU 同步</h3>
+
+<p>两边是<b>并行</b>执行的。CPU 提交完不会等 GPU，而是立刻继续跑。于是出现图 4.7 的情况：</p>
+
+<Figure src="images/Fig4-7.jpg" alt="错误示范：GPU 执行命令 C 使用资源 p2 时，CPU 正在更新 R" figureNumber="图 4.7" caption="错误示范：命令 C 使用资源 p2 绘制时，CPU 正在更新 R——数据竞争。" />
+
+<Callout tone="warning">
+  <b>这是本章最重要的一个概念</b>
+  <p>CPU 在 GPU 还没用完某块资源时改写它，结果是不确定的：可能 tearing、可能闪烁、可能读到半新半旧的数据。靠「多跑几次试试」永远调不出来，必须显式同步。</p>
+</Callout>
+
+<p>解决办法是 <b>Fence</b>（图 4.8）：CPU 用 Signal 在命令流里插入一个路标值；GPU 执行到那个位置就把 fence 值写进去；CPU 用 Wait 阻塞等待某个值被达到。</p>
+
+<Figure src="images/Fig4-8.jpg" alt="CPU 调用 Signal 插入路标，GPU 执行到 xgpu 处写入 fence 值" figureNumber="图 4.8" caption="CPU 调用 Signal 插入路标，GPU 执行到 xgpu 处写入 fence 值。" />
+
+<Callout tone="tip">
+  <b>实用规则</b>
+  <p>不要向前推进得太远。示例框架用 3 个帧资源轮转，CPU 最多领先 GPU 两帧：每帧先 Wait 上一帧的 fence，再更新帧资源，然后提交并 Signal 本帧。</p>
+</Callout>
+
+<CpuGpuTimelineActivity />
+</section>
+
+<section className="lesson-section" id="s43">
+<h2>4.3 初始化 Direct3D</h2>
+
+<p>初始化的固定顺序大致是：</p>
+
+<div className="step-list">
+  <li>打开调试层（<code>D3D12GetDebugInterface</code> → <code>EnableDebugLayer</code>）。</li>
+  <li>创建 DXGI 工厂，枚举适配器，用 <code>D3D12CreateDevice</code> 创建设备（功能级别从 11_0 起）。</li>
+  <li>创建 Fence，查询描述符各类型的句柄递增大小。</li>
+  <li>检查 MSAA 支持，创建命令队列、命令分配器与命令列表。</li>
+  <li>创建交换链（<code>SampleDesc.Count</code> = 1），创建 RTV 与 DSV 描述符堆。</li>
+  <li>创建深度/模板缓冲与视图，设置视口与剪裁矩形。</li>
+</div>
+
+<Callout tone="warning">
+  <b>两个 D3D12 特有的硬要求</b>
+  <p>① 常量缓冲大小必须向上对齐到 256 字节；② D3D12 <b>不提供默认视口</b>，必须自己调用 <code>RSSetViewports</code>，否则什么都画不出来。</p>
+</Callout>
+
+<Figure src="images/Fig4-9.jpg" alt="通过修改视口把 3D 场景绘制到后台缓冲的子矩形中" figureNumber="图 4.9" caption="通过修改视口，把 3D 场景绘制到后台缓冲的子矩形中。" />
+
+<h3>资源状态必须显式转换</h3>
+
+<p>D3D12 不会帮你做任何隐式状态转换。后台缓冲呈现时处于 PRESENT，要画它就得先屏障到 RENDER_TARGET，画完再屏障回去。</p>
+
+<SwapChainOrderActivity />
+
+<CodeSample
+  title="一帧里最小的状态转换骨架"
+  language="cpp"
+  code={`// 1) 后台缓冲：PRESENT -> RENDER_TARGET
+auto toTarget = CD3DX12_RESOURCE_BARRIER::Transition(
+    CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_PRESENT,
+    D3D12_RESOURCE_STATE_RENDER_TARGET);
+mCommandList->ResourceBarrier(1, &toTarget);
+
+// 2) 清除，并设置视口/剪裁矩形（D3D12 没有默认视口）
+mCommandList->ClearRenderTargetView(CurrentBackBufferView(), Colors::LightSteelBlue, 0, nullptr);
+mCommandList->ClearDepthStencilView(DepthStencilView(),
+    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+mCommandList->RSSetViewports(1, &mScreenViewport);
+mCommandList->RSSetScissorRects(1, &mScissorRect);
+
+// 3) 绑定 RTV/DSV 并绘制
+mCommandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
+mCommandList->DrawIndexedInstanced(...);
+
+// 4) 后台缓冲：RENDER_TARGET -> PRESENT
+auto toPresent = CD3DX12_RESOURCE_BARRIER::Transition(
+    CurrentBackBuffer(),
+    D3D12_RESOURCE_STATE_RENDER_TARGET,
+    D3D12_RESOURCE_STATE_PRESENT);
+mCommandList->ResourceBarrier(1, &toPresent);
+
+ThrowIfFailed(mCommandList->Close());
+ID3D12CommandList* lists[] = { mCommandList.Get() };
+mCommandQueue->ExecuteCommandLists(_countof(lists), lists);
+ThrowIfFailed(mSwapChain->Present(0, 0));
+mCurrBackBuffer = (mCurrBackBuffer + 1) % SwapChainBufferCount;
+FlushCommandQueue();`}
+  input={<>已创建设备、交换链、RTV/DSV 描述符堆与命令列表；当前后台缓冲索引 <code>mCurrBackBuffer</code>。</>}
+  keyLines={[
+    { code: 'ResourceBarrier(... PRESENT → RENDER_TARGET)', note: 'D3D12 不做隐式转换，缺这一步就是「黑屏第一嫌疑」。' },
+    { code: 'RSSetViewports', note: 'D3D12 没有默认视口，不设置就什么都画不出来。' },
+    { code: 'FlushCommandQueue()', note: 'Signal 后 Wait 同一个 fence 值，强制 CPU/GPU 同步；每帧都调用会牺牲并行度，正常流程里用帧资源 + fence 代替。' },
+  ]}
+  output={<>图 4.12 是第 4 章示例程序的截图：一个窗口，背景为 LightSteelBlue 之类的纯色清屏色。</>}
+  pitfalls={[
+    '忘记资源屏障：调试层报状态不匹配，或者干脆黑屏。',
+    '忘记 RSSetViewports：D3D12 不提供默认值，画面为空。',
+    'Present 之后忘记推进后台缓冲索引：画面会一直停在同一个缓冲上。',
+    '把 SampleDesc.Count 设成大于 1：D3D12 的交换链不支持 MSAA，创建会失败。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s44">
+<h2>4.4 计时与动画</h2>
+
+<p>动画需要「经过的时间」，不能直接累加每帧的固定值。示例框架用高性能计数器取时间，并维护 <code>DeltaTime</code> 与 <code>TotalTime</code>。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig4-10.jpg" alt="计算关卡开始后经过的时间" figureNumber="图 4.10" caption="计算关卡开始后经过的时间（以应用启动为时间原点）。" />
+  <Figure src="images/Fig4-11.jpg" alt="暂停期间仍累计时间会导致恢复时瞬移" figureNumber="图 4.11" caption='若暂停期间仍累计时间，恢复时物体会"瞬移"——所以暂停时间要剔除。' />
+</div>
+
+<Callout tone="tip">
+  <b>暂停要剔除</b>
+  <p>暂停期间不能把时间累加进 <code>TotalTime</code>。图 4.11 说明了后果：恢复瞬间物体会跳到很远的位置，看起来像瞬移。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s45">
+<h2>4.5 演示程序框架</h2>
+
+<p>从第 4 章开始，所有示例都建立在 <code>Common/d3dApp.h</code> 这套框架上。它把重复的初始化、消息循环、计时和 <code>Update/Draw</code> 调用封装好，各章示例只覆盖虚函数。</p>
+
+<ul>
+  <li><code>D3DApp::Initialize()</code>：建窗口、初始化 Direct3D 与框架计时。</li>
+  <li><code>D3DApp::Run()</code>：消息循环；空闲时调用 <code>Update</code> 与 <code>Draw</code>。</li>
+  <li>派生类重写 <code>Update(const GameTimer&)</code> 与 <code>Draw(const GameTimer&)</code>。</li>
+  <li><code>FlushCommandQueue()</code>：强制 CPU/GPU 同步。</li>
+</ul>
+
+<Figure src="images/Fig4-12.jpg" alt="第 4 章示例程序截图" figureNumber="图 4.12" caption="第 4 章示例程序截图。" />
+</section>
+
+<section className="lesson-section" id="s46">
+<h2>4.6 调试 Direct3D 应用</h2>
+
+<p>D3D12 的 <b>调试层</b>（Debug Layer）会检查参数合法性、资源状态和根签名一致性，并把问题打到输出窗口。它是这本书里最省时间的工具——<b>开发的每一天都应该开着它</b>。</p>
+
+<Figure src="images/Fig4-13.jpg" alt="HRESULT 失败时弹出的错误消息框示例" figureNumber="图 4.13" caption="HRESULT 失败时弹出的错误消息框示例。" />
+
+<Callout tone="note">
+  <b>怎么读调试层输出</b>
+  <p>第一条消息最有价值，后面的往往是连锁反应。先修第一条，再重跑。常见关键词：<code>RESOURCE_BARRIER</code>（状态没转）、<code>ROOT SIGNATURE</code>（根签名与着色器寄存器不匹配）、<code>invalid parameter</code>（多半是某个对象还是 nullptr）。</p>
+</Callout>
+
+<CodeSample
+  title="打开调试层并给 HRESULT 加报错框"
+  language="cpp"
+  code={`#if defined(DEBUG) || defined(_DEBUG)
+    ComPtr<ID3D12Debug> debugController;
+    ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
+    debugController->EnableDebugLayer();
+#endif
+
+// d3dUtil.h 里的 ThrowIfFailed：失败时把 HRESULT 描述弹出来
+ inline std::string HrToString(HRESULT hr) { ... }
+ class DxException { HRESULT ErrorCode; std::wstring FunctionName, Filename; int LineNumber; };
+ inline void ThrowIfFailed(HRESULT hr) {
+    if (FAILED(hr)) throw DxException(hr, L"", L"", 0);
+ }`}
+  input={<>在 <code>D3DApp::InitDirect3D()</code> 的最开始调用；<code>ThrowIfFailed</code> 用宏自动填入函数名、文件名和行号。</>}
+  keyLines={[
+    { code: 'EnableDebugLayer()', note: '只在 Debug 配置下打开；Release 构建里它会被跳过，不影响性能。' },
+    { code: 'ThrowIfFailed', note: '把 HRESULT、函数名、文件名和行号一起抛出来，定位速度比自己 printf 快得多。' },
+  ]}
+  output={<>图 4.13 那样的错误框，写明出错的函数、文件、行号与 HRESULT 的文字描述。</>}
+  pitfalls={[
+    'Release 构建里忘记关掉调试层：会有额外的性能开销。',
+    '忽略调试层输出的第一条消息，从后面开始修：后面多半只是连锁反应。',
+    '把调试层当作可选：不开它排查 D3D12 问题会非常痛苦。',
+  ]}
+/>
+
+<Checkpoint
+  chapterId="ch04"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch04-a1',
+      question: 'CPU 在 GPU 还在读取常量缓冲时改写它，最可能的现象是？',
+      options: ['稳定地显示新数据', '稳定地显示旧数据', '随机闪烁、撕裂或读到半新半旧的数据', '程序立刻崩溃'],
+      answer: 2,
+      explanation: 'CPU 与 GPU 并行执行，没有隐式同步。结果取决于时序，所以现象是随机的。必须用 Fence 显式等待。',
+    },
+    {
+      id: 'ch04-a2',
+      question: '往后台缓冲画东西之前，必须做什么？',
+      options: ['什么都不用做', '把后台缓冲屏障到 RENDER_TARGET', '先 Present 一次', '把深度缓冲清除即可'],
+      answer: 1,
+      explanation: 'D3D12 不做隐式状态转换。Present 之后后台缓冲处于 PRESENT 状态，必须显式屏障到 RENDER_TARGET 才能作为渲染目标写入。',
+    },
+    {
+      id: 'ch04-a3',
+      question: 'D3D12 关于视口的说法，哪句是对的？',
+      options: ['有默认视口，覆盖整个后台缓冲', '必须自己调用 RSSetViewports，没有默认值', '视口由交换链自动设置', '只有多视口时才需要设置'],
+      answer: 1,
+      explanation: 'D3D12 不提供默认视口，必须显式设置；忘记设置会得到空白画面。',
+    },
+    {
+      id: 'ch04-a4',
+      question: '常量缓冲的大小有什么硬要求？',
+      options: ['必须是 16 字节对齐', '必须向上对齐到 256 字节', '必须是 4 字节对齐', '没有要求'],
+      answer: 1,
+      explanation: 'D3D12 要求常量缓冲大小向上对齐到 256 字节。这是很多人第一次创建常量缓冲时踩的坑。',
+    },
+    {
+      id: 'ch04-a5',
+      question: '交换链创建时的 SampleDesc.Count 应该是多少？',
+      options: ['1', '2', '4', '取决于显示器'],
+      answer: 0,
+      explanation: 'D3D12 的交换链不支持 MSAA，SampleDesc.Count 必须为 1。需要抗锯齿时要另建多重采样离屏缓冲再解析。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch04"
+  title="改清屏色，并用调试层定位一个预设错误"
+  goal="跑通 Init Direct3D 示例，改一次清屏色确认渲染循环生效，并故意制造一个资源状态错误，用调试层输出定位它。"
+  steps={[
+    '打开 Chapter 4 Direct3D Initialization/Init Direct3D 的 .sln，生成并运行。',
+    '找到 ClearRenderTargetView 那一行，把 Colors::LightSteelBlue 改成别的颜色，重新运行确认画面变化。',
+    '注释掉「PRESENT → RENDER_TARGET」那次资源屏障，重新运行，观察画面与输出窗口。',
+    '读调试层输出的第一条消息，确认它指出了哪个资源、哪个状态转换缺失。',
+  ]}
+  expected="改色后窗口背景随之改变；注释掉屏障后调试层在输出窗口报出资源状态不匹配，画面可能变黑或停留。"
+  verify={[
+    '我改了清屏色并看到画面变化。',
+    '我成功触发了一次资源状态错误。',
+    '我读到了调试层的第一条消息，并能指出缺失的是哪一步状态转换。',
+  ]}
+/>
+</section>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>附录总览 A–E | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a></div>
+    <h1>附录 A–E 总览</h1>
+    <div class="sub">Win32 入门 · HLSL 速查 · 解析几何 · 习题选解 · 参考文献</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#a">附录 A · Windows 编程入门</a></li>
+      <li><a href="#b">附录 B · HLSL 语言参考</a></li>
+      <li><a href="#c">附录 C · 解析几何</a></li>
+      <li><a href="#d">附录 D · 习题选解</a></li>
+      <li><a href="#e">附录 E · 参考文献与延伸阅读</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <section class="card">
+      <h2 id="a">附录 A · Windows 编程入门（Introduction to Windows Programming）</h2>
+      <p>为没用过 Win32 API 的读者准备的最小教程。全书示例都基于同一套窗口框架，读这一节你就能看懂示例代码里 main 函数之外的部分。</p>
+      <h3>核心内容</h3>
+      <ul>
+        <li><b>事件驱动模型：</b>Windows 程序靠"消息（Message）"驱动——鼠标移动、按键、窗口重绘都是消息。窗口过程（Window Procedure，WndProc）收到消息后做响应。</li>
+        <li><b>标准五步：</b>定义窗口类（WNDCLASS）→ 注册（RegisterClass）→ 创建窗口（CreateWindow）→ 显示更新（ShowWindow / UpdateWindow）→ 消息循环（GetMessage / DispatchMessage）。</li>
+        <li><b>消息循环与游戏循环的区别：</b>GetMessage 会"挂起"程序等消息，游戏需要持续的帧循环，因此书中改用 PeekMessage + 计时器的游戏循环（第 4 章详解）。</li>
+        <li><b>常用消息：</b>WM_CREATE（创建时）、WM_PAINT（重绘）、WM_DESTROY（销毁，PostQuitMessage）、WM_LBUTTONDOWN 等。</li>
+      </ul>
+      <pre class="code"><span class="cm">// 书中窗口框架的骨架（简化）</span>
+WNDCLASS wc; wc.lpfnWndProc = MainWndProc; <span class="cm">// 绑定窗口过程</span>
+RegisterClass(&amp;wc);
+HWND mhMainWnd = CreateWindow(...);
+ShowWindow(...);
+MSG msg = {0};
+<span class="kw">while</span>(msg.message != WM_QUIT) {
+  <span class="kw">if</span>(PeekMessage(&amp;msg, 0, 0, 0, PM_REMOVE)) { DispatchMessage(&amp;msg); }
+  <span class="kw">else</span> { <span class="cm">// 没消息 → 游戏循环：更新+绘制</span> }
+}</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="b">附录 B · HLSL 语言参考（High-Level Shader Language Reference）</h2>
+      <p>HLSL 是 DirectX 的着色器语言，用来编写顶点着色器、像素着色器、几何着色器、计算着色器等。这个附录是一本"速查手册"。</p>
+      <h3>要点清单</h3>
+      <ul>
+        <li><b>变量类型：</b>float/int/bool 及向量、矩阵类型 float2/3/4、float4x4；矩阵初始化按行书写。</li>
+        <li><b>语义（Semantics）：</b>告诉 GPU 数据"是什么"——POSITION、NORMAL、TEXCOORD、COLOR；输出流语义以 SV_ 开头（如 SV_POSITION 系统值）。</li>
+        <li><b>结构体传数据：</b>顶点数据用结构体在阶段间传递，常量缓冲用 cbuffer 声明（寄存器 b）、纹理 t、采样器 s。</li>
+        <li><b>常用内置函数：</b>normalize、dot、cross、mul（矩阵乘）、lerp、saturate、reflect、abs、pow、exp、floor、ceil、clamp。</li>
+        <li><b>函数修饰：</b>无修饰 = 普通函数；可定义 VS/PS 入口函数由运行时编译并绑定到 PSO。</li>
+      </ul>
+      <pre class="code"><span class="cm">// 典型常量缓冲（第 6 章 Box 示例的着色器）</span>
+cbuffer cbPerObject : register(b0) {
+  float4x4 gWorldViewProj;
+};
+<span class="kw">struct</span> VertexIn {
+  float3 PosL  : POSITION;
+  float4 Color : COLOR;
+};
+<span class="kw">struct</span> VertexOut {
+  float4 PosH  : SV_POSITION;   <span class="cm">// 齐次裁剪空间坐标</span>
+  float4 Color : COLOR;
+};</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="c">附录 C · 解析几何（Some Analytic Geometry）</h2>
+      <p>游戏编程常用的几何公式集，配合第 16 章（包围体）与第 17 章（拾取）使用：</p>
+      <ul>
+        <li><b>三角形：</b>由三点 v0、v1、v2 定义；两边向量叉积可得法向量；用重心坐标表示三角形内的点，p = v0 + u(v1 - v0) + w(v2 - v0)，且 u,w≥0、u+w≤1。</li>
+        <li><b>射线：</b>p(t) = p0 + t·u（t≥0），常用于拾取与阴影测试。</li>
+        <li><b>平面：</b>n·p + d = 0；三点可确定平面；点到平面距离 = n·p + d（|n|=1 时）。</li>
+        <li><b>圆柱：</b>轴心线、半径与高度范围定义。</li>
+        <li><b>球：</b>球心 c 与半径 r，|p − c| = r；点在球内判定 |p − c| ≤ r。</li>
+        <li><b>AABB（轴对齐包围盒）：</b>用最小点 vmin 与最大点 vmax 表示，碰撞/剔除测试快。</li>
+        <li><b>OBB（有向包围盒）：</b>带朝向的盒子，用三个轴向 + 三个半径 + 中心表示。</li>
+      </ul>
+      <div class="tip"><b>💡 用途：</b>视锥剔除（第 16 章）要判断包围体是否在 6 个裁剪平面之内；拾取（第 17 章）要算射线与三角形的交点——都建立在这些公式上。</div>
+    </section>
+
+    <section class="card">
+      <h2 id="d">附录 D · 习题选解（Solutions to Selected Exercises）</h2>
+      <p>给出各章部分习题的解答（数学推导或代码片段）。建议先独立完成习题再看答案；看答案时重点理解"为什么这样做"。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="e">附录 E · 参考文献与延伸阅读（Bibliography and Further Reading）</h2>
+      <p>书中引用的重要文献，想深挖时按图索骥：</p>
+      <ul>
+        <li><b>数学：</b>[Verth04]《Vector Calculus for Computer Graphics》等三维数学专书；</li>
+        <li><b>DX 文档：</b>MSDN 上 Direct3D 12 编程指南与 SDK 文档、DirectX SDK 示例；</li>
+        <li><b>图形学经典：</b>[Eberly01] 3D Game Engine Design、[Möller08] Real-Time Rendering、[Angel00] Interactive Computer Graphics 等。</li>
+      </ul>
+      <div class="done-row"><label><input type="checkbox"> 附录总览已读完</label></div>
+    </section>
+
+    <div class="pager">
+      <a href="index.html"><span class="dir">← 返回</span>目录</a>
+      <a class="next" href="ch01.html"><span class="dir">第一部分</span>第 1 章 · 向量代数 →</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

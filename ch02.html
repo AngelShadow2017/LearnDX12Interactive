@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 章 矩阵代数 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第一部分 数学基础</div>
+    <h1>第 2 章 矩阵代数</h1>
+    <div class="sub en-title">Matrix Algebra</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s21">2.1 矩阵的定义</a></li>
+      <li><a href="#s22">2.2 矩阵乘法</a></li>
+      <li><a href="#s23">2.3 转置矩阵</a></li>
+      <li><a href="#s24">2.4 单位矩阵</a></li>
+      <li><a href="#s25">2.5 行列式</a></li>
+      <li><a href="#s26">2.6 伴随矩阵</a></li>
+      <li><a href="#s27">2.7 逆矩阵</a></li>
+      <li><a href="#s28">2.8 DirectXMath 矩阵</a></li>
+      <li><a href="#s29">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第一部分 · 数学基础</span>
+      <span class="badge green">对应示例：DirectXMath 矩阵示例程序</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解矩阵的概念及其与向量运算的关系；</li>
+        <li>掌握矩阵乘法、转置、单位矩阵、行列式、伴随与逆矩阵；</li>
+        <li>熟悉 DirectXMath 库中矩阵类型与函数的用法。</li>
+      </ul>
+      <p class="lead">矩阵是 m×n 个数排成的矩形阵列。在 3D 图形学里，矩阵是<b>变换的载体</b>：缩放、旋转、平移、世界/视图/投影变换全都由矩阵表达。学完这章你就能看懂着色器里那行天天出现的 <code class="inline">mul(gWorldViewProj, pos)</code>。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s21">2.1 矩阵的定义</h2>
+      <p>m×n 矩阵有 m 行 n 列，元素用小写字母 + 行列下标标记。行向量、列向量就是只有一行/一列的特殊矩阵。相等的矩阵要求形状相同且对应元素相等；加/减法要求同形状，逐元素进行；标量乘法逐元素乘。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s22">2.2 矩阵乘法</h2>
+      <h3>定义</h3>
+      <p>A 是 m×n 矩阵、B 是 n×p 矩阵，则 AB 是 m×p 矩阵。结果第 i 行第 j 列 = A 的第 i 行 与 B 的第 j 列的<b>点积</b>：</p>
+      <div class="formula">(AB)<sub>ij</sub> = Σ<sub>k</sub> A<sub>ik</sub>B<sub>kj</sub></div>
+      <div class="warn"><b>⚠️ 两条铁律：</b>① 内维必须相等（A 的列数 = B 的行数）；② <b>矩阵乘法不满足交换律</b>——AB ≠ BA。顺序错了图形结果就错了（先旋转后平移 ≠ 先平移后旋转）。</div>
+      <h3>2.2.2 向量-矩阵乘法</h3>
+      <p>行向量左乘矩阵：vAB 的写法——把向量看成 1×n 矩阵即可。书中约定用<b>行向量 × 矩阵</b>：v′ = vM，这与 DirectXMath 的 <code class="inline">XMVector3Transform</code> 一致。几何上 vM 的结果是把 v 变换后的新向量（第 3 章展开讲）。</p>
+      <h3>2.2.3 结合律</h3>
+      <p>矩阵乘法满足结合律：(AB)C = A(BC)。图形学中常把一连串变换预先合并成一个矩阵 <b>C = A·B·C</b>，再用 C 一次性变换成千上万个顶点，省下大量计算。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s23">2.3 转置矩阵（Transpose）</h2>
+      <p>把行列互换：(Aᵀ)<sub>ij</sub> = A<sub>ji</sub>。性质：(AB)ᵀ = BᵀAᵀ、(Aᵀ)ᵀ = A。行向量 vs 列向量的书写差异（不同引擎/教材两种约定）就靠转置换算——看别人着色器代码时务必确认约定。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s24">2.4 单位矩阵（Identity Matrix）</h2>
+      <p>主对角线全 1、其余全 0 的方阵 I。它是矩阵里的"1"：MI = IM = M。任何向量乘单位矩阵都不变——相当于"恒等变换"。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s25">2.5 行列式（Determinant）</h2>
+      <p>方阵对应一个标量 det(A)（记 |A|）。2×2 直接交叉相乘：ad − bc。更大的方阵用<b>递归展开</b>：det(A) = Σ (−1)^(1+j)·A₁ⱼ·det(Ã₁ⱼ)，即沿第一行展开为多个低阶行列式。</p>
+      <h3>2.5.1 余子式（Matrix Minors）</h3>
+      <p>删掉第 i 行第 j 列后剩下的 (n−1)×(n−1) 方阵的行列式称为余子式。带上 (−1)^(i+j) 符号就得到代数余子式。</p>
+      <p class="lead">行列式的几何意义：它等于矩阵把空间"拉伸/压缩"的<b>面积/体积比例因子</b>。det = 0 说明变换把空间压扁了（不可逆）；det &lt; 0 说明发生了镜像翻转。第 5 章会提到：背面剔除其实就是在看变换后行列式的符号变化。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s26">2.6 伴随矩阵（Adjoint）</h2>
+      <p>把每个元素换成对应的<b>代数余子式</b>再转置：adj(A) = (A<sup>~</sup>)ᵀ。它是求逆矩阵的中间产物。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s27">2.7 逆矩阵（Inverse Matrix）</h2>
+      <p>A⁻¹ 是满足 AA⁻¹ = A⁻¹A = I 的矩阵。并非所有矩阵可逆（可逆 ⟺ det ≠ 0）。求逆公式：</p>
+      <div class="formula">A⁻¹ = adj(A) / det(A)</div>
+      <p>常用性质：⁻¹ = B⁻¹A⁻¹（<b>顺序反过来</b>！又见"顺序很重要"）、(Aᵀ)⁻¹ = (A⁻¹)ᵀ。</p>
+      <p class="lead">图形学意义：M 把坐标系 A 映射到 B，则 M⁻¹ 就是 B 映射回 A——第 3 章"坐标系变换"就靠它。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s28">2.8 DirectXMath 矩阵</h2>
+      <p>核心类型 <code class="inline">XMMATRIX</code>：4×4 矩阵，由 4 个 XMVECTOR 行组成，完全 SIMD 化。<code class="inline">XMFLOAT4X4</code> 用于存储（成员 _11.._44 或 m[i][j]），Load/Store 转换。参数传递沿用 FXM/GXM/HXM/CXM 规则。</p>
+      <pre class="code">XMMATRIX A(1,0,0,0,  0,2,0,0,  0,0,4,0,  1,2,3,1); <span class="cm">// 按行构造</span>
+XMMATRIX B = XMMatrixIdentity();       <span class="cm">// 单位矩阵</span>
+XMMATRIX C = XMMatrixMultiply(A, B);   <span class="cm">// 乘法（或用运算符 *）</span>
+XMMATRIX D = XMMatrixTranspose(A);     <span class="cm">// 转置</span>
+XMVECTOR det = XMMatrixDeterminant(A); <span class="cm">// 行列式（在返回向量的 x 分量）</span>
+XMMATRIX E = XMMatrixInverse(&amp;det, A); <span class="cm">// 逆矩阵（需先算行列式）</span>
+<span class="cm">// 向量变换：v' = vM（行向量约定）</span>
+XMVECTOR v2 = XMVector3Transform(v, A);</pre>
+      <div class="note"><b>📌 第 7 章预告：</b>上传到 GPU 常量缓冲的矩阵要经过 <code class="inline">XMMatrixTranspose</code>——HLSL 默认按列主序解释，书里行向量约定需要转置后再上传。这个"为什么"在第 7 章会讲透。</div>
+    </section>
+
+    <section class="card">
+      <h2 id="s29">本章小结</h2>
+      <ul>
+        <li>矩阵乘法：行点积列；内维相等才能乘；<b>不交换、可结合</b>——预合并变换链是重要优化。</li>
+        <li>转置换行换列；(AB)ᵀ = BᵀAᵀ。</li>
+        <li>单位矩阵 I 是恒等变换；行列式是体积比例因子（0 = 压扁不可逆）。</li>
+        <li>逆矩阵 A⁻¹ = adj(A)/det(A)；(AB)⁻¹ = B⁻¹A⁻¹。</li>
+        <li>DirectXMath：XMMATRIX 计算 / XMFLOAT4X4 存储，XMMatrix* 函数族，行向量变换用 XMVector3Transform。</li>
+      </ul>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    
+
+    <details class="gallery"><summary>🖼️ 原书插图（2 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig2-1.jpg" alt="Fig2-1.jpg"><figcaption>图2.1 上述矩阵示例程序的输出。</figcaption></figure><figure><img loading="lazy" src="images/Fig2-2.jpg" alt="Fig2-2.jpg"><figcaption>图2.2 上述矩阵示例程序的输出。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch01.html"><span class="dir">← 上一章</span>第 1 章 向量代数</a>
+      <a class="next" href="ch03.html"><span class="dir">下一章 →</span>第 3 章 变换</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

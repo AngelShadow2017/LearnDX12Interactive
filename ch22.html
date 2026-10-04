@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 22 章 四元数 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 22 章 四元数</h1>
+    <div class="sub en-title">Quaternions</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s221">22.1 复数回顾</a></li>
+      <li><a href="#s222">22.2 四元数代数</a></li>
+      <li><a href="#s223">22.3 单位四元数与旋转</a></li>
+      <li><a href="#s224">22.4 四元数插值</a></li>
+      <li><a href="#s225">22.5 DirectXMath 四元数函数</a></li>
+      <li><a href="#s226">22.6 旋转演示</a></li>
+      <li><a href="#s227">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：Quaternion Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>复习复数及其极坐标旋转，理解四元数的动机；</li>
+        <li>掌握四元数代数（乘法、模、逆、共轭）；</li>
+        <li>用单位四元数表示 3D 旋转，掌握 Slerp 插值；</li>
+        <li>熟悉 DirectXMath 四元数函数。</li>
+      </ul>
+      <p class="lead">欧拉角有万向节锁、旋转矩阵插值会"抽搐"——四元数是角色动画与相机系统旋转的标准答案。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s221">22.1 复数回顾（Review of the Complex Numbers）</h2>
+      <p>复数 z = a + bi 有加法（像向量）、模 |z|、共轭、极坐标表示 z = r(cosθ + i·sinθ)。关键观察：<b>乘以 (cosθ + i·sinθ) = 旋转 θ 角</b>（书中图示 z₁z₂ 让 z₁ 转过 θ₂）。四元数正是这个"复数=平面旋转"推广到"3D 旋转"的代数。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s222">22.2 四元数代数（Quaternion Algebra）</h2>
+      <p>四元数 q = (q₁, q₂, q₃, q₀)（书中记 q = q₁i + q₂j + q₃k + q₀），三个虚单位满足 i²=j²=k²=ijk=−1。运算：</p>
+      <ul>
+        <li><b>加法/标量乘：</b>分量运算；</li>
+        <li><b>模：</b>‖q‖ = √(q₁²+q₂²+q₃²+q₀²)；</li>
+        <li><b>共轭：</b>q* = (−q₁, −q₂, −q₃, q₀)（虚部变号）；</li>
+        <li><b>逆：</b>q⁻¹ = q* / ‖q‖²；</li>
+        <li><b>乘法：</b>不可交换（书中给出完整展开式与分量公式）。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s223">22.3 单位四元数与旋转（Unit Quaternions and Rotations）</h2>
+      <p>旋转用<b>单位四元数</b>表示：绕单位轴 n 旋转 θ 角：</p>
+      <div class="formula">p = (n·sin(θ/2),&nbsp; cos(θ/2))&nbsp;&nbsp;（前三分量是"向量部分"，第四是标量部分）</div>
+      <p>把点/向量 v 塞进"纯四元数" p_v = (v, 0)，旋转结果 = <b>p · p_v · p⁻¹</b>（三明治乘法），取回向量部分即旋转后的 v。性质：连转 = 四元数相乘；反向旋转用共轭/逆。对比矩阵：存 4 个数、组合更快、数值稳定、无万向节锁。注意旋转了 2π 才回到原样（q 与 −q 表示同一旋转，插值时要注意"最短路径"）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s224">22.4 四元数插值（Quaternion Interpolation）</h2>
+      <p>单位四元数是 4D 单位球上的点。动画要在两个朝向 a、b 之间平滑过渡：</p>
+      <ul>
+        <li><b>线性插值（Lerp）：</b>a、b 直接线性混合再归一化——快，但旋转速度不均匀；</li>
+        <li><b>球面插值（Slerp）：</b>沿 4D 球面走大圆弧——恒定角速度，真正的"匀速旋转"：slerp(a,b,t) = [sin((1−t)θ)·a + sin(tθ)·b] / sinθ（θ 是 a、b 夹角，由 a·b 反余弦得）；</li>
+        <li><b>最短路径：</b>若 a·b &lt; 0（夹角超过 90°），先把 b 取负再插值——避免绕远路转 360°−θ。</li>
+      </ul>
+      <p>关键帧动画：给一串关键帧四元数，帧间 slerp——第 23 章角色动画直接使用。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s225">22.5 DirectXMath 四元数函数（DirectX Math Quaternion Functions）</h2>
+      <pre class="code">XMQuaternionIdentity();                    <span class="cm">// 单位四元数</span>
+XMQuaternionRotationAxis(axis, angle);     <span class="cm">// 轴角 → 四元数</span>
+XMQuaternionRotationRollPitchYaw(p, y, r); <span class="cm">// 欧拉角 → 四元数</span>
+XMQuaternionNormalize(q);                  <span class="cm">// 归一化</span>
+XMQuaternionSlerp(q0, q1, t);              <span class="cm">// 球面插值</span>
+XMQuaternionMultiply(q0, q1);              <span class="cm">// 组合旋转</span>
+<span class="cm">// 四元数 → 旋转矩阵（放进世界矩阵）</span>
+XMMATRIX R = XMMatrixRotationQuaternion(q);</pre>
+      <p>DirectXMath 的四元数函数需要<b>单位四元数</b>输入，且约定参数顺序（书中列出每个函数的参数/返回值注意事项，包括部分函数要求 XYZW 排布的转换）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s226">22.6 旋转演示（The Rotation Demo）</h2>
+      <p>demo 用四元数控制骷髅的朝向：按住鼠标拖动累积"轴角旋转"，转成四元数与当前朝向相乘，再 slerp 到目标——展示无抖动的平滑旋转。对比直接欧拉角拼接时的翻滚问题。</p>
+      <div class="tip"><b>💡 读完做实验：</b>把 slerp 换 lerp 看速度不均；故意不取最短路径看 360° 翻转。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s227">本章小结</h2>
+      <ul>
+        <li>复数乘 = 平面旋转；四元数 = 3D 旋转的代数推广。</li>
+        <li>旋转四元数 = (n·sin(θ/2), cos(θ/2))；作用用三明治乘法 p·p_v·p⁻¹。</li>
+        <li>Slerp 匀速插值 + 最短路径修正（a·b&lt;0 时取负 b）。</li>
+        <li>DirectXMath：RotationAxis / RotationQuaternion / Slerp / Multiply 四板斧。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（12 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig22-1.jpg" alt="Fig22-1.jpg"><figcaption>图22.1 复数加法让人想起平面内的向量加法。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-2.jpg" alt="Fig22-2.jpg"><figcaption>图22.2 复数的模。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-3.jpg" alt="Fig22-3.jpg"><figcaption>图22.3 复数的极坐标表示。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-4.jpg" alt="Fig22-4.jpg"><figcaption>图22.4 z1z2 相乘等于把 z1 旋转 θ2 并缩放 r2——复数乘法即旋转。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-5.jpg" alt="Fig22-5.jpg"><figcaption>图22.5 对 [−1,1] 中的数 y 存在角度 θ 使 y=cosθ。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-6.jpg" alt="Fig22-6.jpg"><figcaption>图22.6 在 4D 单位球上从 a 到 b 走 tθ 的球面插值（θ 是 a、b 的夹角）。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-7.jpg" alt="Fig22-7.jpg"><figcaption>图22.7 夹角很小时线性插值近似球面插值；大角度则差别明显。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-8.jpg" alt="Fig22-8.jpg"><figcaption>图22.8 线性插值后归一化在球面上并非匀速——旋转速度会不均匀。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-9.jpg" alt="Fig22-9.jpg"><figcaption>图22.9 Rq 绕 n 转 θ，R−q 绕 −n 转 2π−θ：q 与 −q 表示同一旋转。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-10.jpg" alt="Fig22-10.jpg"><figcaption>图22.10 从 a 插值到 b 走大弧 θ1；先把 b 取负则走短弧——最短路径修正。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-11.jpg" alt="Fig22-11.jpg"><figcaption>图22.11 关键帧插值：关键帧定义"关键姿势"，帧间插值。</figcaption></figure><figure><img loading="lazy" src="images/Fig22-12.jpg" alt="Fig22-12.jpg"><figcaption>图22.12 四元数演示截图。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch21.html"><span class="dir">← 上一章</span>第 21 章 环境光遮蔽</a>
+      <a class="next" href="ch23.html"><span class="dir">下一章 →</span>第 23 章 角色动画</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

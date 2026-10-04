@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 14 章 曲面细分阶段 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 14 章 曲面细分阶段</h1>
+    <div class="sub en-title">The Tessellation Stages</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s141">14.1 细分图元类型</a></li>
+      <li><a href="#s142">14.2 外壳着色器</a></li>
+      <li><a href="#s143">14.3 镶嵌器</a></li>
+      <li><a href="#s144">14.4 域着色器</a></li>
+      <li><a href="#s145">14.5 四边形细分</a></li>
+      <li><a href="#s146">14.6 三次贝塞尔曲面</a></li>
+      <li><a href="#s147">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：Quad / Bezier Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解"少顶点进、多顶点出"的曲面细分三阶段：HS → Tessellator → DS；</li>
+        <li>掌握 Patch（补丁）、控制点、细分因子等概念；</li>
+        <li>实战四边形细分与贝塞尔曲面（近处细、远处粗的动态 LOD）。</li>
+      </ul>
+      <p class="lead">网格内存占用与三角形数的矛盾：想要近看细腻又要性能——把细分交给 GPU 实时做。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s141">14.1 细分图元类型（Tessellation Primitive Types）</h2>
+      <p>IA 阶段拓扑改成 <b>patchlist</b>（1/2/3/4 控制点的 patch list）。Patch = 一组控制点（不一定是三角形的顶点！），数量任意（1–32），细分后形状由 DS 决定。HS 可选输出 SV_PrimitiveID。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s142">14.2 外壳着色器（The Hull Shader, HS）</h2>
+      <p>每个 patch 调用一次，两件事：</p>
+      <ol>
+        <li><b>输出控制点</b>：可以原样传递，也可以升级/变换（比如把 3 个点变成更易插值的表示）；</li>
+        <li><b>常量外壳函数（Patch Constant Function）</b>：每 patch 一次，输出<b>细分因子（tess factors）</b>——决定"分多细"（边缘因子 + 内部因子），还可传其他 patch 级常量。</li>
+      </ol>
+      <pre class="code">[domain(<span class="st">"quad"</span>)]
+[partitioning(<span class="st">"integer"</span>)]
+[outputtopology(<span class="st">"triangle_cw"</span>)]
+[outputcontrolpoints(4)]
+[patchconstantfunc(<span class="st">"QuadPatchHS"</span>)]
+HS_OUT HS(InputPatch&lt;VS_OUT, 4&gt; patch, uint id : SV_OutputControlPointID) {...}</pre>
+      <p>细分因子按<b>视距</b>算：离相机越近因子越大（动态 LOD），书里给了 1/d 缩放公式。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s143">14.3 镶嵌器（The Tessellation Stage，固定功能）</h2>
+      <p>不可编程的硬件阶段：按细分因子把 patch 的规范域（quad 的 [0,1]² 或三角形的重心域）切成小单元，输出各顶点的<b>域参数 (u,v)</b> 与连接关系。还支持分数细分（fractional_even/odd，切分点带小数，LOD 平滑过渡不闪烁）。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s144">14.4 域着色器（The Domain Shader, DS）</h2>
+      <p>每个细分出的新顶点调用一次：拿到域坐标 uv + HS 的控制点，按公式算出真实位置（quad 用双线性插值，贝塞尔用 Bernstein 多项式），之后照常送进 GS/光栅化。注意：细分发生在投影之前的本地/世界空间。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s145">14.5 四边形细分（Tessellating a Quad）</h2>
+      <p>Quad demo：一个 4 控制点的平面 quad，按距离细分，DS 里双线性插值并把 y 做成波浪起伏。演示了边缘/内部因子与生成的顶点网格形态的对应关系。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s146">14.6 三次贝塞尔四边形（Cubic Bézier Quad Patches）</h2>
+      <p>16 控制点的贝塞尔曲面：用 Bernstein 基 B(t) = (1−t)³ + 3(1−t)²t + … 组合出"拉过头再拽回来"的光滑曲线/曲面（书中先用 2D 曲线图解 De Casteljau 递归插值，再推广到双参数曲面）。Bezier demo：一个可交互变形的贝塞尔曲面片，按视距动态细分。</p>
+      <div class="tip"><b>💡 读完做实验：</b>把细分因子改常数看 LOD 消失；拖动控制点看曲面形状；把 partitioning 换 fractional_even 观察平滑过渡。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s147">本章小结</h2>
+      <ul>
+        <li>三阶段分工：<b>HS 算因子/传控制点 → 镶嵌器切域 → DS 由 uv 算真实位置</b>。</li>
+        <li>Patch 控制点 1–32 个，拓扑用 *_control_point_patchlist。</li>
+        <li>细分因子按视距计算实现动态 LOD，分数细分防跳变。</li>
+        <li>贝塞尔曲面 = 16 控制点 + Bernstein 插值。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（8 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig14-1.jpg" alt="Fig14-1.jpg"><figcaption>图14.1 渲染管线中曲面细分三个阶段的示意。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-2.jpg" alt="Fig14-2.jpg"><figcaption>图14.2 四边形 patch 由边缘与内部细分因子决定的细分结果。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-3.jpg" alt="Fig14-3.jpg"><figcaption>图14.3 三角形 patch 由边缘与内部细分因子决定的细分结果。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-4.jpg" alt="Fig14-4.jpg"><figcaption>图14.4 4 控制点的 quad patch 在规范 uv 空间细分成 16 个顶点。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-5.jpg" alt="Fig14-5.jpg"><figcaption>图14.5 离相机越近的网格细分越密（动态 LOD）。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-6.jpg" alt="Fig14-6.jpg"><figcaption>图14.6 三次贝塞尔曲线的 De Casteljau 递归插值（t=0.5）。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-7.jpg" alt="Fig14-7.jpg"><figcaption>图14.7 构造贝塞尔曲面（为便于理解做了简化）。</figcaption></figure><figure><img loading="lazy" src="images/Fig14-8.jpg" alt="Fig14-8.jpg"><figcaption>图14.8 贝塞尔曲面演示截图。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch13.html"><span class="dir">← 上一章</span>第 13 章 计算着色器</a>
+      <a class="next" href="ch15.html"><span class="dir">下一章 →</span>第 15 章 相机与动态索引</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

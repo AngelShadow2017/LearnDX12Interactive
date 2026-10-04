@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "DX12 中文教材：启动预览",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:4174/",
+      "webRoot": "${workspaceFolder}/frontend",
+      "preLaunchTask": "vite:build-preview",
+      "sourceMaps": true,
+      "runtimeArgs": ["--new-window"]
+    }
+  ]
+}

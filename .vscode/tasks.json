@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "vite:build-preview",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "preview:build"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": [
+          {
+            "regexp": "^(.*):(\\d+):(\\d+):\\s*(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*http://127\\.0\\.0\\.1:4174/.*"
+        }
+      }
+    }
+  ]
+}

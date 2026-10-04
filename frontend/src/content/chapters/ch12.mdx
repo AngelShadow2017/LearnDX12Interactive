@@ -1,0 +1,182 @@
+import { GeometryShaderExpandActivity } from '@/activities/ch12/GeometryShaderExpandActivity';
+import { BillboardA2CActivity } from '@/activities/ch12/BillboardA2CActivity';
+
+<section className="lesson-section lesson-section--intro" id="s121">
+<h2>12.1 编写几何着色器</h2>
+
+<p>几何着色器（GS）是渲染管线里唯一能<b>增删图元</b>的可编程阶段：它以整个图元为输入，可以输出 0 个、1 个或多个顶点。</p>
+
+<Figure src="images/Fig12-1.jpg" alt="把一个三角形细分成四个等大三角形" figureNumber="图 12.1" caption="把一个三角形细分成四个等大三角形：三个新顶点是各边中点。" />
+
+<CodeSample
+  title="几何着色器的声明骨架"
+  language="hlsl"
+  code={`struct VertexOut { float3 PosW : POSITION; float2 SizeW : SIZE; };
+struct GeoOut    { float4 PosH : SV_POSITION; float3 PosW : POSITION;
+                   float3 NormalW : NORMAL; float2 Tex : TEXCOORD;
+                   uint PrimID : SV_PrimitiveID; };
+
+// maxvertexcount 必须给出：它决定一次调用最多能输出多少个顶点
+[maxvertexcount(4)]
+void GS(point VertexOut gin[1],
+        uint primID : SV_PrimitiveID,
+        inout TriangleStream<GeoOut> stream)
+{
+    // 用相机的三个轴构造广告牌的局部坐标系
+    float3 up    = float3(0.0f, 1.0f, 0.0f);
+    float3 look  = gEyePosW - gin[0].PosW;
+    look.y = 0.0f;  // 让树保持竖直
+    look = normalize(look);
+    float3 right = normalize(cross(up, look));
+
+    float halfW = 0.5f * gin[0].SizeW.x;
+    float halfH = 0.5f * gin[0].SizeW.y;
+    float4 v[4];
+    v[0] = float4(gin[0].PosW + halfW * right - halfH * up, 1.0f);
+    v[1] = float4(gin[0].PosW + halfW * right + halfH * up, 1.0f);
+    v[2] = float4(gin[0].PosW - halfW * right - halfH * up, 1.0f);
+    v[3] = float4(gin[0].PosW - halfW * right + halfH * up, 1.0f);
+
+    GeoOut gout;
+    [unroll]
+    for (int i = 0; i < 4; ++i)
+    {
+        gout.PosH  = mul(v[i], gViewProj);
+        gout.PosW  = v[i].xyz;
+        gout.NormalW = look;
+        gout.PrimID = primID;
+        stream.Append(gout);
+    }
+}`}
+  input={<>顶点着色器输出 <code>point</code> 图元（拓扑为 <code>D3D_PRIMITIVE_TOPOLOGY_POINTLIST</code>）。</>}
+  keyLines={[
+    { code: '[maxvertexcount(4)]', note: '必须给出的一次调用输出上限；输出超过它会被硬件截断，症状是图形缺角。' },
+    { code: 'look.y = 0.0f;', note: '把视线压平，树才不会因为相机俯仰而倒下来。' },
+    { code: 'stream.Append(gout)', note: '逐个追加顶点；要开始新的条带时调用 stream.RestartStrip()。' },
+    { code: 'uint primID : SV_PrimitiveID', note: '图元 ID，常用来从纹理数组里选资源（图 12.7—12.9）。' },
+  ]}
+  output={<>图 12.6：几何着色器把一个点扩成一个 quad，图 12.5 是树广告牌演示的截图。</>}
+  pitfalls={[
+    '忘记写 maxvertexcount：着色器编译失败，错误信息往往指向 Append 那几行。',
+    '输出顶点数超过 maxvertexcount：图形被静默截断，很难从画面反推原因。',
+    '把 GS 当成性能优化手段：它打破了后变换顶点缓存，多数硬件上并不便宜。',
+  ]}
+/>
+
+<Figure src="images/Fig12-6.jpg" alt="几何着色器把一个点扩成一个 quad" figureNumber="图 12.6" caption="几何着色器把一个点扩成一个 quad。" />
+
+<GeometryShaderExpandActivity />
+</section>
+
+<section className="lesson-section" id="s122">
+<h2>12.2 树广告牌演示</h2>
+
+<p>广告牌是一张始终朝向相机的 quad（图 12.3）。用 GS 实现的好处是：CPU 只需要提交<b>一个点</b>（树的位置和尺寸），扩成 quad 的工作全在 GPU 上完成，省掉了每帧更新顶点缓冲。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig12-2.jpg" alt="带透明通道的树广告牌纹理" figureNumber="图 12.2" caption="带透明通道的树广告牌纹理。" />
+  <Figure src="images/Fig12-3.jpg" alt="广告牌面向相机" figureNumber="图 12.3" caption="广告牌面向相机。" />
+</div>
+
+<Figure src="images/Fig12-4.jpg" alt="由局部坐标系和世界尺寸计算广告牌 quad 的四个顶点" figureNumber="图 12.4" caption="由局部坐标系和世界尺寸计算广告牌 quad 的四个顶点。" />
+
+<Figure src="images/Fig12-5.jpg" alt="树广告牌演示截图" figureNumber="图 12.5" caption="树广告牌演示截图。" />
+
+<BillboardA2CActivity />
+</section>
+
+<section className="lesson-section" id="s123">
+<h2>12.3 纹理数组</h2>
+
+<p>纹理数组（<code>Texture2DArray</code>）把多张同尺寸、同格式的纹理放进一个资源，用一个索引选择（图 12.7）。这样一次绘制就能画出多种树。</p>
+
+<Figure src="images/Fig12-7.jpg" alt="树广告牌用的贴图" figureNumber="图 12.7" caption="树广告牌用的贴图。" />
+
+<div className="figure-pair">
+  <Figure src="images/Fig12-8.jpg" alt="有 4 个元素的纹理数组，每个纹理带 3 级 mip" figureNumber="图 12.8" caption="有 4 个元素的纹理数组，每个纹理带 3 级 mip。" />
+  <Figure src="images/Fig12-9.jpg" alt="纹理数组的子资源按线性索引编号" figureNumber="图 12.9" caption="纹理数组的子资源按线性索引编号。" />
+</div>
+
+<Callout tone="tip">
+  <b>数组索引怎么来</b>
+  <p>常见做法是把索引放在顶点数据里，或者用 GS 拿到的 <code>SV_PrimitiveID</code>。这样同一个绘制调用里的不同实例就能取到不同贴图。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s124">
+<h2>12.4 Alpha-to-Coverage</h2>
+
+<p>A2C 把像素的 alpha 转换成 MSAA 的<b>子采样覆盖率</b>：alpha = 0.5 的像素会让一半子样本被覆盖，于是镂空边缘获得抗锯齿，而且不需要深度排序。</p>
+
+<Callout tone="warning">
+  <b>必须同时启用 MSAA</b>
+  <p>A2C 单独开启没有任何效果——没有多个子采样点，就谈不上覆盖率。这是这一节最容易记错的一条。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s125">
+<h2>本章小结</h2>
+
+<ul>
+  <li>GS 以整个图元为输入，可以增删顶点；<code>maxvertexcount</code> 必须声明。</li>
+  <li>广告牌是 GS 的典型应用：CPU 提交一个点，GPU 扩成朝向相机的 quad。</li>
+  <li>纹理数组用一个索引在多张贴图之间选择，常配合 <code>SV_PrimitiveID</code> 或顶点属性。</li>
+  <li>A2C 把 alpha 转成 MSAA 覆盖率，能避免 alpha 混合的排序问题，但<b>必须同时启用 MSAA</b>。</li>
+  <li>GS 会打破后变换顶点缓存，在多数硬件上并不便宜；能用实例化解决的场景优先用实例化。</li>
+</ul>
+
+<Figure src="images/Fig12-10.jpg" alt="二十面体细分并把顶点投影回单位球" figureNumber="图 12.10" caption="二十面体细分并把顶点投影回单位球。" />
+
+<Checkpoint
+  chapterId="ch12"
+  intro="答对第 3 题（共 4 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch12-a1',
+      question: '几何着色器与顶点着色器最本质的区别是？',
+      options: ['GS 能读纹理', 'GS 以整个图元为输入，可以增删顶点', 'GS 更快', 'GS 只能处理点图元'],
+      answer: 1,
+      explanation: 'VS 一次处理一个顶点、不知道图元长什么样；GS 一次拿到整个图元，可以输出 0 个、1 个或多个顶点。',
+    },
+    {
+      id: 'ch12-a2',
+      question: 'maxvertexcount 省略会怎样？',
+      options: ['默认 4 个', '默认 1024 个', '着色器编译失败', '运行时自动推断'],
+      answer: 2,
+      explanation: 'maxvertexcount 是必须给出的属性，省略会导致编译失败。它决定一次 GS 调用最多能输出多少顶点。',
+    },
+    {
+      id: 'ch12-a3',
+      question: '要让 Alpha-to-Coverage 真正生效，必须？',
+      options: ['只开 A2C 即可', '同时启用 MSAA', '关闭深度写入', '使用纹理数组'],
+      answer: 1,
+      explanation: 'A2C 的原理是把 alpha 映射成 MSAA 的子采样覆盖率，没有多个子采样点就没有覆盖率，所以必须同时启用 MSAA。',
+    },
+    {
+      id: 'ch12-a4',
+      question: '用纹理数组的好处是？',
+      options: ['纹理更小', '一次绘制调用就能选择多张贴图，减少状态切换', '提高过滤质量', '自动生成 mip'],
+      answer: 1,
+      explanation: '纹理数组把多张贴图放进一个资源，用一个索引选择，因此可以在同一个绘制调用里画出多种树，减少资源绑定切换。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch12"
+  title="改树的尺寸或数量并运行"
+  goal="在 TreeBillboards 示例里改一处参数，确认 GS 输出的 quad 随之变化。"
+  steps={[
+    '打开 Chapter 12 The Geometry Shader/TreeBillboards 的 .sln，生成并运行（图 12.5）。',
+    '改某个树顶点的 SizeW（宽高），确认这棵树的广告牌变大或变小。',
+    '增加或减少树的数量，确认 CPU 只提交了更多的「点」而不是更多顶点缓冲。',
+    '（可选）把 A2C 关掉并关闭 MSAA，对比树叶边缘的差异。',
+  ]}
+  expected="改 SizeW 后对应树的广告牌尺寸变化；改数量后树的棵数变化，但每个树的顶点数据仍然只是一个点。"
+  verify={[
+    '我跑通了 TreeBillboards 示例。',
+    '我改了树的尺寸或数量并看到画面变化。',
+    '我能说出 CPU 为每个树提交了哪些数据。',
+  ]}
+/>
+</section>

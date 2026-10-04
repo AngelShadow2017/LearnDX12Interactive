@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 23 章 角色动画 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第三部分 进阶主题</div>
+    <h1>第 23 章 角色动画</h1>
+    <div class="sub en-title">Character Animation</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s231">23.1 层级框架</a></li>
+      <li><a href="#s232">23.2 蒙皮网格</a></li>
+      <li><a href="#s233">23.3 顶点混合</a></li>
+      <li><a href="#s234">23.4 从文件加载动画数据</a></li>
+      <li><a href="#s235">23.5 角色动画演示</a></li>
+      <li><a href="#s236">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第三部分 · 进阶主题</span>
+      <span class="badge green">对应示例：Skinned Mesh Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解骨骼的层级框架（Frame Hierarchy）与 to-root 变换；</li>
+        <li>掌握蒙皮网格、绑定姿势、偏移变换等概念；</li>
+        <li>实现顶点混合（vertex blending）让关节平滑弯曲；</li>
+        <li>从文件加载骨骼与关键帧动画，驱动角色动起来。</li>
+      </ul>
+      <p class="lead">全书的压轴章：把数学、渲染、四元数全部用上，让一个蒙皮角色真正"动起来"。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s231">23.1 层级框架（Frame Hierarchies）</h2>
+      <p>骨骼是<b>树</b>：根（髋）→ 脊柱 → 头/四肢 → 手指。移动父骨骼，所有子孙跟着动——每根骨骼的变换由"父链"累积：toRoot 变换 = toParent(自身) × 父 toRoot（递归到根）。书中用树的图 + 简单层级示例讲解计算顺序（从根深度优先遍历即可）。多根/兄弟分支按同样的 toParent 逻辑串联。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s232">23.2 蒙皮网格（Skinned Meshes）</h2>
+      <p>角色网格 = "皮肤"，骨骼在皮肤内部（顶点大多不在骨骼上）。引入两个关键变换：</p>
+      <ul>
+        <li><b>绑定姿势（bind pose）：</b>建模时角色摆的姿势（T-pose 等），此时记录每根骨骼的世界变换（bind 变换）；</li>
+        <li><b>偏移变换（offset transform）：</b>把顶点从"绑定姿势空间"变回"骨骼本地空间"：offset = toRoot(bind)⁻¹；</li>
+        <li><b>蒙皮流程：</b>顶点先乘 offset 回骨骼本地 → 再乘骨骼<b>当前</b>的 toRoot → 顶点便"粘"在骨骼上随骨骼移动。两者相乘的最终矩阵叫<b>最终变换</b>，每帧计算填入"矩阵调色板（matrix palette）"传给着色器。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s233">23.3 顶点混合（Vertex Blending）</h2>
+      <p>肘部/膝盖这类关节：若顶点只属于一根骨骼，弯曲处会撕裂出"裂缝"。解决：关节附近的顶点<b>同时受多根骨骼影响</b>，按权重混合：</p>
+      <div class="formula">v' = w₀·v·F₀ + w₁·v·F₁ + …&nbsp;&nbsp;（Σw = 1）</div>
+      <p>顶点属性附带：骨骼索引（最多 4 根）+ 权重。着色器里用索引查矩阵调色板、加权求和——这就是蒙皮着色器的核心。混合让关节处皮肤"拉伸过渡"，书中对比图非常直观。</p>
+      <pre class="code"><span class="cm">// 蒙皮顶点结构（节选）</span>
+<span class="kw">struct</span> SkinnedVertex {
+  float3 Pos; float3 Normal; float2 Tex;
+  float3 Weights;   <span class="cm">// w0 w1 w2（w3 = 1−Σ）</span>
+  BYTE    BoneIndices[4]; <span class="cm">// 受哪些骨骼影响</span>
+};
+<span class="cm">// VS 里（简化）</span>
+float4 pos = mul(float4(vin.Pos,1), gBoneTransforms[vin.Indices[0]]) * vin.Weights.x
+           + mul(float4(vin.Pos,1), gBoneTransforms[vin.Indices[1]]) * vin.Weights.y + ...;</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="s234">23.4 从文件加载动画数据（Loading Animation Data from File）</h2>
+      <p>书中自定义 .m3d 文本格式（含骨架、材质、子网格、动画片段），讲解如何解析：骨骼层级（父子索引）、每骨骼的关键帧（时间 + 位移 + 四元数旋转 + 缩放）、每个顶点的骨骼索引权重。运行时：当前时间落在哪两个关键帧之间 → 对位移 lerp、对<b>旋转用四元数 slerp</b>（第 22 章的直接应用）→ 插出中间姿势。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s235">23.5 角色动画演示（Character Animation Demo）</h2>
+      <p>Skinned Mesh demo：加载带骨骼的角色，循环播放走路动画，骨骼链可见地带动皮肤平滑变形。实现清单：每帧更新 toRoot → 计算最终变换 → 填调色板常量缓冲 → 蒙皮 VS 绘制。至此全书技术闭环：数学（1–3、22）→ 管线（5–7）→ 光影细节（8–11、18–21）→ GPU 编程（12–14）→ 动画（15、22–23）。</p>
+      <div class="tip"><b>💡 读完做实验：</b>改动画速度；在两个动画片段间做混合过渡；给骨骼加 IK 式的手动旋转。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章 · 恭喜读完全书！🎉</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s236">本章小结</h2>
+      <ul>
+        <li>骨骼树 + toParent/toRoot 变换 = 层级动画。</li>
+        <li>蒙皮 = offset 变换（回绑定骨骼空间）+ 当前 toRoot；最终变换每帧入调色板。</li>
+        <li>顶点混合（≤4 骨骼 + 归一权重）解决关节撕裂。</li>
+        <li>关键帧插值：位移 lerp、旋转 slerp。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（12 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig23-1.jpg" alt="Fig23-1.jpg"><figcaption>图23.1 层级变换：父骨骼的变换影响自身与所有子孙。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-2.jpg" alt="Fig23-2.jpg"><figcaption>图23.2 用更复杂的树形层级建模双足人形角色（下箭头表示"长子"关系）。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-3.jpg" alt="Fig23-3.jpg"><figcaption>图23.3 一个简单的层级示例。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-4.jpg" alt="Fig23-4.jpg"><figcaption>图23.4 每根骨骼的几何相对自身局部坐标系描述。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-5.jpg" alt="Fig23-5.jpg"><figcaption>图23.5 各坐标系在同一空间中，因此可以相互转换（toParent/toRoot）。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-6.jpg" alt="Fig23-6.jpg"><figcaption>图23.6 角色网格：高亮骨链是骨骼；深色多边形表示被这些骨骼影响的皮肤顶点。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-7.jpg" alt="Fig23-7.jpg"><figcaption>图23.7 先用偏移变换把顶点从绑定空间变到骨骼本地空间，再乘当前 toRoot。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-8.jpg" alt="Fig23-8.jpg"><figcaption>图23.8 皮肤是覆盖两根骨骼的连续网格：关节附近的顶点同时受两根骨骼影响。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-9.jpg" alt="Fig23-9.jpg"><figcaption>图23.9 矩阵调色板存放每根骨骼的最终变换：顶点的 4 个骨骼索引查表加权。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-10.jpg" alt="Fig23-10.jpg"><figcaption>图23.10 按子集划分的汽车网格（各子集材质不同，也可挂不同纹理）。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-11.jpg" alt="Fig23-11.jpg"><figcaption>图23.11 "Skinned Mesh" 演示截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig23-12.jpg" alt="Fig23-12.jpg"><figcaption>图23.12 简单的网格层级。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch22.html"><span class="dir">← 上一章</span>第 22 章 四元数</a>
+      <a class="next" href="index.html"><span class="dir">返回 →</span>目录 · 记录你的学习进度</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

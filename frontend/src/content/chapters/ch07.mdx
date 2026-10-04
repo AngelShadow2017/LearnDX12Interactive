@@ -1,0 +1,218 @@
+import { FrameResourceActivity } from '@/activities/FrameResourceActivity';
+import { GridMeshActivity } from '@/activities/GridMeshActivity';
+
+<section className="lesson-section lesson-section--intro" id="s71">
+<h2>7.1 帧资源</h2>
+
+<p>第 4 章的 CPU/GPU 同步问题在这一章落到实处：因为每帧都要更新常量缓冲，而 GPU 可能还在读上一帧的，所以必须为<b>每一帧准备一份独立资源</b>。</p>
+
+<p>一个 <code>FrameResource</code> 通常包含：</p>
+
+<ul>
+  <li>一个命令分配器（<code>ID3D12CommandAllocator</code>）——命令列表 Reset 需要它；</li>
+  <li>一份常量缓冲上传堆（物体常量、Pass 常量、材质常量）；</li>
+  <li>一个 fence 值，记录「GPU 完成到哪一步」。</li>
+</ul>
+
+<Callout tone="warning">
+  <b>帧资源数量必须大于 CPU 领先帧数</b>
+  <p>CPU 领先 k 帧时，它写的是 k 帧之后的缓冲。帧资源数量 ≤ k 时必然与 GPU 正在读的那一块撞车。示例框架用 3 个帧资源、CPU 最多领先 2 帧。</p>
+</Callout>
+
+<FrameResourceActivity />
+</section>
+
+<section className="lesson-section" id="s72">
+<h2>7.2 渲染项</h2>
+
+<p>场景里每个物体都需要「用哪个网格、哪个材质、世界矩阵是多少、要更新哪个常量缓冲槽位」。<b>渲染项</b>（RenderItem）把这些打包成一个结构，绘制时遍历即可。</p>
+
+<CodeSample
+  title="渲染项的定义"
+  language="cpp"
+  code={`struct RenderItem
+{
+    RenderItem() = default;
+
+    // 世界矩阵与它是否发生变化
+    XMFLOAT4X4 World = MathHelper::Identity4x4();
+    int NumFramesDirty = gNumFrameResources;   // 新建时要给每个帧资源都更新一次
+
+    // 指向共享的网格与材质
+    MeshGeometry* Geo = nullptr;
+    Material* Mat = nullptr;
+
+    // 图元拓扑与绘制参数
+    D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+    UINT IndexCount = 0;
+    UINT StartIndexLocation = 0;
+    int BaseVertexLocation = 0;
+
+    // 这个物体在物体常量缓冲里的槽位
+    UINT ObjCBIndex = -1;
+};`}
+  input={<>已创建的网格（<code>MeshGeometry</code>）与材质（<code>Material</code>）。</>}
+  keyLines={[
+    { code: 'NumFramesDirty = gNumFrameResources', note: '新建/移动过的物体要给每个帧资源的常量缓冲都写一次，否则会有帧资源拿到旧数据。' },
+    { code: 'MeshGeometry* Geo / Material* Mat', note: '网格与材质是共享资源，渲染项只存指针。' },
+    { code: 'ObjCBIndex', note: '该物体在物体常量缓冲数组里的下标，绘制时用它算字节偏移。' },
+  ]}
+  output={<>遍历渲染项列表就能绘制整个场景；每帧只需要给 NumFramesDirty 大于 0 的项更新常量缓冲。</>}
+  pitfalls={[
+    '新建渲染项时忘记设置 NumFramesDirty：部分帧资源拿到未初始化的常量数据。',
+    '物体移动后没有把 NumFramesDirty 重置：画面里物体不动。',
+    '把网格数据复制进每个渲染项：应该用指针共享。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s73">
+<h2>7.3 Pass 常量</h2>
+
+<p>不是每个物体都变的东西（视图投影矩阵、相机位置、时间、雾参数）放在 <b>Pass 常量</b>里，每帧只更新一次，所有绘制共用。</p>
+
+<Callout tone="tip">
+  <b>三类常量怎么分</b>
+  <p><b>物体常量</b>：每个物体一份（世界矩阵、材质索引）；<b>Pass 常量</b>：每帧一份（视图投影、时间、相机位置）；<b>材质常量</b>：每种材质一份（漫反射颜色、粗糙度）。分清楚之后，每帧要上传的数据量最小。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s74">
+<h2>7.4 形状几何</h2>
+
+<p>这一节讲程序化生成网格：圆柱、球、测地球，以及地形格网。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig7-1.jpg" alt="8 切片 × 4 层的圆柱与更精细的圆柱" figureNumber="图 7.1" caption="左：8 切片 × 4 层的圆柱；右：更多切片与层的更精细圆柱。" />
+  <Figure src="images/Fig7-2.jpg" alt="第 i、i+1 环与第 j 切片之间的顶点 A、B、C、D" figureNumber="图 7.2" caption="第 i、i+1 环与第 j 切片之间的顶点 A、B、C、D。" />
+</div>
+<div className="figure-pair">
+  <Figure src="images/Fig7-3.jpg" alt="切片与层的概念同样适用于球体" figureNumber="图 7.3" caption="切片与层的概念同样适用于球体，控制细分程度。" />
+  <Figure src="images/Fig7-4.jpg" alt="用反复细分并投影回球面近似测地球" figureNumber="图 7.4" caption="用反复细分 + 投影回球面近似测地球（geosphere）。" />
+</div>
+
+<Figure src="images/Fig7-5.jpg" alt="把一个三角形细分为四个等面积三角形" figureNumber="图 7.5" caption="把一个三角形细分为四个等面积三角形。" />
+
+<GridMeshActivity />
+</section>
+
+<section className="lesson-section" id="s75">
+<h2>7.5 Shapes 演示</h2>
+
+<p>Shapes 演示把多个不同几何体放进同一个场景：圆柱、球、锥体等，并用不同的世界矩阵摆放它们（图 7.6）。这一节的重点是<b>一个顶点缓冲装下所有网格</b>，每个 <code>Submesh</code> 用起始偏移区分。</p>
+
+<Figure src="images/Fig7-6.jpg" alt="Shapes 演示截图" figureNumber="图 7.6" caption='"Shapes" 演示截图。' />
+</section>
+
+<section className="lesson-section" id="s76">
+<h2>7.6 根签名进阶</h2>
+
+<p>这一节把根签名从「一个 CBV」扩展成多参数版本，并引入<b>描述符表</b>（descriptor table）与根描述符、根常量的区别。</p>
+
+<ul>
+  <li><b>根常量</b>（root constant）：直接内联在命令里，最便宜，容量很小。</li>
+  <li><b>根描述符</b>（root CBV/SRV/UAV）：直接放一个 GPU 虚拟地址，无需描述符堆，但数量受限。</li>
+  <li><b>描述符表</b>：指向描述符堆里的一段连续范围，适合一批纹理/材质（第 15 章动态索引会用到）。</li>
+</ul>
+
+<Callout tone="note">
+  <b>限制</b>
+  <p>根签名总大小上限是 64 个 DWORD。把大量资源塞进根签名会超出限制，也会降低性能；纹理这类成批资源应走描述符表。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s77">
+<h2>7.7 Land 与 Waves 演示</h2>
+
+<p>Land and Waves 演示（图 7.7）把地形格网和动态波浪结合起来：地形顶点在初始化时算好，波浪顶点每帧在 CPU 上更新并重新上传到顶点缓冲。</p>
+
+<Figure src="images/Fig7-7.jpg" alt="Land and Waves 演示截图" figureNumber="图 7.7" caption='"Land and Waves" 演示截图（尚无光照，只能靠顶点色区分）。' />
+
+<Figure src="images/Fig7-8.jpg" alt="在 xz 平面铺格网，再对每个格点代入高度函数" figureNumber="图 7.8" caption="上：在 xz 平面铺格网；下：对每个格点代入 f(x,z) 得到高度，生成地形。" />
+
+<div className="figure-pair">
+  <Figure src="images/Fig7-9.jpg" alt="格网的构建过程" figureNumber="图 7.9" caption="格网的构建过程。" />
+  <Figure src="images/Fig7-10.jpg" alt="第 ij 个格子的顶点索引布局" figureNumber="图 7.10" caption="第 ij 个格子的顶点索引布局。" />
+</div>
+
+<Callout tone="tip">
+  <b>动态顶点缓冲也要按帧资源分开</b>
+  <p>波浪顶点每帧变化，同样面临 CPU/GPU 竞争。示例给每个帧资源各准备一份动态顶点缓冲，更新自己的那一份。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s78">
+<h2>本章小结</h2>
+
+<ul>
+  <li>帧资源为每帧提供独立的命令分配器与常量缓冲；数量必须大于 CPU 领先帧数。</li>
+  <li>渲染项把「网格 + 材质 + 世界矩阵 + 常量槽位」打包，绘制时遍历即可。</li>
+  <li>常量分三类：物体常量、Pass 常量、材质常量，分别按物体、按帧、按材质更新。</li>
+  <li>程序化网格：格网顶点数 = (m+1)(n+1)，索引数 = m·n·6；圆柱与球用切片/层控制密度。</li>
+  <li>多个网格可以放进同一个顶点缓冲，用 <code>Submesh</code> 的起始偏移区分。</li>
+  <li>根签名有三种参数形式：根常量、根描述符、描述符表；总大小上限 64 DWORD。</li>
+  <li>动态顶点缓冲（波浪）也要按帧资源分开，避免与 GPU 竞争。</li>
+</ul>
+
+<Figure src="images/Fig7-11.jpg" alt="习题 4 的渲染输出" figureNumber="图 7.11" caption="习题 4 的渲染输出。" />
+
+<Checkpoint
+  chapterId="ch07"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch07-a1',
+      question: '为什么每个帧资源需要自己的命令分配器？',
+      options: ['因为命令分配器很便宜', '因为命令列表 Reset 时分配器不能被 GPU 占用', '因为可以并行执行多条命令', '因为 D3D12 限制只有 3 个分配器'],
+      answer: 1,
+      explanation: 'Reset 一条命令列表会重用它的命令分配器，而 GPU 可能还在执行分配器里的命令。所以每个帧资源要自带分配器。',
+    },
+    {
+      id: 'ch07-a2',
+      question: '一个 10 × 10 的格网（格子数）有多少顶点和索引？',
+      options: ['100 顶点，600 索引', '121 顶点，600 索引', '121 顶点，300 索引', '100 顶点，200 索引'],
+      answer: 1,
+      explanation: '顶点在格点上：(10+1)(10+1) = 121；索引每格 6 个：10·10·6 = 600。',
+    },
+    {
+      id: 'ch07-a3',
+      question: '新建或移动一个渲染项后，NumFramesDirty 应该设成多少？',
+      options: ['0', '1', '帧资源数量', '物体数量'],
+      answer: 2,
+      explanation: '每个帧资源都有一份常量缓冲，所以要给每一份都写一次，也就是设为帧资源数量。',
+    },
+    {
+      id: 'ch07-a4',
+      question: '下面哪一项属于 Pass 常量？',
+      options: ['某个物体的世界矩阵', '视图投影矩阵与时间', '某种材质的漫反射颜色', '某个网格的顶点数据'],
+      answer: 1,
+      explanation: 'Pass 常量是每帧一份、所有绘制共用的数据：视图投影矩阵、相机位置、时间、雾参数。世界矩阵是物体常量，漫反射颜色是材质常量。',
+    },
+    {
+      id: 'ch07-a5',
+      question: '波浪顶点每帧在 CPU 上更新，正确的做法是？',
+      options: ['所有帧共用一份动态顶点缓冲', '每个帧资源各有一份动态顶点缓冲', '每次更新都 FlushCommandQueue', '用常量缓冲代替顶点缓冲'],
+      answer: 1,
+      explanation: '动态顶点缓冲同样面临 CPU/GPU 竞争，所以要按帧资源分开。每次都 Flush 会牺牲并行度。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch07"
+  title="改一个几何或波浪参数，核对运行画面"
+  goal="在 Shapes 或 Land/Waves 示例里改一处参数，确认画面按预期变化，并说明这个改动经过哪条数据路径。"
+  steps={[
+    '打开 Chapter 7 Drawing in Direct3D Part II 下的 Shapes 或 Land and Waves 工程，生成并运行。',
+    'Shapes：把某个几何体的切片数或层数调高，确认网格变精细。',
+    'Land and Waves：把波浪的振幅、频率或速度改小，确认水面起伏变化。',
+    '说明这次改动影响的是顶点数据还是常量数据，以及它在哪一帧资源里被更新。',
+  ]}
+  expected="Shapes 里网格变精细；Land and Waves 里水面起伏按新参数变化。改波浪参数走的是动态顶点缓冲（按帧资源各一份），改相机或时间走 Pass 常量。"
+  verify={[
+    '我跑通了其中一个示例。',
+    '我改了一个参数并看到画面变化。',
+    '我能说出这次改动走的是顶点数据还是常量数据。',
+  ]}
+/>
+</section>

@@ -1,0 +1,93 @@
+import { Win32MessageLoop } from '@/activities/appendix/Win32MessageLoop';
+import { HlslReference } from '@/activities/appendix/HlslReference';
+import { MathIndex } from '@/activities/appendix/MathIndex';
+import { ExerciseAnswers } from '@/activities/appendix/ExerciseAnswers';
+import exercises from '@/content/appendixExercises';
+
+<section className="lesson-section lesson-section--intro" id="appendix-a">
+<h2>附录 A · Windows 编程</h2>
+
+<p>不熟悉 Win32 也没关系——本书的示例框架 <code>Common/d3dApp.h</code> 已经把消息循环封装好了。这里把它拆开讲一遍，是因为它决定了「什么时候该更新、什么时候该绘制」。</p>
+
+<Win32MessageLoop />
+
+<Callout tone="note">
+  <b>Win32 里的 RAII 习惯</b>
+  <p>书里的代码常用 <code>wrl/client.h</code> 里的 <code>ComPtr</code>（智能指针）和 <code>wrl/event.h</code> 里的 <code>Event</code>（RAII 事件对象）来管理资源生命周期。两者都不需要显式释放，出作用域自动收尾。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="appendix-b">
+<h2>附录 B · HLSL 速查</h2>
+
+<p>语义名大小写敏感，写错时不会报错，只会让对应变量全变成 0——这是新手最难查的一类 bug。下面这张表按管线阶段整理了本书用到的全部系统值与资源类型。</p>
+
+<HlslReference />
+
+<Callout tone="warning">
+  <b>行主序 vs 列主序</b>
+  <p>DirectXMath 是<b>行主序 + 行向量</b>（<code>v · M</code>），HLSL 默认按<b>列主序</b>存放矩阵。所以从 C++ 上传矩阵时通常要 <code>XMMatrixTranspose</code>，或者在 HLSL 里显式声明 <code>row_major</code>。忘了这一步，立方体会歪。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="appendix-c">
+<h2>附录 C · 数学与几何索引</h2>
+
+<p>遇到症状时先来这里反查。勾选「只看数学相关」可以筛出第 1—3 章与第 22 章。</p>
+
+<MathIndex />
+
+<h3>解析几何速查</h3>
+
+<p>下面几条在本书各章都会用到。</p>
+
+<div className="math-block">射线与三角形（Möller–Trumbore，第 17 章）<br />命中条件：u ≥ 0，v ≥ 0，u + v ≤ 1，t &gt; 0</div>
+
+<ul>
+  <li><b>点积判角度</b>：<code>dot(n, l)</code> 的符号告诉你光源在正面还是背面；<code>max(..., 0)</code> 截断（朗伯余弦定律，第 8 章）。</li>
+  <li><b>平面方程</b>：法线 n 通过点 p₀，则 <code>n · (x − p₀) = 0</code>，即 <code>n · x + d = 0</code>，其中 d = −n · p₀。视锥的六个平面就是从视投影矩阵的行列组合出来的（第 16 章）。</li>
+  <li><b>点到平面的有符号距离</b>：<code>n · p + d</code>（n 为单位法线）。这就是包围球与视锥判定的全部（第 16 章）。</li>
+  <li><b>反射</b>：<code>r = d − 2(d · n)n</code>（第 8、18 章）。</li>
+  <li><b>齐次裁剪</b>：D3D12 的裁剪条件是 <code>0 ≤ z ≤ w</code> 且 <code>−w ≤ x, y ≤ w</code>（第 5 章）。</li>
+  <li><b>旋转的两种表示</b>：欧拉角（会有万向锁）↔ 单位四元数（无漂移），转换公式见第 22 章。</li>
+</ul>
+</section>
+
+<section className="lesson-section" id="appendix-d">
+<h2>附录 D · 习题提示</h2>
+
+<p>每题先给提示、再给答案。<b>先自己推一遍再看答案</b>，否则和直接看答案没有区别。</p>
+
+<ExerciseAnswers exercises={exercises} />
+</section>
+
+<section className="lesson-section" id="appendix-e">
+<h2>附录 E · 延伸阅读</h2>
+
+<p>下面是原书参考文献里最值得先读的几条，以及今天更实用的官方资料。书末的完整文献列表涵盖从图形学经典论文到各家 GPU 厂商的技术演示。</p>
+
+<h3>先读这几条</h3>
+
+<ul>
+  <li><b>Angel, Interactive Computer Graphics: A Top-Down Approach with OpenGL</b>——图形学基础最经典的一本。第 1—3 章的数学部分讲得比本书更细。</li>
+  <li><b>Blinn, Jim Blinn's Corner</b>——光栅化、阴影、纹理等主题的经典专栏合集，适合按需查阅。</li>
+  <li><b>Blinn &amp; Newell, "Clipping using Homogeneous Coordinates"（SIGGRAPH '78）</b>——齐次裁剪的原始论文，第 5 章裁剪部分的理论出处。</li>
+  <li><b>de Berg 等, Computational Geometry</b>——第 17 章的射线求交与其他几何算法想深入时的标准参考。</li>
+</ul>
+
+<h3>今天的官方资料（比原书链接更可靠）</h3>
+
+<ul>
+  <li><a href="https://learn.microsoft.com/windows/win32/direct3d12/direct3d-12-sdk-portal" target="_blank" rel="noreferrer">Direct3D 12 SDK 文档总入口</a>（原书指向的 MSDN 链接已迁移）</li>
+  <li><a href="https://learn.microsoft.com/windows/win32/dxmath/directxmath-portal" target="_blank" rel="noreferrer">DirectXMath 文档</a>——<b>明确说明它是全内联的纯头文件库，没有需要链接的 .lib</b></li>
+  <li><a href="https://learn.microsoft.com/windows/win32/direct3d12/directx-12-programming-environment-set-up" target="_blank" rel="noreferrer">DirectX 12 开发环境搭建</a>——核对本书「书中版本」提示的权威依据</li>
+  <li><a href="https://learn.microsoft.com/windows/win32/api/d3d12/ns-d3d12-d3d12_rasterizer_desc" target="_blank" rel="noreferrer">D3D12_RASTERIZER_DESC</a>——<b>裁剪条件 0 ≤ z ≤ w</b> 的出处</li>
+  <li><a href="https://github.com/d3dcoder/d3d12book" target="_blank" rel="noreferrer">本书示例仓库</a>——注意仓库里没有第 3 章与第 5 章的独立项目</li>
+  <li><a href="https://devblogs.microsoft.com/directx/" target="_blank" rel="noreferrer">DirectX Developer Blog</a>——PIX 更新、DirectX 12 新特性说明</li>
+</ul>
+
+<Callout tone="tip">
+  <b>推荐工具</b>
+  <p><b>PIX</b>（Windows 可选功能里的 Graphics Tools）可以逐帧查看命令列表、资源状态与 GPU 时间线；<b>RenderDoc</b> 可以抓帧并编辑着色器变量。做本书练习时，遇到「说不清为什么」的问题，先抓一帧看看。</p>
+</Callout>
+</section>

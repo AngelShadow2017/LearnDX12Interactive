@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 9 章 纹理 | 《DirectX 12 3D 游戏编程入门》中文学习站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <div class="crumbs"><a href="index.html">← 返回目录</a> · 第二部分 Direct3D 基础</div>
+    <h1>第 9 章 纹理</h1>
+    <div class="sub en-title">Texturing</div>
+  </div>
+</header>
+
+<main class="wrap page">
+  <aside class="toc">
+    <h4>本页小节</h4>
+    <ol>
+      <li><a href="#s92">9.2 纹理坐标</a></li>
+      <li><a href="#s94">9.4 创建并启用纹理</a></li>
+      <li><a href="#s95">9.5 过滤器</a></li>
+      <li><a href="#s96">9.6 寻址模式</a></li>
+      <li><a href="#s97">9.7 采样器</a></li>
+      <li><a href="#s99">9.9 Crate 演示</a></li>
+      <li><a href="#s910">9.10 纹理变换</a></li>
+      <li><a href="#s911">9.11 Land Tex 与 Waves 演示</a></li>
+      <li><a href="#s912">小结</a></li>
+    </ol>
+  </aside>
+
+  <div>
+    <div class="chaphead">
+      <span class="badge">第二部分 · Direct3D 基础</span>
+      <span class="badge green">对应示例：Crate / LandTex / TexWaves Demo</span>
+    </div>
+
+    <section class="card">
+      <h2>本章学习目标（Objectives）</h2>
+      <ul>
+        <li>理解纹理坐标与把图像"贴"到三角形上的原理；</li>
+        <li>创建纹理资源、上传图像数据、用 SRV 在着色器中采样；</li>
+        <li>掌握放大/缩小过滤与 mip 贴图、四种寻址模式；</li>
+        <li>配置采样器（Sampler）；给地形与水面贴图。</li>
+      </ul>
+      <p class="lead">光照解决"明暗"，纹理解决"细节"。一块石头模型的凹凸斑驳全靠贴图——GPU 显存的主体就是纹理。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s92">9.2 纹理坐标（Texture Coordinates）</h2>
+      <p>纹理是 2D 图像，坐标系 u 沿右、v 沿下，范围 [0,1]²（浮点可超界，交给寻址模式）。给每个顶点一对 (u,v)，三角形内部像素的 uv 由插值得到——相当于把纹理图上的三角形区域"拉伸粘贴"到 3D 三角形上。<b>图集（Atlas）</b>技巧：一张大图存多个子图，各顶点 uv 指到对应区域，减少纹理切换。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s94">9.4 创建并启用纹理（Creating and Enabling a Texture）</h2>
+      <ol>
+        <li>用 <code class="inline">DDSTextureLoad</code>（书中示例库）从 .dds 文件读图像数据；</li>
+        <li>创建<b>默认堆纹理资源</b>（ID3D12Resource，堆类型 DEFAULT）+ 上传堆拷贝；</li>
+        <li>为它创建 <b>SRV（Shader Resource View，着色器资源视图）</b>放进描述符堆；</li>
+        <li>根签名加描述符表参数（t0），绘制时 <code class="inline">SetGraphicsRootDescriptorTable</code>；</li>
+        <li>PS 里声明 <code class="inline">Texture2D gDiffuseMap : register(t0); SamplerState : register(s0);</code> 后采样。</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2 id="s95">9.5 过滤器（Filters）</h2>
+      <p>屏幕像素 rarely 对齐纹素（texel），采样要"插值"：</p>
+      <ul>
+        <li><b>放大（Magnification）：</b>1 纹素覆盖多像素。最近点采样（点采样，块状）vs <b>双线性（Linear）</b>（4 邻域加权，平滑）；</li>
+        <li><b>缩小（Minification）：</b>多纹素压进 1 像素会闪烁/摩尔纹。<b>mip 贴图</b>：预生成逐级减半的纹理链（原图的 1/2、1/4……），根据导数自动选层级；三线性（在相邻 mip 间再插值）消除层级切换硬边；</li>
+        <li><b>各向异性（Anisotropic）</b>：倾斜视角（如看地面远处）质量最高，成本也最高。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s96">9.6 寻址模式（Address Modes）</h2>
+      <p>uv 超出 [0,1] 怎么办，四种模式：</p>
+      <ul>
+        <li><b>Wrap（重复）：</b>取小数部分——瓷砖铺地最常用；</li>
+        <li><b>Border（边框）：</b>超出部分用指定边框色（渲染调试时超界一秒现形）；</li>
+        <li><b>Clamp（钳制）：</b>钳到边界像素——拉伸边缘；</li>
+        <li><b>Mirror（镜像）：</b>镜像重复。</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2 id="s97">9.7 采样器（Sampler Objects）</h2>
+      <p>采样器把"过滤方式 + 寻址模式 + mip 参数"打包。DX12 里采样器既可用静态采样器（打包进根签名，最多 16 个），也可用动态采样器描述符堆（第 3 版书用静态）。配置示例：</p>
+      <pre class="code">CD3DX12_STATIC_SAMPLER_DESC wrap linearWrap(
+  0,                               <span class="cm">// 着色器寄存器 s0</span>
+  D3D12_FILTER_MIN_MAG_MIP_LINEAR, <span class="cm">// 三线性过滤</span>
+  D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+  D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+  D3D12_TEXTURE_ADDRESS_MODE_WRAP);</pre>
+    </section>
+
+    <section class="card">
+      <h2 id="s99">9.9 Crate 演示</h2>
+      <p>给立方体贴木箱纹理：顶点加 uv 字段，PS 里 <code class="inline">gDiffuseMap.Sample(gsamLinear, pin.Tex)</code> 采样替换顶点色。光照 + 纹理 = 书中目前最好看的画面。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s910">9.10 纹理变换（Transforming Textures）</h2>
+      <p>uv 也可以乘矩阵（平移/旋转/缩放 uv 空间）：贴图滚动（流水/传送带）、旋转、重复缩放都在着色器里乘一个 TexTransform 矩阵实现。</p>
+    </section>
+
+    <section class="card">
+      <h2 id="s911">9.11 Land Tex 与 Waves 演示</h2>
+      <p><b>LandTex：</b>山丘格网按世界坐标生成 uv（x·缩放, z·缩放），草砖纹理平铺——Wrap 模式的实战；顶点色再按高度混合出雪山效果。<b>TexWaves：</b>水面滚动 uv（时间驱动纹理变换）让海水"流动"。书中还演示了<b>程序化 mip 链</b>（每级不同颜色）帮助理解 mip 的作用，以及两张纹理逐纹素相乘的技巧（第 17 章拾取标记要用）。</p>
+      <div class="tip"><b>💡 读完做实验：</b>切换四种寻址模式；把过滤器换成点采样对比；给 Crate 的 uv 整体 ×2 看 Wrap 重复。</div>
+      <div class="done-row"><label><input type="checkbox"> 读完本章</label></div>
+    </section>
+
+    <section class="card">
+      <h2 id="s912">本章小结</h2>
+      <ul>
+        <li>顶点 uv + 插值 = 把 2D 图贴到 3D 面；图集省纹理切换。</li>
+        <li>SRV 让着色器读到纹理；采样器管过滤与寻址。</li>
+        <li>缩小用 mip 贴图（三线性），倾斜视角用各向异性。</li>
+        <li>寻址模式：Wrap / Clamp / Mirror / Border。</li>
+        <li>纹理变换矩阵驱动 uv 动画。</li>
+      </ul>
+    </section>
+
+    <details class="gallery"><summary>🖼️ 原书插图（20 张，点击展开）</summary><div class="gallery-grid"><figure><img loading="lazy" src="images/Fig9-1.jpg" alt="Fig9-1.jpg"><figcaption>图9.1 Crate 演示：给立方体贴上木箱纹理。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-2.jpg" alt="Fig9-2.jpg"><figcaption>图9.2 纹理坐标系（也叫纹理空间）：u 沿右、v 沿下，范围 [0,1]²。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-3.jpg" alt="Fig9-3.jpg"><figcaption>图9.3 左：3D 空间中的三角形；右：纹理上定义的 2D 三角形区域将被映射过去。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-4.jpg" alt="Fig9-4.jpg"><figcaption>图9.4 纹理图集：一张大纹理存四个子纹理，各顶点 uv 指向各自区域。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-6.jpg" alt="Fig9-6.jpg"><figcaption>图9.6 四个纹素点 c_ij、c_(i,j+1)、c_(i+1,j)、c_(i+1,j+1)：用双线性插值近似中间点 c 的颜色。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-7.jpg" alt="Fig9-7.jpg"><figcaption>图9.7 放大立方体木箱纹理：左为最近点采样（块状），右为双线性（平滑）。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-8.jpg" alt="Fig9-8.jpg"><figcaption>图9.8 mip 链：每一级都是上一级尺寸减半的低细节版本。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-9.jpg" alt="Fig9-9.jpg"><figcaption>图9.9 木箱顶面几乎垂直于视口：左（线性过滤）摩尔纹闪烁，右（自动 mip）干净。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-10.jpg" alt="Fig9-10.jpg"><figcaption>图9.10 Wrap 寻址模式：uv 取小数部分重复平铺。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-11.jpg" alt="Fig9-11.jpg"><figcaption>图9.11 Border 寻址模式：超界区域用指定边框色填充。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-12.jpg" alt="Fig9-12.jpg"><figcaption>图9.12 Clamp 寻址模式：uv 钳制到边界，边缘像素被拉伸。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-13.jpg" alt="Fig9-13.jpg"><figcaption>图9.13 Mirror 寻址模式：镜像重复。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-14.jpg" alt="Fig9-14.jpg"><figcaption>图9.14 砖块纹理平铺 2×3 次：无缝纹理让重复不易察觉。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-15.jpg" alt="Fig9-15.jpg"><figcaption>图9.15 LandTex 演示截图。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-16.jpg" alt="Fig9-16.jpg"><figcaption>图9.16 xz 空间的格网顶点 v_ij 的纹理坐标对应 uv 空间的 T_ij。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-17.jpg" alt="Fig9-17.jpg"><figcaption>图9.17 手工构造的 mip 链，每级颜色不同便于观察层级切换。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-18.jpg" alt="Fig9-18.jpg"><figcaption>图9.18 两张纹理对应纹素逐分量相乘得到新纹理。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-19.jpg" alt="Fig9-19.jpg"><figcaption>图9.19 贴图石柱场景。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-5a.jpg" alt="Fig9-5a.jpg"><figcaption>图9.5 (a) 由纹素点构造分段常函数近似中间值；(b) 双线性插值（更平滑）。</figcaption></figure><figure><img loading="lazy" src="images/Fig9-5b.jpg" alt="Fig9-5b.jpg"><figcaption>图9.5（续）纹素插值方式对比（b 图）。</figcaption></figure></div></details>
+
+    <div class="pager">
+      <a href="ch08.html"><span class="dir">← 上一章</span>第 8 章 光照</a>
+      <a class="next" href="ch10.html"><span class="dir">下一章 →</span>第 10 章 混合</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  个人中文学习导读，供已购书读者辅助理解使用；版权归原书作者与出版方（Mercury Learning and Information）所有。
+</div></footer>
+<script src="app.js"></script>
+</body>
+</html>

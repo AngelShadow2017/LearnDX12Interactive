@@ -1,0 +1,207 @@
+import { ThreadIdActivity } from '@/activities/ch13/ThreadIdActivity';
+import { BlurSharedMemoryActivity } from '@/activities/ch13/BlurSharedMemoryActivity';
+
+<section className="lesson-section lesson-section--intro" id="s131">
+<h2>13.1 线程与线程组</h2>
+
+<p>GPU 擅长大规模并行。计算着色器把工作切成<b>线程组</b>（thread group），每个组里有固定数量的线程，一次 <code>Dispatch</code> 启动一批组。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-1.jpg" alt="CPU 与内存、CPU 与 GPU、GPU 与显存之间的相对带宽对比" figureNumber="图 13.1" caption="CPU 与内存、CPU 与 GPU、GPU 与显存之间的相对带宽速度对比。" />
+  <Figure src="images/Fig13-2.jpg" alt="计算着色器不在渲染管线内，独立读写 GPU 资源" figureNumber="图 13.2" caption="计算着色器不在渲染管线内，独立读写 GPU 资源。" />
+</div>
+
+<Figure src="images/Fig13-3.jpg" alt="Dispatch 启动 3×2 个线程组，每组 8×8 个线程" figureNumber="图 13.3" caption="Dispatch 启动 3×2 个线程组，每组 8×8 个线程。" />
+
+<Callout tone="note">
+  <b>组内线程数上限</b>
+  <p>一个线程组的总线程数（X·Y·Z）不能超过 1024（多数硬件）。常用的形状是 256 个线程的一维组，或者 8×8、16×16 的二维组。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s132">
+<h2>13.2 一个简单的计算着色器</h2>
+
+<CodeSample
+  title="最小可运行的计算着色器"
+  language="hlsl"
+  code={`Texture2D      gInput  : register(t0);
+RWTexture2D<float4> gOutput : register(u0);
+
+[numthreads(16, 16, 1)]
+void CS(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint width, height;
+    gOutput.GetDimensions(width, height);
+    if (dispatchThreadID.x >= width || dispatchThreadID.y >= height)
+        return; // Dispatch 按线程组向上取整时，边缘组可能超出纹理尺寸
+
+    // 简单地把输入复制（并做一个反色）到输出
+    float4 c = gInput[dispatchThreadID.xy];
+    gOutput[dispatchThreadID.xy] = float4(1.0f - c.rgb, 1.0f);
+}`}
+  input={<>一张输入纹理（SRV，t0）与一张输出纹理（UAV，u0）。</>}
+  keyLines={[
+    { code: '[numthreads(16, 16, 1)]', note: '声明组内线程数；总数不能超过硬件上限（通常 1024）。' },
+    { code: 'RWTexture2D<float4>', note: '可读写资源，必须绑成 UAV；读用普通 Texture2D 绑 SRV。' },
+    { code: 'SV_DispatchThreadID', note: '全局线程 ID，直接当作像素坐标使用最方便。' },
+    { code: 'if (dispatchThreadID.x >= width || dispatchThreadID.y >= height)', note: 'Dispatch 通常按线程组向上取整，最后一组可能覆盖到纹理外；必须先检查边界。' },
+  ]}
+  output={<>输出纹理里是反色后的图像；图 13.9 对比了模糊前后的效果。</>}
+  pitfalls={[
+    '组大小超过硬件上限：Dispatch 直接失败。',
+    '忘记把输出资源设成 UAV：编译或绑定报错。',
+    'Dispatch 使用向上取整的组数却没有尺寸检查：边缘线程会读写纹理范围之外。',
+    '读写之间没有同步：同组内线程互相依赖时必须用 GroupMemoryBarrierWithGroupSync()。',
+  ]}
+/>
+</section>
+
+<section className="lesson-section" id="s133">
+<h2>13.3 数据输入输出资源</h2>
+
+<p>计算着色器读 <b>SRV</b>（<code>Texture2D</code>、<code>StructuredBuffer</code>），写 <b>UAV</b>（<code>RWTexture2D</code>、<code>RWStructuredBuffer</code>）。UAV 在创建和绑定时都要指定正确的资源状态（<code>D3D12_RESOURCE_STATE_UNORDERED_ACCESS</code>）。</p>
+
+<Callout tone="warning">
+  <b>UAV 与渲染目标不能同时绑</b>
+  <p>同一资源在同一时刻不能既是 UAV 又是渲染目标。做后处理时要先把后台缓冲复制/渲染到离屏纹理，再用计算着色器处理（图 13.7 的 render-to-texture 就是这一类）。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s134">
+<h2>13.4 线程 ID 系统值</h2>
+
+<Figure src="images/Fig13-4.jpg" alt="标记线程 T：组 ID (1,1,0)，组内 ID (1,5,0)" figureNumber="图 13.4" caption="标记线程 T：组 ID (1,1,0)，组内 ID (1,5,0)，全局 Dispatch 线程 ID 由两者算出。" />
+
+<ThreadIdActivity />
+</section>
+
+<section className="lesson-section" id="s135">
+<h2>13.5 Append 与 Consume 缓冲</h2>
+
+<p><code>AppendStructuredBuffer</code> 与 <code>ConsumeStructuredBuffer</code> 提供一个无锁的「多写一读」队列：多个线程可以往里追加元素，另一趟 Pass 再消费它们。粒子系统常用它来做「存活粒子列表」。</p>
+
+<Callout tone="tip">
+  <b>计数是隐式的</b>
+  <p>Append/Consume 的计数器由硬件维护，不需要你自己做原子加。但缓冲区容量要预留够，溢出的元素会被丢弃（不报错）。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s136">
+<h2>13.6 共享内存与同步</h2>
+
+<p>每个线程组有一块 <code>groupshared</code> 内存，访问速度远高于全局显存。典型用法是「先把一块数据搬进共享内存 → 同步 → 再各自计算」。</p>
+
+<Callout tone="warning">
+  <b>必须同步</b>
+  <p>写共享内存之后、读之前，必须调用 <code>GroupMemoryBarrierWithGroupSync()</code>。少了它，线程可能读到别的线程还没写完的旧值——这类 bug 表现随机，极难定位。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s137">
+<h2>13.7 Blur 演示</h2>
+
+<p>模糊就是把每个像素换成邻域加权平均（图 13.5），权重用高斯函数（图 13.6，σ 越大权重越散）。示例先把场景渲染到离屏纹理（图 13.7），再用两趟一维计算着色器做横向与纵向模糊。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-5.jpg" alt="模糊像素 Pij：以它为中心的 m×n 像素矩阵的加权平均" figureNumber="图 13.5" caption="模糊像素 Pij：以它为中心的 m×n 像素矩阵的加权平均。" />
+  <Figure src="images/Fig13-6.jpg" alt="σ=1,2,3 的高斯函数 G(x) 曲线" figureNumber="图 13.6" caption="σ=1,2,3 的高斯函数 G(x) 曲线：σ 越大曲线越平、权重越散。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-8.jpg" alt="28×14 纹理的水平/垂直线程组划分" figureNumber="图 13.8" caption="28×14 纹理：水平线程组 8×1、垂直线程组 1×8 的划分。" />
+  <Figure src="images/Fig13-9.jpg" alt="模糊两遍后与未模糊的对比" figureNumber="图 13.9" caption="左：模糊两遍后的 Blur 演示截图；右：未模糊截图。" />
+</div>
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-7.jpg" alt="相机从上方俯瞰把场景渲染到离屏纹理" figureNumber="图 13.7" caption="相机从玩家上方俯瞰，把场景渲染到离屏纹理（鸟瞰小地图效果）。" />
+  <Figure src="images/Fig13-10.jpg" alt="相邻两个像素的模糊核重叠" figureNumber="图 13.10" caption="相邻两个像素的模糊核重叠：一维分离滤波大幅减少重复读取。" />
+</div>
+
+<BlurSharedMemoryActivity />
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-11.jpg" alt="靠近组边界的线程需要读取组外像素" figureNumber="图 13.11" caption="靠近组边界的线程因模糊半径需要读取组外像素。" />
+  <Figure src="images/Fig13-12.jpg" alt="R=4：边界线程协作把额外 texel 搬进共享内存" figureNumber="图 13.12" caption="R=4：边界线程协作把额外 texel 搬进共享内存。" />
+</div>
+
+<Figure src="images/Fig13-13.jpg" alt="读到图像边界外的情况" figureNumber="图 13.13" caption="读到图像边界外的情况。" />
+</section>
+
+<section className="lesson-section" id="s139">
+<h2>本章小结</h2>
+
+<ul>
+  <li>计算着色器不在渲染管线内，独立读写 GPU 资源；工作单位是线程组，一次 Dispatch 启动一批组。</li>
+  <li>组内线程总数通常不超过 1024；<code>[numthreads]</code> 声明组形状。</li>
+  <li>四种 ID：GroupID、GroupThreadID、DispatchThreadID（= GroupID × GroupSize + GroupThreadID）与 GroupIndex。</li>
+  <li>读用 SRV、写用 UAV；UAV 与渲染目标不能同时绑在同一资源上。</li>
+  <li>共享内存 + <code>GroupMemoryBarrierWithGroupSync()</code> 是减少重复读取的核心手段。</li>
+  <li>模糊用分离的两趟一维核；组边界要填 halo，图像边界要 clamp。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig13-14.jpg" alt="Sobel 算子后的边缘图与反转结果" figureNumber="图 13.14" caption="左：Sobel 算子后白色像素表示边缘；右：反转后的边缘图。" />
+  <Figure src="images/Fig13-15.jpg" alt="原图乘以反转边缘图的风格化效果" figureNumber="图 13.15" caption="原图乘以反转边缘图：边缘描线的风格化效果。" />
+</div>
+
+<Checkpoint
+  chapterId="ch13"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch13-a1',
+      question: 'SV_DispatchThreadID 怎么计算？',
+      options: ['GroupID + GroupThreadID', 'GroupID × GroupSize + GroupThreadID', 'GroupThreadID × GroupSize + GroupID', '与 GroupSize 无关'],
+      answer: 1,
+      explanation: '每个组有 GroupSize 个线程，所以组号要先乘上组大小再与组内 ID 相加。',
+    },
+    {
+      id: 'ch13-a2',
+      question: '往共享内存写完、其他线程要读之前，必须做什么？',
+      options: ['什么都不用做', '调用 GroupMemoryBarrierWithGroupSync()', '调用 Dispatch', '把资源转成 UAV 状态'],
+      answer: 1,
+      explanation: '共享内存是组内可见的，写后读之前必须同步，否则会读到未写完的旧值，症状随机。',
+    },
+    {
+      id: 'ch13-a3',
+      question: '二维高斯模糊为什么要拆成两趟一维核？',
+      options: ['为了更好看', '复杂度从 O(m·n) 降到 O(m+n)，大幅减少采样', '因为硬件只支持一维', '为了减少共享内存占用'],
+      answer: 1,
+      explanation: '高斯函数可分离：先横向再纵向两趟一维核，效果等价但采样次数大幅下降。',
+    },
+    {
+      id: 'ch13-a4',
+      question: '靠近线程组边界的线程为什么会多读一些纹素？',
+      options: ['因为它们更快', '因为它们的模糊核会伸到组外，需要额外填充 halo', '因为共享内存不够', '因为要做边界 clamp'],
+      answer: 1,
+      explanation: '半径 R 的核会伸到组外 R 个纹素，所以组两端的线程要多读 R 个纹素填进共享内存的 halo 区。',
+    },
+    {
+      id: 'ch13-a5',
+      question: '计算着色器里读写资源分别绑定成什么？',
+      options: ['都绑 SRV', '读绑 SRV、写绑 UAV', '都绑 UAV', '读绑 UAV、写绑 SRV'],
+      answer: 1,
+      explanation: '只读资源绑成 SRV（Texture2D / StructuredBuffer），可写资源绑成 UAV（RWTexture2D / RWStructuredBuffer）。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch13"
+  title="运行 Blur 示例，改模糊半径比较输出与耗时"
+  goal="在 Blur 示例里改模糊半径，比较画面变化，并理解为什么耗时随半径上升。"
+  steps={[
+    '打开 Chapter 13 The Compute Shader 下的 Blur 工程，生成并运行（图 13.9）。',
+    '把模糊半径（BlurRadius）改成 1，重新运行，记录画面。',
+    '再把它改成 8，重新运行，比较模糊程度与帧率/耗时。',
+    '在着色器里找到填充 halo 的那段代码，说明它为什么必须存在。',
+  ]}
+  expected="半径越大画面越模糊；耗时随半径上升（核更大、重复读取更多）。halo 段是为了让组边界线程也能读到完整的核。"
+  verify={[
+    '我跑通了 Blur 示例并看到模糊效果。',
+    '我对比了不同半径下的画面与耗时。',
+    '我能说出 halo 填充的作用。',
+  ]}
+/>
+</section>

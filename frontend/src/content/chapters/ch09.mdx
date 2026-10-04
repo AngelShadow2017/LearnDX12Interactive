@@ -1,0 +1,221 @@
+import { UvMappingActivity } from '@/activities/UvMappingActivity';
+import { FilterAddressActivity } from '@/activities/FilterAddressActivity';
+
+<section className="lesson-section lesson-section--intro" id="s92">
+<h2>9.2 纹理坐标</h2>
+
+<p>纹理坐标也叫<b>纹理空间</b>：u 沿右、v 沿下，范围 [0, 1]²（图 9.2）。D3D 的纹理原点在<b>左上角</b>，v 向下增长。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-2.jpg" alt="纹理坐标系：u 沿右、v 沿下" figureNumber="图 9.2" caption="纹理坐标系（也叫纹理空间）：u 沿右、v 沿下，范围 [0,1]²。" />
+  <Figure src="images/Fig9-3.jpg" alt="3D 空间中的三角形与纹理上的 2D 三角形区域" figureNumber="图 9.3" caption="左：3D 空间中的三角形；右：纹理上定义的 2D 三角形区域将被映射过去。" />
+</div>
+
+<Callout tone="warning">
+  <b>v 方向是最常见的坑</b>
+  <p>D3D 的 v 向下，很多建模工具和图像库约定 v 向上。纹理上下颠倒时，先怀疑 v 的方向，而不是急着改着色器。</p>
+</Callout>
+
+<Figure src="images/Fig9-4.jpg" alt="纹理图集：一张大纹理存四个子纹理" figureNumber="图 9.4" caption="纹理图集：一张大纹理存四个子纹理，各顶点 uv 指向各自区域。" />
+
+<UvMappingActivity />
+</section>
+
+<section className="lesson-section" id="s94">
+<h2>9.4 创建并启用纹理</h2>
+
+<p>D3D12 里创建纹理的流程比 D3D11 长：先把图片数据读进上传堆，再用 <code>CopyTextureRegion</code> 拷到默认堆，最后在 SRV 描述符堆里建一个着色器资源视图并绑到根签名。</p>
+
+<CodeSample
+  title="创建纹理的两步走"
+  language="cpp"
+  code={`// 1) 读图片并上传到默认堆
+auto woodCrate = std::make_unique<Texture>();
+woodCrate->Name = "WoodCrateTex";
+ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(device.Get(),
+    commandList.Get(), L"Textures\\\\WoodCrate01.dds",
+    woodCrate->Resource, woodCrate->UploadHeap));
+
+// 2) 在 SRV 堆里建视图
+D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+srvDesc.Format = woodCrate->Resource->GetDesc().Format;
+srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+srvDesc.Texture2D.MipLevels = woodCrate->Resource->GetDesc().MipLevels;
+device->CreateShaderResourceView(woodCrate->Resource.Get(), &srvDesc, cpuSrvHandle);
+
+// 3) 绘制前绑定到根签名的描述符表
+commandList->SetGraphicsRootDescriptorTable(0, gpuSrvHandle);`}
+  input={<>一个 .dds 文件（含自动生成的 mip 链），以及一个 CBV/SRV/UAV 描述符堆。</>}
+  keyLines={[
+    { code: 'CreateDDSTextureFromFile12', note: '内部完成「上传堆 → CopyTextureRegion → 默认堆」，并自动生成 mip 链。' },
+    { code: 'Shader4ComponentMapping', note: '决定 RGBA 通道如何重排；用默认值即可，改错会导致颜色通道互换。' },
+    { code: 'SetGraphicsRootDescriptorTable(0, gpuSrvHandle)', note: 'GPU 句柄，不是 CPU 句柄。传 CPU 句柄是 D3D12 新手高频错误。' },
+  ]}
+  output={<>图 9.1：Crate 演示里贴好木箱纹理的立方体。</>}
+  pitfalls={[
+    '把 CPU 描述符句柄当 GPU 句柄传：要用 GetGPUDescriptorHandleForHeapStart 取 GPU 侧。',
+    '忘记把上传堆资源保留到复制完成：资源被提前释放会导致纹理全黑。',
+    '描述符堆没设为 SHADER_VISIBLE：CBV/SRV/UAV 堆必须是 shader visible 才能被着色器看到。',
+  ]}
+/>
+
+<Figure src="images/Fig9-1.jpg" alt="Crate 演示：给立方体贴上木箱纹理" figureNumber="图 9.1" caption="Crate 演示：给立方体贴上木箱纹理。" />
+</section>
+
+<section className="lesson-section" id="s95">
+<h2>9.5 过滤器</h2>
+
+<h3>放大</h3>
+
+<p>纹理被放大时（一个纹素覆盖多个像素），最近点采样会出现块状马赛克，双线性插值平滑得多（图 9.5—9.7）。图 9.6 展示了四个纹素如何做两次线性插值。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-5a.jpg" alt="分段常函数近似与双线性插值对比" figureNumber="图 9.5" caption="(a) 由纹素点构造分段常函数近似中间值；(b) 双线性插值（更平滑）。" />
+  <Figure src="images/Fig9-6.jpg" alt="四个纹素点做双线性插值" figureNumber="图 9.6" caption="四个纹素点 c_ij、c_(i,j+1)、c_(i+1,j)、c_(i+1,j+1)：用双线性插值近似中间点 c 的颜色。" />
+  <Figure src="images/Fig9-5b.jpg" alt="纹素插值方式对比（b 图）" figureNumber="图 9.5（续）" caption="纹素插值方式对比（b 图）。" />
+</div>
+
+<Figure src="images/Fig9-7.jpg" alt="最近点采样与双线性的对比" figureNumber="图 9.7" caption="放大立方体木箱纹理：左为最近点采样（块状），右为双线性（平滑）。" />
+
+<h3>缩小与 mipmap</h3>
+
+<p>纹理被缩小时，一个像素覆盖多个纹素，直接采样会闪烁。mipmap 预先生成一条尺寸逐级减半的低细节链（图 9.8），硬件按屏幕覆盖面积自动选层。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-8.jpg" alt="mip 链：每级尺寸减半" figureNumber="图 9.8" caption="mip 链：每一级都是上一级尺寸减半的低细节版本。" />
+  <Figure src="images/Fig9-9.jpg" alt="线性过滤的摩尔纹与自动 mip 的干净结果" figureNumber="图 9.9" caption="木箱顶面几乎垂直于视口：左（线性过滤）摩尔纹闪烁，右（自动 mip）干净。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s96">
+<h2>9.6 寻址模式</h2>
+
+<p>uv 超出 [0, 1] 时怎么办？四种寻址模式给出了不同答案。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-10.jpg" alt="Wrap 寻址模式：uv 取小数部分重复平铺" figureNumber="图 9.10" caption="Wrap 寻址模式：uv 取小数部分重复平铺。" />
+  <Figure src="images/Fig9-11.jpg" alt="Border 寻址模式：超界区域用边框色填充" figureNumber="图 9.11" caption="Border 寻址模式：超界区域用指定边框色填充。" />
+</div>
+<div className="figure-pair">
+  <Figure src="images/Fig9-12.jpg" alt="Clamp 寻址模式：uv 钳制到边界" figureNumber="图 9.12" caption="Clamp 寻址模式：uv 钳制到边界，边缘像素被拉伸。" />
+  <Figure src="images/Fig9-13.jpg" alt="Mirror 寻址模式：镜像重复" figureNumber="图 9.13" caption="Mirror 寻址模式：镜像重复。" />
+</div>
+
+<Figure src="images/Fig9-14.jpg" alt="砖块纹理平铺 2×3 次" figureNumber="图 9.14" caption="砖块纹理平铺 2×3 次：无缝纹理让重复不易察觉。" />
+
+<FilterAddressActivity />
+</section>
+
+<section className="lesson-section" id="s97">
+<h2>9.7 采样器</h2>
+
+<p>过滤器和寻址模式不写在纹理上，而是写在<b>采样器</b>（<code>D3D12_SAMPLER_DESC</code>）里，绑定在根签名的采样器描述符表（或静态采样器）上。同一个纹理配不同采样器，可以采样出一软一硬两种效果。</p>
+
+<Callout tone="tip">
+  <b>静态采样器</b>
+  <p>如果一组采样状态全程不变，可以在根签名里声明成静态采样器（<code>D3D12_STATIC_SAMPLER_DESC</code>），连描述符堆都省了。</p>
+</Callout>
+</section>
+
+<section className="lesson-section" id="s99">
+<h2>9.9 Crate 演示</h2>
+
+<p>Crate 演示（图 9.1）把木箱纹理贴到立方体上，是纹理这一章的最小可运行例子：顶点结构里加一个 <code>XMFLOAT2 TexC</code>，输入布局里加一个 <code>TEXCOORD</code> 语义，像素着色器用 <code>Sample</code> 采样。</p>
+</section>
+
+<section className="lesson-section" id="s910">
+<h2>9.10 纹理变换</h2>
+
+<p>UV 也可以像顶点一样被矩阵变换：平移、缩放、旋转 UV 就能做出滚动、平铺、旋转纹理的动画。这只需要在常量缓冲里多传一个纹理矩阵，在顶点着色器里乘到 UV 上。</p>
+</section>
+
+<section className="lesson-section" id="s911">
+<h2>9.11 Land Tex 与 Waves 演示</h2>
+
+<p>把地形和波浪贴上纹理（图 9.15）。图 9.16 展示了格网顶点 v<sub>ij</sub> 的纹理坐标怎么生成：把 xz 空间的格点线性映射到 uv 空间的 T<sub>ij</sub>。</p>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-15.jpg" alt="LandTex 演示截图" figureNumber="图 9.15" caption="LandTex 演示截图。" />
+  <Figure src="images/Fig9-16.jpg" alt="格网顶点的纹理坐标生成" figureNumber="图 9.16" caption="xz 空间的格网顶点 v_ij 的纹理坐标对应 uv 空间的 T_ij。" />
+</div>
+</section>
+
+<section className="lesson-section" id="s912">
+<h2>本章小结</h2>
+
+<ul>
+  <li>纹理坐标 u 沿右、v 沿下，范围 [0, 1]²；D3D 原点在左上角。v 方向反了是最常见的贴图颠倒原因。</li>
+  <li>UV 是逐顶点属性，三角形内由重心坐标插值；多个小图可以放进纹理图集。</li>
+  <li>D3D12 创建纹理要「上传堆 → CopyTextureRegion → 默认堆」两步，再建 SRV 并绑到描述符表。</li>
+  <li>放大用双线性避免块状；缩小用 mipmap 避免闪烁；各向异性过滤处理掠射角。</li>
+  <li>寻址模式处理 uv 超界：Wrap 平铺、Clamp 钳边、Mirror 镜像、Border 边框色。</li>
+  <li>过滤与寻址属于<b>采样器</b>，不是纹理；不变的状态可以声明成静态采样器。</li>
+</ul>
+
+<div className="figure-pair">
+  <Figure src="images/Fig9-17.jpg" alt="手工构造的 mip 链" figureNumber="图 9.17" caption="手工构造的 mip 链，每级颜色不同便于观察层级切换。" />
+  <Figure src="images/Fig9-18.jpg" alt="两张纹理逐分量相乘得到新纹理" figureNumber="图 9.18" caption="两张纹理对应纹素逐分量相乘得到新纹理。" />
+</div>
+<Figure src="images/Fig9-19.jpg" alt="贴图石柱场景" figureNumber="图 9.19" caption="贴图石柱场景。" />
+
+<Checkpoint
+  chapterId="ch09"
+  intro="答对第 4 题（共 5 题）即标记本章概念过关。"
+  questions={[
+    {
+      id: 'ch09-a1',
+      question: 'D3D 的纹理坐标系里，v 轴朝哪个方向增长？',
+      options: ['向上', '向下（原点在左上角）', '与 u 相同', '取决于纹理格式'],
+      answer: 1,
+      explanation: 'D3D 纹理原点在左上角，v 向下增长。很多建模工具约定相反，这是纹理上下颠倒最常见的原因。',
+    },
+    {
+      id: 'ch09-a2',
+      question: '纹理被缩小时（一个像素覆盖多个纹素）会出现什么问题，通常怎么解决？',
+      options: ['出现块状马赛克，用双线性解决', '出现闪烁/摩尔纹，用 mipmap 解决', '没有影响', '颜色失真，用 sRGB 解决'],
+      answer: 1,
+      explanation: '缩小问题是采样率不足导致闪烁，解决办法是 mipmap（预先生成逐级减半的低细节链）与各向异性过滤。',
+    },
+    {
+      id: 'ch09-a3',
+      question: '纹理宽度 4、u = 1.2，Wrap 模式下采样到哪个纹素（从 0 开始）？',
+      options: ['第 0 个', '第 1 个', '第 3 个', '边框色'],
+      answer: 2,
+      explanation: 'Wrap 是对 u × width 取模：1.2 × 4 = 4.8，模 4 得 0.8，落在第 3 个纹素。',
+    },
+    {
+      id: 'ch09-a4',
+      question: '过滤器和寻址模式写在哪个对象上？',
+      options: ['纹理资源上', '采样器 D3D12_SAMPLER_DESC 上', '顶点结构里', 'PSO 里'],
+      answer: 1,
+      explanation: '过滤与寻址属于采样器，通过根签名的采样器表或静态采样器绑定。同一个纹理配不同采样器可以得到不同效果。',
+    },
+    {
+      id: 'ch09-a5',
+      question: 'SetGraphicsRootDescriptorTable 需要传哪种描述符句柄？',
+      options: ['CPU 句柄', 'GPU 句柄', '两种都可以', 'D3D12_CPU_DESCRIPTOR_HANDLE 转换后的值'],
+      answer: 1,
+      explanation: '命令列表上使用 GPU 句柄。传 CPU 句柄是 D3D12 新手高频错误，表现通常是采样到错误纹理或全黑。',
+    },
+  ]}
+/>
+
+<Practice
+  chapterId="ch09"
+  title="改寻址或采样设置，截图并解释差异"
+  goal="在 Crate 示例里改一处采样状态，截图记录，并能解释这个改动对应的过滤或寻址规则。"
+  steps={[
+    '打开 Chapter 9 Texturing 下的 Crate 工程，生成并运行（图 9.1）。',
+    '把采样器的 AddressU/V 从 WRAP 改成 CLAMP 或 BORDER，重新运行，观察立方体每个面的纹理变化。',
+    '把 Filter 从 LINEAR 改成 POINT，放大观察边缘，记录块状感的差异。',
+    '截图两张不同的设置，写下各自对应哪条寻址/过滤规则。',
+  ]}
+  expected="改寻址模式后重复平铺消失（CLAMP 拉伸边缘、BORDER 显示边框色）；改 Filter 为 POINT 后出现明显块状马赛克。"
+  verify={[
+    '我跑通了 Crate 示例并看到贴图。',
+    '我改了寻址模式并记录了画面差异。',
+    '我能解释这个差异对应哪条寻址规则。',
+  ]}
+/>
+</section>

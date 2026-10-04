@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import chapterFiveSource from '../content/source/ch05.txt?raw';
+import chapterTwoSource from '../content/source/ch02.txt?raw';
 import { parseSource } from './OriginalBookText';
 
 describe('parseSource', () => {
@@ -139,5 +140,20 @@ XMCOLOR() {}
     expect(packedColor).toContain('uint32_t c;');
     expect(packedColor).toContain('XMCOLOR(float _r, float _g, float _b, float _a);');
     expect(packedColor).toContain('} // end PackedVector namespace');
+  });
+
+  it('keeps the full XMMATRIX float constructor in code and recognizes its alignment declaration', () => {
+    const blocks = parseSource(chapterTwoSource, 'ch02');
+    const codeBlocks = blocks.flatMap((block) => block.kind === 'code' ? [block.text] : []);
+    const constructor = codeBlocks.find((code) => code.includes('XMMATRIX(float m00'));
+
+    expect(codeBlocks.some((code) => code.includes('__declspec(align(16)) struct XMMATRIX'))).toBe(true);
+    expect(constructor).toContain(
+      'XMMATRIX(float m00, float m01, float m02, float m03,\n' +
+      'float m10, float m11, float m12, float m13,\n' +
+      'float m20, float m21, float m22, float m23,\n' +
+      'float m30, float m31, float m32, float m33);',
+    );
+    expect(constructor).not.toContain('As you can see');
   });
 });

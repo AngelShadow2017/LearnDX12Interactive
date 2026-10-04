@@ -15,6 +15,7 @@ const sourceLoaders = import.meta.glob('../content/source/*.txt', {
 // Equations transcribed while the corresponding chapter was being translated.
 // Unreviewed formula artwork remains available as a zoomable source image.
 const formulaLatex: Record<string, string> = {
+  'eq82-01.jpg': 'A^{-1}=\\frac{A^*}{\\det A}\\tag{2.6}',
   'eq42-01.jpg': '-\\frac{1}{2}\\mathbf{v}',
   'eq42-02.jpg': '-\\frac{1}{2}\\mathbf{v}=(-1,-\\frac{1}{2})',
   'eq42-03.jpg': '-\\frac{1}{2}\\mathbf{v}',
@@ -268,8 +269,11 @@ function isCodeLine(value: string): boolean {
   const text = value.trim();
   if (!text) return false;
   return /^(#\s*(include|if|ifdef|ifndef|elif|else|endif|define|pragma)\b|using namespace\b|namespace\b|typedef\b|struct(?:\s+\w+)?\b|union\b|class\s+\w|template\s*<|inline\b|static const\b|XMVECTOR\b|XMFLOAT\d\b|FXMVECTOR\b|GXMVECTOR\b|HXMVECTOR\b|CXMVECTOR\b|void\s+\w+\s*\(|float\s+XM_CALLCONV\b|return\b|operator\b|if\s*\(|else\b|for\s*\(|while\s*\(|cout\s*<<|std::|ComPtr\s*<|\.{3}$|\{|\}|;\s*(?:\/\/.*)?$|\/\/)/.test(text)
-    || /^(?:u?int(?:8|16|32|64)_t|float\d?|double|bool|char|HRESULT|BOOL|UINT|auto|const|static|explicit)\b/.test(text)
+    || /^(?:u?int(?:8|16|32|64)_t|float\d?|double|bool|char|HRESULT|BOOL|UINT|auto|const|static|explicit|__declspec)\b/.test(text)
     || /^[A-Z_]\w*\s*(?:\([^;]*\)|&\s*operator\b)/.test(text)
+    // Function signatures may be wrapped across source paragraphs before the
+    // closing parenthesis. Keep the opening line in the same code block.
+    || /^[A-Z_]\w*\s*\([^;]*$/.test(text)
     // The source text extractor separates code lines with blank lines. These
     // syntax markers keep common Direct3D declarations and calls together as
     // code instead of rendering them as ordinary prose paragraphs.

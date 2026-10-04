@@ -1848,6 +1848,8 @@ protected:
 
 游戏和图形应用程序通常会测量每秒渲染的帧数（FPS）。做法很简单：在某个指定时间段 $t$ 内统计已处理的帧数（并存入变量 $n$）。于是时间段 $t$ 内的平均 FPS 就是 $fps_{avg}=n/t=n$。如果取 $t=1$，则 $fps_{avg}=n/1=n$。在我们的代码中取 $t=1$（秒），因为这样避免了除法，而且一秒给出的平均值已经相当不错——不算太长也不算太短。计算 FPS 的代码由 `D3DApp::CalculateFrameStats` 方法提供：
 
+**译者注**：原书将一般公式末尾误写成 $n$；一般情况应为 $fps_{avg}=n/t$。原书随后取 $t=1$ 秒时的结论 $fps_{avg}=n$ 才成立，译文保留原文并注明此误差。
+
 ```cpp
 void D3DApp::CalculateFrameStats()
 {
@@ -2268,6 +2270,5 @@ ThrowIfFailed(md3dDevice->CreateCommittedResource(
 12. 示例框架用于提供一个统一的接口，本书所有演示程序都遵循它。*d3dUtil.h*、*d3dUtil.cpp*、*d3dApp.h* 和 *d3dApp.cpp* 文件中提供的代码，封装了每个应用程序都必须实现的标准初始化<a id="page157"/>代码。通过封装这些代码，我们把它隐藏起来，从而让示例更聚焦于当前主题。
 13. 对于调试模式构建，我们启用调试层（`debugController->EnableDebugLayer()`）。启用调试层时，Direct3D 会把调试消息发送到 VC++ 输出窗口。
 </section>
-
 
 

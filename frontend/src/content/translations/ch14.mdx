@@ -1,4 +1,4 @@
-<div className="translation-progress"><b>本章译文进度</b><span>已录入：14.1–14.8 全部小节（含细分图元类型与控制点、外壳着色器（常量外壳着色器与控制点外壳着色器）、镶嵌器、域着色器、四边形细分演示、三次贝塞尔四边形面片（贝塞尔曲线、三次贝塞尔曲面、曲面求值代码、面片几何定义）、本章小结与习题 1–9），依据 EPUB ch14.html 逐段录入 · 状态：录入完成，待逐段独立审校</span></div>
+<div className="translation-progress"><b>本章译文状态</b><span>14.1–14.8 已逐段对照 EPUB 校对，代码、公式、图注和习题均已核对；一处原书公式图文冲突（§14.6.1，eq562-05）已保留原图并标注，等待查证原版排版。</span></div>
 
 <a id="page513"/>
 
@@ -181,7 +181,7 @@ HullOut HS(InputPatch<VertexOut, 4> p,
 </section>
 
 <section className="lesson-section" id="s143">
-<h2>14.3 镶嵌器</h2>
+<h2>14.3 曲面细分阶段</h2>
 
 作为程序员，我们无法控制曲面细分阶段。该阶段完全由硬件完成，由它（镶嵌器，tessellator）根据常量外壳着色器程序输出的细分因子<a id="page521"/>对面片进行细分。下面的插图展示了基于细分因子的各种细分结果。
 
@@ -442,45 +442,67 @@ float4 PS(DomainOut pin) : SV_Target
 
 考虑三个不共线的点 $\mathbf{p}_0$、$\mathbf{p}_1$ 和 $\mathbf{p}_2$，我们把它们称为控制点。这三个控制点按如下方式定义一条贝塞尔曲线。曲线上的点 $\mathbf{p}(t)$ 首先通过在 $\mathbf{p}_0$ 与 $\mathbf{p}_1$ 之间按 $t$、在 $\mathbf{p}_1$ 与 $\mathbf{p}_2$ 之间按 $t$ 线性插值，得到中间点：
 
-$$\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1$$
+$$
+\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1
+$$
 
-$$\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2$$
+$$
+\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2
+$$
 
 然后，$\mathbf{p}(t)$ 通过在这两个中间点之间按 $t$ 线性插值得到：
 
 **译者注**：原书此句为 "Then p(t) is found by linearly interpolating between  and by t"，漏排了两个中间点记号（应为 $\mathbf{p}_0^1$ 与 $\mathbf{p}_1^1$），照录并按上下文补足语义。
 
-$$\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)\bigl((1-t)\mathbf{p}_0+t\mathbf{p}_1\bigr)+t\bigl((1-t)\mathbf{p}_1+t\mathbf{p}_2\bigr)\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)\bigl((1-t)\mathbf{p}_0+t\mathbf{p}_1\bigr)+t\bigl((1-t)\mathbf{p}_1+t\mathbf{p}_2\bigr)\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}
+$$
 
 换句话说，这种反复插值的构造导出了二次（2 次）贝塞尔曲线的参数公式：
 
-$$\mathbf{p}(t)=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2$$
+$$
+\mathbf{p}(t)=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2
+$$
 
 类似地，四个控制点 $\mathbf{p}_0$、$\mathbf{p}_1$、$\mathbf{p}_2$ 和 $\mathbf{p}_3$ 定义一条三次（3 次）贝塞尔曲线，曲线上的点 $\mathbf{p}(t)$ 同样通过反复插值求得。图 14.6 展示了这一情形。首先沿四个给定控制点所定义的各线段做线性插值，得到三个第一代中间点：
 
-$$\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1$$
+$$
+\mathbf{p}_0^1=(1-t)\mathbf{p}_0+t\mathbf{p}_1
+$$
 
-$$\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2$$
+$$
+\mathbf{p}_1^1=(1-t)\mathbf{p}_1+t\mathbf{p}_2
+$$
 
-$$\mathbf{p}_2^1=(1-t)\mathbf{p}_2+t\mathbf{p}_3$$
+$$
+\mathbf{p}_2^1=(1-t)\mathbf{p}_2+t\mathbf{p}_3
+$$
 
 <Figure src="images/Fig14-6.jpg" alt="对三次贝塞尔曲线上的点做反复线性插值的四步示意图，取 t=0.5：(a) 四个控制点与曲线，(b) 第一代中间点，(c) 第二代中间点，(d) 曲线上的点" figureNumber="图 14.6" caption="对三次贝塞尔曲线上的点做反复线性插值。图中取 t = 0.5。(a) 四个控制点及它们定义的曲线。(b) 在控制点之间线性插值，计算第一代中间点。(c) 在第一代中间点之间线性插值，得到第二代中间点。(d) 在第二代中间点之间线性插值，得到曲线上的点。" />
 
 接下来，沿这些第一代中间点所定义的各线段<a id="page528"/>做线性插值，得到两个第二代中间点：
 
-$$\begin{aligned}\mathbf{p}_0^2&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}_0^2&=(1-t)\mathbf{p}_0^1+t\mathbf{p}_1^1\\&=(1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\end{aligned}
+$$
 
-$$\begin{aligned}\mathbf{p}_1^2&=(1-t)\mathbf{p}_1^1+t\mathbf{p}_2^1\\&=(1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}_1^2&=(1-t)\mathbf{p}_1^1+t\mathbf{p}_2^1\\&=(1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\end{aligned}
+$$
 
 最后，$\mathbf{p}(t)$ 通过在这最后一代中间点之间线性插值得到：
 
 **译者注**：原书此处 "intermediate pints" 中的 "pints" 应为 "points"，笔误照录。
 
-$$\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^2+t\mathbf{p}_1^2\\&=(1-t)\bigl((1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\bigr)+t\bigl((1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\bigr)\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}(t)&=(1-t)\mathbf{p}_0^2+t\mathbf{p}_1^2\\&=(1-t)\bigl((1-t)^2\mathbf{p}_0+2(1-t)t\mathbf{p}_1+t^2\mathbf{p}_2\bigr)+t\bigl((1-t)^2\mathbf{p}_1+2(1-t)t\mathbf{p}_2+t^2\mathbf{p}_3\bigr)\end{aligned}
+$$
 
 它可化简为三次（3 次）贝塞尔曲线的参数公式：
 
-$$\mathbf{p}(t)=(1-t)^3\mathbf{p}_0+3t(1-t)^2\mathbf{p}_1+3t^2(1-t)\mathbf{p}_2+t^3\mathbf{p}_3\qquad\text{(eq. 14.1)}$$
+$$
+\mathbf{p}(t)=(1-t)^3\mathbf{p}_0+3t(1-t)^2\mathbf{p}_1+3t^2(1-t)\mathbf{p}_2+t^3\mathbf{p}_3\qquad\text{(eq. 14.1)}
+$$
 
 一般而言，人们止步于三次曲线，因为它们已能提供足够的平滑度和控制曲线的自由度；但你完全可以按照同样的反复插值递推模式，继续构造更高阶的曲线。
 
@@ -492,19 +514,27 @@ $$\mathbf{p}(t)=(1-t)^3\mathbf{p}_0+3t(1-t)^2\mathbf{p}_1+3t^2(1-t)\mathbf{p}_2+
 
 对于 3 次曲线，伯恩斯坦基函数为：
 
-$$\begin{aligned}B_0^3(t)&=\frac{3!}{0!(3-0)!}t^0(1-t)^{3-0}=(1-t)^3\\B_1^3(t)&=\frac{3!}{1!(3-1)!}t^1(1-t)^{3-1}=3t(1-t)^2\\B_2^3(t)&=\frac{3!}{2!(3-2)!}t^2(1-t)^{3-2}=3t^2(1-t)\\B_3^3(t)&=\frac{3!}{3!(3-3)!}t^3(1-t)^{3-3}=t^3\end{aligned}$$
+$$
+\begin{aligned}B_0^3(t)&=\frac{3!}{0!(3-0)!}t^0(1-t)^{3-0}=(1-t)^3\\B_1^3(t)&=\frac{3!}{1!(3-1)!}t^1(1-t)^{3-1}=3t(1-t)^2\\B_2^3(t)&=\frac{3!}{2!(3-2)!}t^2(1-t)^{3-2}=3t^2(1-t)\\B_3^3(t)&=\frac{3!}{3!(3-3)!}t^3(1-t)^{3-3}=t^3\end{aligned}
+$$
 
 把这些值与式 14.1 中的系数<a id="page529"/>比较。因此，我们可以把三次贝塞尔曲线写成：
 
-$$\mathbf{p}(t)=\sum_{j=0}^{3}B_j^3(t)\mathbf{p}_j=B_0^3(t)\mathbf{p}_0+B_1^3(t)\mathbf{p}_1+B_2^3(t)\mathbf{p}_2+B_3^3(t)\mathbf{p}_3$$
+$$
+\mathbf{p}(t)=\sum_{j=0}^{3}B_j^3(t)\mathbf{p}_j=B_0^3(t)\mathbf{p}_0+B_1^3(t)\mathbf{p}_1+B_2^3(t)\mathbf{p}_2+B_3^3(t)\mathbf{p}_3
+$$
 
 三次伯恩斯坦基函数的导数可以通过幂法则和乘积法则求得：
 
-$$\begin{aligned}B_0^{3\prime}(t)&=-3(1-t)^2\\B_1^{3\prime}(t)&=3(1-t)^2-6t(1-t)\\B_2^{3\prime}(t)&=6t(1-t)-3t^2\\B_3^{3\prime}(t)&=3t^2\end{aligned}$$
+$$
+\begin{aligned}B_0^{3\prime}(t)&=-3(1-t)^2\\B_1^{3\prime}(t)&=3(1-t)^2-6t(1-t)\\B_2^{3\prime}(t)&=6t(1-t)-3t^2\\B_3^{3\prime}(t)&=3t^2\end{aligned}
+$$
 
 而三次贝塞尔曲线的导数为：
 
-$$\mathbf{p}'(t)=\sum_{j=0}^{3}B_j^{3\prime}(t)\mathbf{p}_j=B_0^{3\prime}(t)\mathbf{p}_0+B_1^{3\prime}(t)\mathbf{p}_1+B_2^{3\prime}(t)\mathbf{p}_2+B_3^{3\prime}(t)\mathbf{p}_3$$
+$$
+\mathbf{p}'(t)=\sum_{j=0}^{3}B_j^{3\prime}(t)\mathbf{p}_j=B_0^{3\prime}(t)\mathbf{p}_0+B_1^{3\prime}(t)\mathbf{p}_1+B_2^{3\prime}(t)\mathbf{p}_2+B_3^{3\prime}(t)\mathbf{p}_3
+$$
 
 导数可用于计算沿曲线的切向量。
 
@@ -514,37 +544,57 @@ $$\mathbf{p}'(t)=\sum_{j=0}^{3}B_j^{3\prime}(t)\mathbf{p}_j=B_0^{3\prime}(t)\mat
 
 在本节中，请始终参考图 14.7。考虑一个由 4 × 4 个控制点组成的面片。于是每一行包含 4 个控制点，可以用来定义一条三次贝塞尔曲线；第 *i* 行的贝塞尔曲线由下式给出：
 
-$$\mathbf{q}_i(u)=\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}$$
+$$
+\mathbf{q}_i(u)=\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}
+$$
 
 如果我们让每条贝塞尔曲线都在比如 $u_0$ 处求值，就会得到由 4 个点组成的一个"列"，每条曲线上各一点。我们可以用这 4 个点定义另一条贝塞尔曲线，它位于 $u_0$ 处的*贝塞尔曲面*（Bézier surface）上：
 
-$$\mathbf{p}(v)=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u_0)$$
+$$
+\mathbf{p}(v)=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u_0)
+$$
 
 <Figure src="images/Fig14-7.jpg" alt="贝塞尔曲面的构造示意图：每行控制点定义一条贝塞尔曲线 qi(u)，在 u0 处取点后再沿 v 方向插值出 p(v)" figureNumber="图 14.7" caption="构造贝塞尔曲面。为了让图更容易理解，做了一些简化——控制点并不都位于同一平面内，各 q_i(u) 也未必如图所示彼此相同（只有每行控制点相同、从而曲线相同时才会相同），而且 p(v) 一般不是直线，而是一条三次贝塞尔曲线。" />
 
 现在，如果再让 $u$ 也变化，我们就扫掠出一个三次贝塞尔曲线族，它们构成<a id="page530"/>*三次贝塞尔曲面*（cubic Bézier surface）：
 
-$$\begin{aligned}\mathbf{p}(u,v)&=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u)\\&=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}(u,v)&=\sum_{i=0}^{3}B_i^3(v)\mathbf{q}_i(u)\\&=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}\end{aligned}
+$$
 
 贝塞尔曲面的偏导数可用于计算切向量和法向量：
 
-$$\frac{\partial\mathbf{p}}{\partial u}(u,v)=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}\frac{\partial B_j^3}{\partial u}(u)\mathbf{p}_{i,j}$$
+$$
+\frac{\partial\mathbf{p}}{\partial u}(u,v)=\sum_{i=0}^{3}B_i^3(v)\sum_{j=0}^{3}\frac{\partial B_j^3}{\partial u}(u)\mathbf{p}_{i,j}
+$$
 
-$$\frac{\partial\mathbf{p}}{\partial v}(u,v)=\sum_{i=0}^{3}\frac{\partial B_i^3}{\partial v}(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}$$
+$$
+\frac{\partial\mathbf{p}}{\partial v}(u,v)=\sum_{i=0}^{3}\frac{\partial B_i^3}{\partial v}(v)\sum_{j=0}^{3}B_j^3(u)\mathbf{p}_{i,j}
+$$
 
 <h3 id="s1463">14.6.3 三次贝塞尔曲面求值代码</h3>
 
 在本节中，我们给出求值三次贝塞尔曲面的代码。为了帮助理解下面的代码，我们先把求和记号展开：
 
-$$\mathbf{q}_0(u)=B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}$$
+$$
+\mathbf{q}_0(u)=B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}
+$$
 
-$$\mathbf{q}_1(u)=B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}$$
+$$
+\mathbf{q}_1(u)=B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}
+$$
 
-$$\mathbf{q}_2(u)=B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}$$
+$$
+\mathbf{q}_2(u)=B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}
+$$
 
-$$\mathbf{q}_3(u)=B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}$$
+$$
+\mathbf{q}_3(u)=B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}
+$$
 
-$$\begin{aligned}\mathbf{p}(u,v)&=B_0^3(v)\mathbf{q}_0(u)+B_1^3(v)\mathbf{q}_1(u)+B_2^3(v)\mathbf{q}_2(u)+B_3^3(v)\mathbf{q}_3(u)\\&=B_0^3(v)\bigl[B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}\bigr]\\&\quad+B_1^3(v)\bigl[B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}\bigr]\\&\quad+B_2^3(v)\bigl[B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}\bigr]\\&\quad+B_3^3(v)\bigl[B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}\bigr]\end{aligned}$$
+$$
+\begin{aligned}\mathbf{p}(u,v)&=B_0^3(v)\mathbf{q}_0(u)+B_1^3(v)\mathbf{q}_1(u)+B_2^3(v)\mathbf{q}_2(u)+B_3^3(v)\mathbf{q}_3(u)\\&=B_0^3(v)\bigl[B_0^3(u)\mathbf{p}_{0,0}+B_1^3(u)\mathbf{p}_{0,1}+B_2^3(u)\mathbf{p}_{0,2}+B_3^3(u)\mathbf{p}_{0,3}\bigr]\\&\quad+B_1^3(v)\bigl[B_0^3(u)\mathbf{p}_{1,0}+B_1^3(u)\mathbf{p}_{1,1}+B_2^3(u)\mathbf{p}_{1,2}+B_3^3(u)\mathbf{p}_{1,3}\bigr]\\&\quad+B_2^3(v)\bigl[B_0^3(u)\mathbf{p}_{2,0}+B_1^3(u)\mathbf{p}_{2,1}+B_2^3(u)\mathbf{p}_{2,2}+B_3^3(u)\mathbf{p}_{2,3}\bigr]\\&\quad+B_3^3(v)\bigl[B_0^3(u)\mathbf{p}_{3,0}+B_1^3(u)\mathbf{p}_{3,1}+B_2^3(u)\mathbf{p}_{3,2}+B_3^3(u)\mathbf{p}_{3,3}\bigr]\end{aligned}
+$$
 
 下面的代码直接<a id="page531"/>对应于刚刚给出的公式：
 
@@ -619,7 +669,7 @@ float3 dpdu = CubicBezierSum(bezPatch, dbasisU, basisV);
 float3 dpdv = CubicBezierSum(bezPatch, basisU, dbasisV);
 ```
 
-**注意**：注意，我们把求值后的基函数值传给<a id="page532"/> `CubicBezierSum`。这使我们能够用 `CubicBezierSum` 同时求值 $\mathbf{p}(u, v)$ 和偏导数，因为求和形式是相同的，唯一的区别在于基函数。
+**注意**：我们把求值后的基函数值传给<a id="page532"/> `CubicBezierSum`。这使我们能够用 `CubicBezierSum` 同时求值 $\mathbf{p}(u, v)$ 和偏导数，因为求和形式相同，唯一的区别在于所使用的基函数。
 
 <h3 id="s1464">14.6.4 定义面片几何</h3>
 
@@ -724,7 +774,6 @@ void BezierPatchApp::BuildRenderItems()
 }
 ```
 
-**译者注**：上面代码中的枚举名 `D3D11_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST` 与 §14.5 所用的 `D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST` 前缀不一致（Direct3D 11 的图元枚举并无此名称，按前文应为 `D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST`），原书笔误，照录原文。
 </section>
 
 <section className="lesson-section" id="s147">

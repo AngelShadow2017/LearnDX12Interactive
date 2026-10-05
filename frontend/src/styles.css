@@ -322,6 +322,9 @@ a:hover { color: var(--green-dark); }
 .activity__done { margin-left: auto; color: #327150; font-size: 10px; font-weight: 700; }
 .activity__hint, .activity__feedback, .activity__explanation { margin: 10px 0 0; padding: 10px 12px; border-radius: 7px; background: white; color: #64746a; font-size: 10px; line-height: 1.8; }
 .activity__hint b, .activity__explanation b { display: block; margin-bottom: 3px; color: #3c6247; }
+.index-buffer__winding-status { margin: 10px 0 0; padding: 9px 11px; border-left: 3px solid #b36b2e; border-radius: 0 7px 7px 0; background: #fff8ee; color: #805124; font-size: 10px; line-height: 1.8; }
+.index-buffer__winding-status.is-front { border-left-color: #3f7d52; background: #f2f8f1; color: #356343; }
+.index-buffer__face-label { font-size: 11px; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; }
 .activity__explanation p { margin: 0; }
 .is-correct { color: #2c6b48 !important; }
 .is-incorrect { color: #9a5c3c !important; }

@@ -11,26 +11,26 @@ const vertices: Array<[number, number]> = [[-1, -0.8], [1.2, -0.6], [0.2, 1.1]];
 
 /** 5.10 后的推演：翻转三角形绕序，预测背面剔除的结果。 */
 export function WindingCullActivity() {
-  const [winding, setWinding] = useState<Winding>('ccw');
+  const [winding, setWinding] = useState<Winding>('cw');
   const [cull, setCull] = useState<Cull>('back');
   const [flipped, setFlipped] = useState(false);
 
-  const order = winding === 'ccw' ? vertices : [vertices[2], vertices[1], vertices[0]];
+  const order = winding === 'cw' ? [vertices[2], vertices[1], vertices[0]] : vertices;
 
-  // 屏幕空间有向面积（y 向下为正的 SVG 坐标里，符号含义与数学坐标相反，这里统一用有向面积判定）
+  // 屏幕空间有向面积：正值对应绘制目标上的顺时针绕序。
   const signedArea = (a: [number, number], b: [number, number], c: [number, number]) =>
     (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
 
   const area = signedArea(order[0], order[1], order[2]);
-  // 默认 FrontCounterClockwise = false，即顺时针为正面；SVG 里 y 向下，符号要取反
-  const isFrontFace = area < 0;
+  // FrontCounterClockwise = false：绘制目标上的顺时针绕序是正面。
+  const isFrontFace = area > 0;
 
   let visible = true;
   if (cull === 'back' && !isFrontFace) visible = false;
   if (cull === 'front' && isFrontFace) visible = false;
 
   function reset() {
-    setWinding('ccw');
+    setWinding('cw');
     setCull('back');
     setFlipped(false);
   }
@@ -92,8 +92,8 @@ export function WindingCullActivity() {
       </svg>
 
       <Choice label="顶点绕序" options={[
-        { value: 'cw', label: 'v0 → v1 → v2' },
-        { value: 'ccw', label: 'v2 → v1 → v0（翻转）' },
+        { value: 'cw', label: 'v2 → v1 → v0（顺时针）' },
+        { value: 'ccw', label: 'v0 → v1 → v2（逆时针）' },
       ]} value={winding} onChange={(next) => { setWinding(next); setFlipped(next === 'ccw'); }} />
       <Choice label="剔除模式（CullMode）" options={[
         { value: 'back', label: '剔除背面', hint: 'D3D12 默认值' },

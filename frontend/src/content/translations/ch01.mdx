@@ -313,7 +313,7 @@ $$
 在 §1.3.1 中，我们介绍了用 Gram–Schmidt 过程正交化向量的方法。对于三维中一组 $\{\mathbf{v}_0,\mathbf{v}_1,\mathbf{v}_2\}$，如果它们原本几乎正交归一、后来因累计的数值精度误差而不再正交归一，还可以用叉积进行正交化。图 1.15 展示了几何过程：
 
 - 令 $\mathbf{w}_0=\dfrac{\mathbf{v}_0}{\lVert\mathbf{v}_0\rVert}$。
-- **译者注：**原书此处的公式图片 `50-0c.jpg` 在 EPUB 中损坏，无法读出等式；根据紧接本节后的原书注释图 `eq51-01.jpg`，第一步应将 $\mathbf{v}_0$ 归一化，即 $\mathbf{w}_0=\mathbf{v}_0/\lVert\mathbf{v}_0\rVert$。该注释还说明这一步保持方向、只改变长度。
+- **译者注：**原书此处的公式图片 `50-0c.jpg` 在 EPUB 中损坏，无法辨读。正文公式依据紧接本节后的原书注释图 `eq51-01.jpg` 校定；该图还说明这一步保持方向、只改变长度。
 - 令 $\mathbf{w}_2=\operatorname{normalize}(\mathbf{w}_0\times\mathbf{v}_1)$。
 - 令 $\mathbf{w}_1=\mathbf{w}_2\times\mathbf{w}_0$。根据习题 14，$\mathbf{w}_2\perp\mathbf{w}_0$ 且二者长度均为 1，因此 $\lVert\mathbf{w}_2\times\mathbf{w}_0\rVert=1$，最后这一步不需要再归一化。
 

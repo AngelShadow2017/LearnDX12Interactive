@@ -23,8 +23,8 @@
 - §14.1–§14.8 的段落顺序、术语解释、步骤和练习均已与 EPUB 对读；没有发现漏掉整节、图注或练习子项的情况。
 - `eq565-02.jpg` 与 `eq566-01.jpg` 是代码截图，转录时保留代码内容与大小写。译文注记说明截图中的 `dbasisU`/`dBasisV` 与前文变量命名存在大小写差异。
 - 原文可见的 `intermediate pints`、不完整的 “interpolating between … and … by t” 及习题 2 的 `iscoahedron` 均作为源文问题处理；译文保留必要的译者注，不把源文错误悄悄改成正常正文。
-- 唯一未能确认的公式图是 §14.6.1 第二次引用的 `eq562-05.jpg`：上下文称其为 n 次 Bernstein 基函数定义，但 EPUB 实际再次展示了上文的三次 Bézier 插值展开式。译文保留图片并明确标注冲突；可能的一般式只作为待核猜测，不当作原书原式。位置、来源和疑点见 `uncertain-images.md`。
+- 唯一未能确认的公式图是 §14.6.1 第二次引用的 `eq562-05.jpg`：上下文称其为 n 次 Bernstein 基函数定义，但 EPUB 实际再次展示了上文的三次 Bézier 插值展开式。译文保留图片并明确标注冲突，不在正文补猜公式；可能的读法只记在 `uncertain-images.md` 供后续核对。
 
 ## 工程核验
 
-本轮运行结果由交付摘要记录。构建可验证 MDX、KaTeX、资源导入及应用打包；它不等同于浏览器截图检查，也不能取代上述逐节原文核对。
+验证结果：`npm.cmd run build` 成功（204 个模块）；`npm.cmd test` 通过（59 项）；`check:figures` 为 312/312；`check:translation-terms` 扫描 17 个 MDX 并通过；`git diff --check` 无空白错误。`check:translations` 未报当前章节结构错误，但全书仍缺 `appendix.mdx` 与第 15–23 章，这些属于尚未录入范围。构建另有体积提示：主 JS chunk 约 2.19 MB，超过 500 KB 警告阈值；构建本身成功。

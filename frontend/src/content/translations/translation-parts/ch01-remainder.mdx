@@ -261,7 +261,7 @@ XMVECTOR  XM_CALLCONV  operator/ (FXMVECTOR V, float S);
 
 <h3>1.6.6 其他常用定义</h3>
 
-DirectXMath 库定义了下列常量，用于近似涉及 π 的各种表达式：
+DirectXMath 库定义了下列常量，用于近似涉及 $\pi$ 的各种表达式：
 
 ```cpp
 const float XM_PI      = 3.141592654f;
@@ -401,7 +401,7 @@ bool XM_CALLCONV XMVector3NotEqual(    // 返回 v1 ≠ v2
   FXMVECTOR V2);    // 输入 v2
 ```
 
-注意：即使数学运算的结果是标量（例如点积 k = v₁ · v₂），这些函数仍会返回 `XMVECTOR`。标量结果会被复制到 `XMVECTOR` 的每个分量中。例如对于点积，返回的向量是 (v₁ · v₂, v₁ · v₂, v₁ · v₂, v₁ · v₂)。这样做的原因之一是尽量减少标量运算和 SIMD 向量运算的混合；在整个计算完成之前保持 SIMD 状态通常更有效率。
+注意：即使数学运算的结果是标量（例如点积 $k=\mathbf{v}_1\cdot\mathbf{v}_2$），这些函数仍会返回 `XMVECTOR`。标量结果会被复制到 `XMVECTOR` 的每个分量中。例如对于点积，返回的向量是 $(\mathbf{v}_1\cdot\mathbf{v}_2,\mathbf{v}_1\cdot\mathbf{v}_2,\mathbf{v}_1\cdot\mathbf{v}_2,\mathbf{v}_1\cdot\mathbf{v}_2)$。这样做的原因之一是尽量减少标量运算和 SIMD 向量运算的混合；在整个计算完成之前保持 SIMD 状态通常更有效率。
 
 下面的演示程序展示了如何使用其中大多数函数以及一些重载运算符：
 
@@ -510,7 +510,7 @@ XMVECTOR XM_CALLCONV XMVector3NormalizeEst(    // 返回 v/||v|| 的估算值
 
 <h3>1.6.9 浮点误差</h3>
 
-在计算机上处理向量时，还应注意以下问题。比较浮点数时必须小心，因为浮点数存在精度误差。数学上预期相等的两个浮点数，实际可能有细微差别。例如，数学上我们预期归一化向量的长度为 1，但在计算机程序中，该长度只是近似 1。此外，数学上对任意实数 p 都有 1ᵖ = 1，但当我们只有 1 的数值近似时，把该近似值取 p 次幂会放大误差；因此，数值误差也会累积。下面的短程序演示了这些想法：
+在计算机上处理向量时，还应注意以下问题。比较浮点数时必须小心，因为浮点数存在精度误差。数学上预期相等的两个浮点数，实际可能有细微差别。例如，数学上我们预期归一化向量的长度为 1，但在计算机程序中，该长度只是近似 1。此外，数学上对任意实数 $p$ 都有 $1^p=1$，但当我们只有 1 的数值近似时，把该近似值取 $p$ 次幂会放大误差；因此，数值误差也会累积。下面的短程序演示了这些想法：
 
 ```cpp
 #include <windows.h> // for XMVerifyCPUSupport
@@ -582,14 +582,14 @@ XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
 <h2>1.7 小结</h2>
 
 1. 向量用于表示同时具有大小和方向的物理量。几何上用有向线段表示向量。把向量平行平移到尾端与坐标系原点重合的位置，向量就处于标准位置；此时用头端相对于坐标系的坐标即可数值地描述该向量。
-2. 设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)，则有以下向量运算：
-   1. 加法：u + v = (uₓ + vₓ, uᵧ + vᵧ, u_z + v_z)；
-   2. 减法：u − v = (uₓ − vₓ, uᵧ − vᵧ, u_z − v_z)；
-   3. 数乘：ku = (kuₓ, kuᵧ, ku_z)；
-   4. 长度：‖u‖ = √(uₓ² + uᵧ² + u_z²)；
-   5. 归一化：û = u/‖u‖ = (uₓ/‖u‖, uᵧ/‖u‖, u_z/‖u‖)；
-   6. 点积：u · v = ‖u‖‖v‖ cos θ = uₓvₓ + uᵧvᵧ + u_zv_z；
-   7. 叉积：u × v = (uᵧv_z − u_zvᵧ, u_zvₓ − uₓv_z, uₓvᵧ − uᵧvₓ)。
+2. 设 $\mathbf{u}=(u_x,u_y,u_z)$、$\mathbf{v}=(v_x,v_y,v_z)$，则有以下向量运算：
+   1. 加法：$\mathbf{u}+\mathbf{v}=(u_x+v_x,\;u_y+v_y,\;u_z+v_z)$；
+   2. 减法：$\mathbf{u}-\mathbf{v}=(u_x-v_x,\;u_y-v_y,\;u_z-v_z)$；
+   3. 数乘：$k\mathbf{u}=(ku_x,\;ku_y,\;ku_z)$；
+   4. 长度：$\lVert\mathbf{u}\rVert=\sqrt{u_x^2+u_y^2+u_z^2}$；
+   5. 归一化：$\hat{\mathbf{u}}=\dfrac{\mathbf{u}}{\lVert\mathbf{u}\rVert}=\left(\dfrac{u_x}{\lVert\mathbf{u}\rVert},\dfrac{u_y}{\lVert\mathbf{u}\rVert},\dfrac{u_z}{\lVert\mathbf{u}\rVert}\right)$；
+   6. 点积：$\mathbf{u}\cdot\mathbf{v}=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta=u_xv_x+u_yv_y+u_zv_z$；
+   7. 叉积：$\mathbf{u}\times\mathbf{v}=(u_yv_z-u_zv_y,\;u_zv_x-u_xv_z,\;u_xv_y-u_yv_x)$。
 3. 代码中使用 DirectXMath 的 `XMVECTOR` 类型，以 SIMD 操作高效描述向量。类的数据成员使用 `XMFLOAT2`、`XMFLOAT3` 和 `XMFLOAT4`，再用加载和存储方法在 `XMVECTOR` 与 `XMFLOATn` 之间来回转换。需要初始化语法的常量向量应使用 `XMVECTORF32` 类型。
 4. 出于效率考虑，`XMVECTOR` 值可以作为函数参数通过 SSE/SSE2 寄存器传递，而不是放在栈上。为了以平台无关的方式做到这一点，我们用 `FXMVECTOR`、`GXMVECTOR`、`HXMVECTOR` 和 `CXMVECTOR` 类型传递 `XMVECTOR` 参数。传递规则是：前三个 `XMVECTOR` 参数应为 `FXMVECTOR` 类型；第四个应为 `GXMVECTOR` 类型；第五、第六个应为 `HXMVECTOR` 类型；其余 `XMVECTOR` 参数应为 `CXMVECTOR` 类型。
 5. `XMVECTOR` 类重载了算术运算符，用于向量加法、减法和标量乘法。此外，DirectXMath 库提供了以下有用函数：计算向量长度、长度平方、两个向量的点积、两个向量的叉积以及向量归一化：
@@ -606,22 +606,22 @@ XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
 <section className="lesson-section" id="s18">
 <h2>1.8 习题</h2>
 
-1. 设 u = (1, 2)、v = (3, −4)。完成下列计算，并在二维坐标系中画出这些向量。
-   1. u + v
-   2. u − v
-   3. 2u + ½v
-   4. −2u + v
-2. 设 u = (−1, 3, 2)、v = (3, −4, 1)。完成下列计算。
-   1. u + v
-   2. u − v
-   3. 3u + 2v
-   4. −2u + v
-3. 这道题说明向量代数具有许多与实数相同的良好性质（这不是完整列表）。设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)、w = (wₓ, wᵧ, w_z)，并设 c、k 为标量。证明下列向量性质。
-   1. u + v = v + u（加法交换律）
-   2. u + (v + w) = (u + v) + w（加法结合律）
-   3. (ck)u = c(ku)（数乘结合律）
-   4. k(u + v) = ku + kv（分配律 1）
-   5. u(k + c) = ku + cu（分配律 2）
+1. 设 $\mathbf{u}=(1,2)$、$\mathbf{v}=(3,-4)$。完成下列计算，并在二维坐标系中画出这些向量。
+   1. $\mathbf{u}+\mathbf{v}$
+   2. $\mathbf{u}-\mathbf{v}$
+   3. $2\mathbf{u}+\frac{1}{2}\mathbf{v}$
+   4. $-2\mathbf{u}+\mathbf{v}$
+2. 设 $\mathbf{u}=(-1,3,2)$、$\mathbf{v}=(3,-4,1)$。完成下列计算。
+   1. $\mathbf{u}+\mathbf{v}$
+   2. $\mathbf{u}-\mathbf{v}$
+   3. $3\mathbf{u}+2\mathbf{v}$
+   4. $-2\mathbf{u}+\mathbf{v}$
+3. 这道题说明向量代数具有许多与实数相同的良好性质（这不是完整列表）。设 $\mathbf{u}=(u_x,u_y,u_z)$、$\mathbf{v}=(v_x,v_y,v_z)$、$\mathbf{w}=(w_x,w_y,w_z)$，并设 $c$、$k$ 为标量。证明下列向量性质。
+   1. $\mathbf{u}+\mathbf{v}=\mathbf{v}+\mathbf{u}$（加法交换律）
+   2. $\mathbf{u}+(\mathbf{v}+\mathbf{w})=(\mathbf{u}+\mathbf{v})+\mathbf{w}$（加法结合律）
+   3. $(ck)\mathbf{u}=c(k\mathbf{u})$（数乘结合律）
+   4. $k(\mathbf{u}+\mathbf{v})=k\mathbf{u}+k\mathbf{v}$（分配律 1）
+   5. $\mathbf{u}(k+c)=k\mathbf{u}+c\mathbf{u}$（分配律 2）
 
       提示：直接使用向量运算的定义和实数的性质。例如：
 
@@ -634,20 +634,20 @@ XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
       &= c(k\mathbf{u})
       \end{aligned}
       $$
-4. 解方程 `2((1, 2, 3) − x) − (−2, 0, 4) = −2(1, 2, 3)`，求 x。
-5. 设 u = (−1, 3, 2)、v = (3, −4, 1)。将 u、v 归一化。
-6. 设 k 为标量、u = (uₓ, uᵧ, u_z)。证明 ‖ku‖ = |k|‖u‖。
-7. 下列每组 u、v 之间的角是直角、锐角还是钝角？
-   1. u = (1, 1, 1)，v = (2, 3, 4)
-   2. u = (1, 1, 0)，v = (−2, 2, 0)
-   3. u = (−1, −1, −1)，v = (3, 1, 0)
-8. 设 u = (−1, 3, 2)、v = (3, −4, 1)。求 u、v 之间的角 θ。
-9. 设 u = (uₓ, uᵧ, u_z)、v = (vₓ, vᵧ, v_z)、w = (wₓ, wᵧ, w_z)，c、k 为标量。证明下列点积性质。
-   1. u · v = v · u
-   2. u·(v + w) = u · v + u · w
-   3. k(u · v) = (ku) · v = u · (kv)
-   4. v·v = ‖v‖²
-   5. 0 · v = 0
+4. 解方程 $2((1,2,3)-\mathbf{x})-(-2,0,4)=-2(1,2,3)$，求 $\mathbf{x}$。
+5. 设 $\mathbf{u}=(-1,3,2)$、$\mathbf{v}=(3,-4,1)$。将 $\mathbf{u}$、$\mathbf{v}$ 归一化。
+6. 设 $k$ 为标量、$\mathbf{u}=(u_x,u_y,u_z)$。证明 $\lVert k\mathbf{u}\rVert=|k|\lVert\mathbf{u}\rVert$。
+7. 下列每组 $\mathbf{u}$、$\mathbf{v}$ 之间的角是直角、锐角还是钝角？
+   1. $\mathbf{u}=(1,1,1)$、$\mathbf{v}=(2,3,4)$
+   2. $\mathbf{u}=(1,1,0)$、$\mathbf{v}=(-2,2,0)$
+   3. $\mathbf{u}=(-1,-1,-1)$、$\mathbf{v}=(3,1,0)$
+8. 设 $\mathbf{u}=(-1,3,2)$、$\mathbf{v}=(3,-4,1)$。求 $\mathbf{u}$、$\mathbf{v}$ 之间的角 $\theta$。
+9. 设 $\mathbf{u}=(u_x,u_y,u_z)$、$\mathbf{v}=(v_x,v_y,v_z)$、$\mathbf{w}=(w_x,w_y,w_z)$，$c$、$k$ 为标量。证明下列点积性质。
+   1. $\mathbf{u}\cdot\mathbf{v}=\mathbf{v}\cdot\mathbf{u}$
+   2. $\mathbf{u}\cdot(\mathbf{v}+\mathbf{w})=\mathbf{u}\cdot\mathbf{v}+\mathbf{u}\cdot\mathbf{w}$
+   3. $k(\mathbf{u}\cdot\mathbf{v})=(k\mathbf{u})\cdot\mathbf{v}=\mathbf{u}\cdot(k\mathbf{v})$
+   4. $\mathbf{v}\cdot\mathbf{v}=\lVert\mathbf{v}\rVert^2$
+   5. $\mathbf{0}\cdot\mathbf{v}=0$
 
       提示：直接使用定义。例如：
 
@@ -659,27 +659,27 @@ XMFINLINE bool XM_CALLCONV XMVector3NearEqual(
       &=\lVert\mathbf{v}\rVert^2
       \end{aligned}
       $$
-10. 利用余弦定理（c² = a² + b² − 2ab cos θ，其中 a、b、c 是三角形三边长，θ 是边 a 与边 b 的夹角），证明 $u_xv_x+u_yv_y+u_zv_z=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta$。
+10. 利用余弦定理（$c^2=a^2+b^2-2ab\cos\theta$，其中 $a$、$b$、$c$ 是三角形三边长，$\theta$ 是边 $a$ 与边 $b$ 的夹角），证明 $u_xv_x+u_yv_y+u_zv_z=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\cos\theta$。
 
-    提示：考虑图 1.9，令 c² = ‖u − v‖²、a² = ‖u‖²、b² = ‖v‖²，再使用上一题证明的点积性质。
-11. 设 n = (−2, 1)。把向量 g = (0, −9.8) 分解为两个正交向量之和：一个平行于 n，另一个垂直于 n。并在二维坐标系中画出这些向量。
-12. 设 u = (−2, 1, 4)、v = (3, −4, 1)。求 w = u × v，并证明 w · u = 0 和 w · v = 0。
-13. 在某个坐标系中，以下列点为三角形顶点：A = (0, 0, 0)、B = (0, 1, 3)、C = (5, 1, 0)。求一个与该三角形正交的向量。
+    提示：考虑图 1.9，令 $c^2=\lVert\mathbf{u}-\mathbf{v}\rVert^2$、$a^2=\lVert\mathbf{u}\rVert^2$、$b^2=\lVert\mathbf{v}\rVert^2$，再使用上一题证明的点积性质。
+11. 设 $\mathbf{n}=(-2,1)$。把向量 $\mathbf{g}=(0,-9.8)$ 分解为两个正交向量之和：一个平行于 $\mathbf{n}$，另一个垂直于 $\mathbf{n}$。并在二维坐标系中画出这些向量。
+12. 设 $\mathbf{u}=(-2,1,4)$、$\mathbf{v}=(3,-4,1)$。求 $\mathbf{w}=\mathbf{u}\times\mathbf{v}$，并证明 $\mathbf{w}\cdot\mathbf{u}=0$ 和 $\mathbf{w}\cdot\mathbf{v}=0$。
+13. 在某个坐标系中，以下列点为三角形顶点：$A=(0,0,0)$、$B=(0,1,3)$、$C=(5,1,0)$。求一个与该三角形正交的向量。
 
     提示：在三角形的两条边上各取一个向量，然后使用叉积。
-14. 证明 ‖u × v‖ = ‖u‖‖v‖ sin θ。
+14. 证明 $\lVert\mathbf{u}\times\mathbf{v}\rVert=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert\sin\theta$。
 
-    提示：从 ‖u × v‖ = ‖u‖‖v‖|sin θ| 开始，使用三角恒等式 $\cos^2\theta+\sin^2\theta=1 \Rightarrow \sin\theta=\sqrt{1-\cos^2\theta}$，再应用式 1.4。
-15. 证明 ‖u × v‖ 给出由 u、v 张成的平行四边形的面积；见图 1.21。
+    提示：从 $\lVert\mathbf{u}\times\mathbf{v}\rVert=\lVert\mathbf{u}\rVert\,\lVert\mathbf{v}\rVert|\sin\theta|$ 开始，使用三角恒等式 $\cos^2\theta+\sin^2\theta=1\Rightarrow\sin\theta=\sqrt{1-\cos^2\theta}$，再应用式 1.4。
+15. 证明 $\lVert\mathbf{u}\times\mathbf{v}\rVert$ 给出由 $\mathbf{u}$、$\mathbf{v}$ 张成的平行四边形的面积；见图 1.21。
 
-    <Figure src="images/Fig1-21.jpg" alt="由向量 u 与 v 张成的平行四边形" figureNumber="图 1.21" caption="由两个三维向量 u、v 张成的平行四边形；底边为 ‖v‖，高为 h。" />
-16. 举出一组三维向量 u、v、w 的例子，使 u×(v×w) ≠ (u×v)×w。这说明叉积一般不满足结合律。
+    <Figure src="images/Fig1-21.jpg" alt="由向量 u 与 v 张成的平行四边形" figureNumber="图 1.21" caption="由两个三维向量 u、v 张成的平行四边形；底边长度等于 v 的大小，高为 h。" />
+16. 举出一组三维向量 $\mathbf{u}$、$\mathbf{v}$、$\mathbf{w}$ 的例子，使 $\mathbf{u}\times(\mathbf{v}\times\mathbf{w})\ne(\mathbf{u}\times\mathbf{v})\times\mathbf{w}$。这说明叉积一般不满足结合律。
 
-    提示：考虑简单向量 i = (1, 0, 0)、j = (0, 1, 0)、k = (0, 0, 1) 的组合。
-17. 证明两个非零平行向量的叉积是零向量；即 u × ku = 0。
+    提示：考虑简单向量 $\mathbf{i}=(1,0,0)$、$\mathbf{j}=(0,1,0)$、$\mathbf{k}=(0,0,1)$ 的组合。
+17. 证明两个非零平行向量的叉积是零向量；即 $\mathbf{u}\times(k\mathbf{u})=\mathbf{0}$。
 
     提示：直接使用叉积定义。
-18. 用 Gram–Schmidt 过程将向量组 `{(1, 0, 0), (1, 5, 0), (2, 1, −4)}` 正交归一化。
+18. 用 Gram–Schmidt 过程将向量组 $\{(1,0,0),(1,5,0),(2,1,-4)\}$ 正交归一化。
 19. 阅读下面的程序及其输出。先推测每个 `XMVector*` 函数的作用，再到 DirectXMath 文档中查阅每个函数。
 
 ```cpp

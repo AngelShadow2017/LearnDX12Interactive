@@ -17,7 +17,7 @@ const translationModules = Object.fromEntries(
   Object.entries(translationLoaders).map(([path, loader]) => [path, lazy(loader)]),
 ) as Record<string, ComponentType>;
 const translationProgress: Record<string, string> = {
-  ch01: '录入中', ch02: '待校对', intro: '录入中', appendix: '录入中',
+  ch01: '已完成', ch02: '已完成', intro: '录入中', appendix: '录入中',
 };
 type ReadingMode = 'teaching' | 'translation' | 'original';
 
